@@ -1,0 +1,16 @@
+[package]
+name = "gamemaster-bot"
+version = "0.1.0"
+edition = "2024" 
+
+[dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# CORRECTED: Added the essential "http" and "builder" features for sending messages and creating components.
+serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "rustls_backend", "model", "http", "builder", "cache"] }
+dotenv = "0.15"
+
+# This is required for the database connection for future leaderboards.
+sqlx = { version = "0.8", features = [ "runtime-tokio-rustls", "sqlite" ] }
+
+# This is required for the Rock, Paper, Scissors game to make a random choice.
+rand = "0.9"
