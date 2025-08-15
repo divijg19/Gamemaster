@@ -13,9 +13,9 @@ impl Move {
     // --- CORRECTED: The `&` is removed from `&self` to adhere to Rust conventions for `Copy` types. ---
     pub fn to_emoji(self) -> &'static str {
         match self {
-            Move::Rock => "🪨",
-            Move::Paper => "📜",
-            Move::Scissors => "✂️",
+            Move::Rock => "✊",
+            Move::Paper => "✋",
+            Move::Scissors => "✌️",
         }
     }
 }
