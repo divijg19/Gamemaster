@@ -21,7 +21,7 @@ jobs:
 
       # Step 2: This uses the official Shuttle action to deploy your project.
       - name: Deploy to Shuttle
-        uses: shuttle-hq/deploy-action@v1
+        uses: shuttle-hq/deploy-action@v2
         with:
           # This securely accesses the API key you stored in GitHub Secrets.
           shuttle_api_key: ${{ secrets.SHUTTLE_API_KEY }}
