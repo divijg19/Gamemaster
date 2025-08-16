@@ -24,7 +24,5 @@ jobs:
         uses: shuttle-hq/deploy-action@v2
         with:
           # This securely accesses the API key you stored in GitHub Secrets.
-          shuttle_api_key: ${{ secrets.SHUTTLE_API_KEY }}
-          
-          # IMPORTANT: Make sure this name exactly matches your project name on Shuttle.
-          project_name: 'gamemaster-bot' 
+          shuttle-api-key: ${{ secrets.SHUTTLE_API_KEY }}
+          project-id: 'proj_01K2SD9TX1KZKBK7JC08F0DJHD'
