@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -6,14 +7,21 @@ use serenity::builder::{
 };
 use serenity::model::application::ButtonStyle;
 use serenity::model::channel::Message;
+use serenity::model::id::MessageId;
 use serenity::prelude::*;
+use tokio::sync::RwLock;
 
 // Use `super` to access sibling modules like `state`.
 use super::state::{DuelFormat, GameState};
-use crate::AppState;
 
 /// Entry point for the `!rps` command. Creates the initial challenge.
-pub async fn run(ctx: &Context, msg: &Message, args: Vec<&str>) {
+// The function signature is updated to accept the active_games state directly.
+pub async fn run(
+    ctx: &Context,
+    msg: &Message,
+    args: Vec<&str>,
+    active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
+) {
     let opponent = match msg.mentions.first() {
         Some(user) if user.id != msg.author.id => user,
         _ => {
@@ -27,7 +35,6 @@ pub async fn run(ctx: &Context, msg: &Message, args: Vec<&str>) {
         }
     };
 
-    // --- POLISHED: Argument parsing is now cleaner and more idiomatic. ---
     let mut duel_format = DuelFormat::BestOf(1);
     let mut format_str = "Single Round".to_string();
     let mut args_iter = args.iter();
@@ -37,18 +44,20 @@ pub async fn run(ctx: &Context, msg: &Message, args: Vec<&str>) {
             "-b" | "--bestof" => {
                 if let Some(num_str) = args_iter.next()
                     && let Ok(num) = num_str.parse::<u32>()
-                        && num > 0 {
-                            duel_format = DuelFormat::BestOf(num);
-                            format_str = format!("Best of {}", num);
-                        }
+                    && num > 0
+                {
+                    duel_format = DuelFormat::BestOf(num);
+                    format_str = format!("Best of {}", num);
+                }
             }
             "-r" | "--raceto" => {
                 if let Some(num_str) = args_iter.next()
                     && let Ok(num) = num_str.parse::<u32>()
-                        && num > 0 {
-                            duel_format = DuelFormat::RaceTo(num);
-                            format_str = format!("Race to {}", num);
-                        }
+                    && num > 0
+                {
+                    duel_format = DuelFormat::RaceTo(num);
+                    format_str = format!("Race to {}", num);
+                }
             }
             _ => {}
         }
@@ -84,19 +93,9 @@ pub async fn run(ctx: &Context, msg: &Message, args: Vec<&str>) {
         }
     };
 
-    // --- POLISHED: Replaced `.unwrap()` with a graceful return for 100% safety. ---
-    let data = ctx.data.read().await;
-    let app_state = match data.get::<AppState>() {
-        Some(state) => state.clone(),
-        None => {
-            println!("Error: AppState not found in client data.");
-            return;
-        }
-    };
-
-    let mut active_games = app_state.active_games.write().await;
-
-    active_games.insert(
+    // We no longer need to fetch AppState; we use the `active_games` parameter.
+    let mut games = active_games.write().await;
+    games.insert(
         game_msg.id,
         GameState {
             player1: Arc::new(msg.author.clone()),
@@ -110,17 +109,19 @@ pub async fn run(ctx: &Context, msg: &Message, args: Vec<&str>) {
         },
     );
 
+    // Drop the write lock before spawning the task.
+    drop(games);
+
     let ctx_clone = ctx.clone();
-    let app_state_clone = app_state.clone();
+    // Clone the Arc for the spawned task.
+    let games_clone = Arc::clone(active_games);
     let game_msg_id = game_msg.id;
     let channel_id = game_msg.channel_id;
 
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(30)).await;
-        let app_state = app_state_clone;
-        let mut games = app_state.active_games.write().await;
+        let mut games = games_clone.write().await;
 
-        // POLISHED: `if` statement is collapsed per clippy's suggestion.
         if let Some(game) = games.get(&game_msg_id)
             && !game.accepted
         {

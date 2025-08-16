@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use serenity::builder::{
     CreateActionRow, CreateButton, CreateEmbed, CreateInteractionResponse,
     CreateInteractionResponseFollowup, CreateInteractionResponseMessage, EditInteractionResponse,
@@ -6,16 +9,22 @@ use serenity::builder::{
 use serenity::model::application::{ButtonStyle, ComponentInteraction};
 use serenity::model::id::{MessageId, UserId};
 use serenity::prelude::*;
+use tokio::sync::RwLock;
 
-// --- CORRECTED: Removed unused `GameState` import ---
-use super::state::{DuelFormat, Move};
-use crate::AppState;
+// Import the GameState struct.
+use super::state::{DuelFormat, GameState, Move};
 
 fn parse_id(s: &str) -> UserId {
     UserId::new(s.parse().unwrap_or(0))
 }
 
-pub async fn handle_accept(ctx: &Context, interaction: &mut ComponentInteraction, parts: &[&str]) {
+// Updated to accept `active_games`.
+pub async fn handle_accept(
+    ctx: &Context,
+    interaction: &mut ComponentInteraction,
+    parts: &[&str],
+    active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
+) {
     interaction.defer(&ctx.http).await.ok();
 
     let p2_id = parse_id(parts.get(3).unwrap_or(&""));
@@ -27,9 +36,8 @@ pub async fn handle_accept(ctx: &Context, interaction: &mut ComponentInteraction
         return;
     }
 
-    let data = ctx.data.read().await;
-    let app_state = data.get::<AppState>().unwrap();
-    let mut games = app_state.active_games.write().await;
+    // Now uses the passed-in `active_games` parameter.
+    let mut games = active_games.write().await;
     if let Some(game) = games.get_mut(&interaction.message.id) {
         game.accepted = true;
     } else {
@@ -61,7 +69,13 @@ pub async fn handle_accept(ctx: &Context, interaction: &mut ComponentInteraction
     }
 }
 
-pub async fn handle_decline(ctx: &Context, interaction: &mut ComponentInteraction, parts: &[&str]) {
+// Updated to accept `active_games`.
+pub async fn handle_decline(
+    ctx: &Context,
+    interaction: &mut ComponentInteraction,
+    parts: &[&str],
+    active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
+) {
     interaction.defer(&ctx.http).await.ok();
 
     let p2_id = parse_id(parts.get(3).unwrap_or(&""));
@@ -96,19 +110,17 @@ pub async fn handle_decline(ctx: &Context, interaction: &mut ComponentInteractio
         println!("Error editing message on decline: {:?}", e);
     }
 
-    let data = ctx.data.read().await;
-    let app_state = data.get::<AppState>().unwrap();
-    app_state
-        .active_games
-        .write()
-        .await
-        .remove(&interaction.message.id);
+    // Now uses the passed-in `active_games` parameter.
+    active_games.write().await.remove(&interaction.message.id);
 }
 
-pub async fn handle_prompt(ctx: &Context, interaction: &ComponentInteraction) {
-    let data = ctx.data.read().await;
-    let app_state = data.get::<AppState>().unwrap();
-    let games = app_state.active_games.read().await;
+// Updated to accept `active_games` to validate the player.
+pub async fn handle_prompt(
+    ctx: &Context,
+    interaction: &ComponentInteraction,
+    active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
+) {
+    let games = active_games.read().await;
 
     if let Some(game) = games.get(&interaction.message.id) {
         if interaction.user.id != game.player1.id && interaction.user.id != game.player2.id {
@@ -120,6 +132,7 @@ pub async fn handle_prompt(ctx: &Context, interaction: &ComponentInteraction) {
             return;
         }
     } else {
+        // Game no longer exists
         return;
     }
 
@@ -132,8 +145,6 @@ pub async fn handle_prompt(ctx: &Context, interaction: &ComponentInteraction) {
             .label("Paper")
             .emoji('✋')
             .style(ButtonStyle::Secondary),
-        // --- THIS IS THE FINAL FIX ---
-        // The emoji is now a valid, single-codepoint `char`.
         CreateButton::new(format!("rps_move_scissors_{}", interaction.message.id))
             .label("Scissors")
             .emoji('✌')
@@ -150,7 +161,13 @@ pub async fn handle_prompt(ctx: &Context, interaction: &ComponentInteraction) {
     }
 }
 
-pub async fn handle_move(ctx: &Context, interaction: &mut ComponentInteraction, parts: &[&str]) {
+// Updated to accept `active_games`.
+pub async fn handle_move(
+    ctx: &Context,
+    interaction: &mut ComponentInteraction,
+    parts: &[&str],
+    active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
+) {
     let response_data = CreateInteractionResponseMessage::new()
         .content("Your move is locked in!")
         .components(vec![])
@@ -171,9 +188,8 @@ pub async fn handle_move(ctx: &Context, interaction: &mut ComponentInteraction, 
         _ => return,
     };
 
-    let data = ctx.data.read().await;
-    let app_state = data.get::<AppState>().unwrap();
-    let mut games = app_state.active_games.write().await;
+    // Now uses the passed-in `active_games` parameter.
+    let mut games = active_games.write().await;
     let game = match games.get_mut(&game_message_id) {
         Some(g) => g,
         None => return,
