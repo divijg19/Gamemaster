@@ -1,0 +1,30 @@
+# This is the name of the workflow that will appear in the "Actions" tab on GitHub.
+name: Deploy to Shuttle
+
+# This section defines the trigger for the workflow.
+on:
+  # Run this workflow on every push to the 'main' branch.
+  push:
+    branches:
+      - main
+
+# This section defines the job(s) to run.
+jobs:
+  deploy:
+    # Use a standard Linux environment provided by GitHub.
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: This checks out a copy of your repository's code.
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # Step 2: This uses the official Shuttle action to deploy your project.
+      - name: Deploy to Shuttle
+        uses: shuttle-hq/deploy-action@v1
+        with:
+          # This securely accesses the API key you stored in GitHub Secrets.
+          shuttle_api_key: ${{ secrets.SHUTTLE_API_KEY }}
+          
+          # IMPORTANT: Make sure this name exactly matches your project name on Shuttle.
+          project_name: 'gamemaster-bot' 
