@@ -16,6 +16,7 @@ enum Command {
     Ping,
     Prefix,
     Rps,
+    //Bread,
     Unknown,
 }
 
@@ -26,6 +27,7 @@ impl FromStr for Command {
             "ping" => Ok(Command::Ping),
             "prefix" => Ok(Command::Prefix),
             "rps" => Ok(Command::Rps),
+            //"bread" => Ok(Command::Bread),
             _ => Ok(Command::Unknown),
         }
     }
@@ -89,6 +91,12 @@ impl EventHandler for Handler {
             Command::Prefix => commands::prefix::run(&ctx, &msg, &self.prefix, args_vec).await,
             // Pass the active_games state down to the command handler.
             Command::Rps => commands::rps::run(&ctx, &msg, args_vec, &app_state.active_games).await,
+            // Handle the bread command
+            //Command::Bread => {
+            //    if let Err(why) = commands::bread::bread(&ctx, &msg).await {
+            //        println!("Error executing bread command: {:?}", why);
+            //    }
+            //}
             Command::Unknown => {}
         }
     }

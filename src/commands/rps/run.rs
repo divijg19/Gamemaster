@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serenity::builder::{
-    CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter, CreateMessage, EditMessage,
+    CreateActionRow, CreateButton, CreateEmbed, CreateEmbedAuthor, CreateMessage, EditMessage,
 };
 use serenity::model::application::ButtonStyle;
 use serenity::model::channel::Message;
@@ -14,8 +14,11 @@ use tokio::sync::RwLock;
 // Use `super` to access sibling modules like `state`.
 use super::state::{DuelFormat, GameState};
 
+// UI/UX: Define a color palette for consistent branding across all bot messages.
+const PENDING_COLOR: u32 = 0xFFA500; // Orange - for actions that are waiting for a user response.
+const ERROR_COLOR: u32 = 0xFF0000; // Red - for errors and negative outcomes.
+
 /// Entry point for the `!rps` command. Creates the initial challenge.
-// The function signature is updated to accept the active_games state directly.
 pub async fn run(
     ctx: &Context,
     msg: &Message,
@@ -25,12 +28,14 @@ pub async fn run(
     let opponent = match msg.mentions.first() {
         Some(user) if user.id != msg.author.id => user,
         _ => {
-            let _ = msg
-                .reply(
-                    ctx,
-                    "You must mention another user! e.g., `!rps @user [-b|-r] [number]`",
-                )
-                .await;
+            let embed = CreateEmbed::new()
+                .title("Invalid Command Usage")
+                .description("To start a duel, you must mention a valid opponent.")
+                .field("Example", "`!rps @username`", false)
+                .color(ERROR_COLOR);
+
+            let builder = CreateMessage::new().embed(embed);
+            let _ = msg.channel_id.send_message(&ctx.http, builder).await;
             return;
         }
     };
@@ -63,17 +68,25 @@ pub async fn run(
         }
     }
 
+    let bot_user = ctx.cache.current_user().clone();
+    let author =
+        CreateEmbedAuthor::new(&bot_user.name).icon_url(bot_user.avatar_url().unwrap_or_default());
+
     let embed = CreateEmbed::new()
-        .title("Rock, Paper, Scissors!")
+        .author(author.clone())
+        .title("A Duel is Proposed!")
+        .thumbnail("https://i.imgur.com/KEngM4f.png")
         .description(format!(
-            "<@{}> has challenged <@{}>!",
+            "The gauntlet has been thrown! <@{}> has challenged <@{}> to a game of Rock, Paper, Scissors.",
             msg.author.id, opponent.id
         ))
-        .field("Format", &format_str, false)
-        .footer(CreateEmbedFooter::new(
-            "This challenge will expire in 30 seconds.",
-        ))
-        .color(0x5865F2);
+        .field("Game Format", &format_str, true)
+        .field("Status", "Waiting for response...", true)
+        .footer(serenity::builder::CreateEmbedFooter::new(format!(
+            "{} has 30 seconds to respond.",
+            opponent.name
+        )))
+        .color(PENDING_COLOR);
 
     let buttons = CreateActionRow::Buttons(vec![
         CreateButton::new(format!("rps_accept_{}_{}", msg.author.id, opponent.id))
@@ -93,62 +106,60 @@ pub async fn run(
         }
     };
 
-    // We no longer need to fetch AppState; we use the `active_games` parameter.
-    let mut games = active_games.write().await;
-    games.insert(
-        game_msg.id,
-        GameState {
-            player1: Arc::new(msg.author.clone()),
-            player2: Arc::new(opponent.clone()),
-            p1_move: None,
-            p2_move: None,
-            accepted: false,
-            format: duel_format,
-            scores: (0, 0),
-            round: 1,
-        },
-    );
+    let game_state = GameState {
+        player1: Arc::new(msg.author.clone()),
+        player2: Arc::new(opponent.clone()),
+        p1_move: None,
+        p2_move: None,
+        accepted: false,
+        format: duel_format,
+        scores: (0, 0),
+        round: 1,
+    };
 
-    // Drop the write lock before spawning the task.
-    drop(games);
-
-    let ctx_clone = ctx.clone();
-    // Clone the Arc for the spawned task.
+    active_games.write().await.insert(game_msg.id, game_state);
     let games_clone = Arc::clone(active_games);
-    let game_msg_id = game_msg.id;
-    let channel_id = game_msg.channel_id;
+    let ctx_clone = ctx.clone();
 
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(30)).await;
         let mut games = games_clone.write().await;
 
-        if let Some(game) = games.get(&game_msg_id)
-            && !game.accepted
-        {
-            games.remove(&game_msg_id);
+        // CORRECTED: Applied Clippy's suggestion for more idiomatic Rust.
+        let should_remove = games.get(&game_msg.id).is_some_and(|g| !g.accepted);
 
-            let embed = CreateEmbed::new()
-                .title("Challenge Timed Out")
-                .description("The challenge was not accepted in time.")
-                .color(0xFF0000);
+        if should_remove
+            && let Some(game) = games.remove(&game_msg.id) {
+                let embed = CreateEmbed::new()
+                    .author(author)
+                    .title("Challenge Expired")
+                    .description(format!(
+                        "The challenge from <@{}> to <@{}> was not accepted in time.",
+                        game.player1.id, game.player2.id
+                    ))
+                    .color(ERROR_COLOR);
 
-            let disabled_buttons = CreateActionRow::Buttons(vec![
-                CreateButton::new("disabled_accept")
-                    .label("Accept")
-                    .style(ButtonStyle::Success)
-                    .disabled(true),
-                CreateButton::new("disabled_decline")
-                    .label("Decline")
-                    .style(ButtonStyle::Danger)
-                    .disabled(true),
-            ]);
+                let disabled_buttons = CreateActionRow::Buttons(vec![
+                    CreateButton::new("disabled_accept")
+                        .label("Accept")
+                        .style(ButtonStyle::Success)
+                        .disabled(true),
+                    CreateButton::new("disabled_decline")
+                        .label("Decline")
+                        .style(ButtonStyle::Danger)
+                        .disabled(true),
+                ]);
 
-            if let Ok(mut message) = channel_id.message(&ctx_clone.http, game_msg_id).await {
-                let builder = EditMessage::new()
-                    .embed(embed)
-                    .components(vec![disabled_buttons]);
-                let _ = message.edit(&ctx_clone.http, builder).await;
+                if let Ok(mut message) = game_msg
+                    .channel_id
+                    .message(&ctx_clone.http, game_msg.id)
+                    .await
+                {
+                    let builder = EditMessage::new()
+                        .embed(embed)
+                        .components(vec![disabled_buttons]);
+                    let _ = message.edit(&ctx_clone.http, builder).await;
+                }
             }
-        }
     });
 }

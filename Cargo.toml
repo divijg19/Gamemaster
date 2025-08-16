@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-# CORRECTED: Added the essential "http" and "builder" features for sending messages and creating components.
 serenity = { version = "0.12", default-features = false, features = ["client", "gateway", "rustls_backend", "model", "http", "builder", "cache"] }
 dotenv = "0.15"
 
