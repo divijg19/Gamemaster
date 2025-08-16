@@ -11,12 +11,10 @@ use serenity::model::id::MessageId;
 use serenity::prelude::*;
 use tokio::sync::RwLock;
 
-// Use `super` to access sibling modules like `state`.
 use super::state::{DuelFormat, GameState};
 
-// UI/UX: Define a color palette for consistent branding across all bot messages.
-const PENDING_COLOR: u32 = 0xFFA500; // Orange - for actions that are waiting for a user response.
-const ERROR_COLOR: u32 = 0xFF0000; // Red - for errors and negative outcomes.
+const PENDING_COLOR: u32 = 0xFFA500;
+const ERROR_COLOR: u32 = 0xFF0000;
 
 /// Entry point for the `!rps` command. Creates the initial challenge.
 pub async fn run(
@@ -31,7 +29,7 @@ pub async fn run(
             let embed = CreateEmbed::new()
                 .title("Invalid Command Usage")
                 .description("To start a duel, you must mention a valid opponent.")
-                .field("Example", "`!rps @username`", false)
+                .field("Example", "`!rps @username [-b 3]`", false)
                 .color(ERROR_COLOR);
 
             let builder = CreateMessage::new().embed(embed);
@@ -74,16 +72,13 @@ pub async fn run(
 
     let embed = CreateEmbed::new()
         .author(author.clone())
-        .title("A Duel is Proposed!")
-        .thumbnail("https://i.imgur.com/KEngM4f.png")
-        .description(format!(
-            "The gauntlet has been thrown! <@{}> has challenged <@{}> to a game of Rock, Paper, Scissors.",
-            msg.author.id, opponent.id
-        ))
-        .field("Game Format", &format_str, true)
-        .field("Status", "Waiting for response...", true)
+        .title("Rock, Paper, Scissors Duel!")
+        .description("A challenge has been issued!")
+        .field("Challenger", format!("<@{}>", msg.author.id), true)
+        .field("Opponent", format!("<@{}>", opponent.id), true)
+        .field("Format", &format_str, true)
         .footer(serenity::builder::CreateEmbedFooter::new(format!(
-            "{} has 30 seconds to respond.",
+            "{}, you have 30 seconds to respond.",
             opponent.name
         )))
         .color(PENDING_COLOR);
@@ -106,16 +101,13 @@ pub async fn run(
         }
     };
 
-    let game_state = GameState {
-        player1: Arc::new(msg.author.clone()),
-        player2: Arc::new(opponent.clone()),
-        p1_move: None,
-        p2_move: None,
-        accepted: false,
-        format: duel_format,
-        scores: (0, 0),
-        round: 1,
-    };
+    // CORRECTED: Use the new constructor from the refactored state.rs.
+    // This is cleaner and ensures the game state is always created correctly.
+    let game_state = GameState::new(
+        Arc::new(msg.author.clone()),
+        Arc::new(opponent.clone()),
+        duel_format,
+    );
 
     active_games.write().await.insert(game_msg.id, game_state);
     let games_clone = Arc::clone(active_games);
@@ -125,18 +117,16 @@ pub async fn run(
         tokio::time::sleep(Duration::from_secs(30)).await;
         let mut games = games_clone.write().await;
 
-        // CORRECTED: Applied Clippy's suggestion for more idiomatic Rust.
         let should_remove = games.get(&game_msg.id).is_some_and(|g| !g.accepted);
 
-        if should_remove
-            && let Some(game) = games.remove(&game_msg.id) {
+        if should_remove {
+            if let Some(game) = games.remove(&game_msg.id) {
                 let embed = CreateEmbed::new()
                     .author(author)
                     .title("Challenge Expired")
-                    .description(format!(
-                        "The challenge from <@{}> to <@{}> was not accepted in time.",
-                        game.player1.id, game.player2.id
-                    ))
+                    .description("The challenge was not accepted in time.")
+                    .field("Challenger", format!("<@{}>", game.player1.id), true)
+                    .field("Opponent", format!("<@{}>", game.player2.id), true)
                     .color(ERROR_COLOR);
 
                 let disabled_buttons = CreateActionRow::Buttons(vec![
@@ -161,5 +151,6 @@ pub async fn run(
                     let _ = message.edit(&ctx_clone.http, builder).await;
                 }
             }
+        }
     });
 }
