@@ -1,27 +1,25 @@
-// --- CORRECTED: All unused imports have been removed for a clean, professional file. ---
 use serenity::builder::{
     CreateActionRow, CreateButton, CreateEmbed, CreateInteractionResponse,
-    CreateInteractionResponseMessage, EditInteractionResponse, EditMessage,
+    CreateInteractionResponseFollowup, CreateInteractionResponseMessage, EditInteractionResponse,
+    EditMessage,
 };
 use serenity::model::application::{ButtonStyle, ComponentInteraction};
 use serenity::model::id::{MessageId, UserId};
 use serenity::prelude::*;
 
+// --- CORRECTED: Removed unused `GameState` import ---
 use super::state::{DuelFormat, Move};
 use crate::AppState;
 
-/// A helper function to parse a string slice into a UserId.
 fn parse_id(s: &str) -> UserId {
     UserId::new(s.parse().unwrap_or(0))
 }
 
-/// Handles Player 2 clicking the "Accept" button.
 pub async fn handle_accept(ctx: &Context, interaction: &mut ComponentInteraction, parts: &[&str]) {
     interaction.defer(&ctx.http).await.ok();
 
     let p2_id = parse_id(parts.get(3).unwrap_or(&""));
     if interaction.user.id != p2_id {
-        use serenity::builder::CreateInteractionResponseFollowup;
         let builder = CreateInteractionResponseFollowup::new()
             .content("This is not your challenge!")
             .ephemeral(true);
@@ -35,7 +33,6 @@ pub async fn handle_accept(ctx: &Context, interaction: &mut ComponentInteraction
     if let Some(game) = games.get_mut(&interaction.message.id) {
         game.accepted = true;
     } else {
-        use serenity::builder::CreateInteractionResponseFollowup;
         let builder = CreateInteractionResponseFollowup::new()
             .content("This challenge has expired.")
             .ephemeral(true);
@@ -64,13 +61,11 @@ pub async fn handle_accept(ctx: &Context, interaction: &mut ComponentInteraction
     }
 }
 
-/// Handles Player 2 clicking the "Decline" button.
 pub async fn handle_decline(ctx: &Context, interaction: &mut ComponentInteraction, parts: &[&str]) {
     interaction.defer(&ctx.http).await.ok();
 
     let p2_id = parse_id(parts.get(3).unwrap_or(&""));
     if interaction.user.id != p2_id {
-        use serenity::builder::CreateInteractionResponseFollowup;
         let builder = CreateInteractionResponseFollowup::new()
             .content("This is not your challenge!")
             .ephemeral(true);
@@ -110,7 +105,6 @@ pub async fn handle_decline(ctx: &Context, interaction: &mut ComponentInteractio
         .remove(&interaction.message.id);
 }
 
-/// Handles either player clicking the "Make Your Move" button.
 pub async fn handle_prompt(ctx: &Context, interaction: &ComponentInteraction) {
     let data = ctx.data.read().await;
     let app_state = data.get::<AppState>().unwrap();
@@ -132,12 +126,17 @@ pub async fn handle_prompt(ctx: &Context, interaction: &ComponentInteraction) {
     let buttons = CreateActionRow::Buttons(vec![
         CreateButton::new(format!("rps_move_rock_{}", interaction.message.id))
             .label("Rock")
+            .emoji('✊')
             .style(ButtonStyle::Secondary),
         CreateButton::new(format!("rps_move_paper_{}", interaction.message.id))
             .label("Paper")
+            .emoji('✋')
             .style(ButtonStyle::Secondary),
+        // --- THIS IS THE FINAL FIX ---
+        // The emoji is now a valid, single-codepoint `char`.
         CreateButton::new(format!("rps_move_scissors_{}", interaction.message.id))
             .label("Scissors")
+            .emoji('✌')
             .style(ButtonStyle::Secondary),
     ]);
 
@@ -151,7 +150,6 @@ pub async fn handle_prompt(ctx: &Context, interaction: &ComponentInteraction) {
     }
 }
 
-/// Handles a player clicking a move button (Rock, Paper, or Scissors).
 pub async fn handle_move(ctx: &Context, interaction: &mut ComponentInteraction, parts: &[&str]) {
     let response_data = CreateInteractionResponseMessage::new()
         .content("Your move is locked in!")
@@ -184,7 +182,6 @@ pub async fn handle_move(ctx: &Context, interaction: &mut ComponentInteraction, 
     if (interaction.user.id == game.player1.id && game.p1_move.is_some())
         || (interaction.user.id == game.player2.id && game.p2_move.is_some())
     {
-        use serenity::builder::CreateInteractionResponseFollowup;
         let builder = CreateInteractionResponseFollowup::new()
             .content("You have already moved for this round.")
             .ephemeral(true);
@@ -284,8 +281,8 @@ pub async fn handle_move(ctx: &Context, interaction: &mut ComponentInteraction, 
             let embed = CreateEmbed::new()
                 .title("It's a Tie!")
                 .description(format!(
-                    "**Round {} was a draw! Redo the round.**\n\n**Score:**\n<@{}>: {}\n<@{}>: {}\n\nBoth players, make your move again!",
-                    game.round, game.player1.id, game.scores.0, game.player2.id, game.scores.1
+                    "**Round {} was a draw!** {} vs {}\n\n**Score:**\n<@{}>: {}\n<@{}>: {}\n\nRedo the round! Make your move.",
+                    game.round, p1_move.to_emoji(), p2_move.to_emoji(), game.player1.id, game.scores.0, game.player2.id, game.scores.1
                 ))
                 .color(0xFFFF00);
             let builder = EditMessage::new().embed(embed);
@@ -298,8 +295,8 @@ pub async fn handle_move(ctx: &Context, interaction: &mut ComponentInteraction, 
             let embed = CreateEmbed::new()
                 .title(format!("Round {} Results", game.round - 1))
                 .description(format!(
-                    "{}\n\n**Score:**\n<@{}>: {}\n<@{}>: {}\n\nStarting **Round {}!** Make your move.",
-                    result_text, game.player1.id, game.scores.0, game.player2.id, game.scores.1, game.round
+                    "{}\n({} vs {})\n\n**Score:**\n<@{}>: {}\n<@{}>: {}\n\nStarting **Round {}!** Make your move.",
+                    result_text, p1_move.to_emoji(), p2_move.to_emoji(), game.player1.id, game.scores.0, game.player2.id, game.scores.1, game.round
                 ))
                 .color(0x5865F2);
             let builder = EditMessage::new().embed(embed);

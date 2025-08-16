@@ -10,7 +10,7 @@ pub enum Move {
 }
 
 impl Move {
-    // --- CORRECTED: The `&` is removed from `&self` to adhere to Rust conventions for `Copy` types. ---
+    // This implementation is correctly placed and uses the correct `self` convention.
     pub fn to_emoji(self) -> &'static str {
         match self {
             Move::Rock => "✊",

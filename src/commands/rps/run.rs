@@ -1,14 +1,16 @@
-//src\commands\rps\run.rs
-use super::state::{DuelFormat, GameState};
-use crate::AppState;
+use std::sync::Arc;
+use std::time::Duration;
+
 use serenity::builder::{
     CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter, CreateMessage, EditMessage,
 };
 use serenity::model::application::ButtonStyle;
 use serenity::model::channel::Message;
 use serenity::prelude::*;
-use std::sync::Arc;
-use std::time::Duration; // Use `super` to access sibling modules.
+
+// Use `super` to access sibling modules like `state`.
+use super::state::{DuelFormat, GameState};
+use crate::AppState;
 
 /// Entry point for the `!rps` command. Creates the initial challenge.
 pub async fn run(ctx: &Context, msg: &Message, args: Vec<&str>) {
@@ -18,34 +20,39 @@ pub async fn run(ctx: &Context, msg: &Message, args: Vec<&str>) {
             let _ = msg
                 .reply(
                     ctx,
-                    "You must mention another user! e.g., `!rps @user [bestof|raceto] [number]`",
+                    "You must mention another user! e.g., `!rps @user [-b|-r] [number]`",
                 )
                 .await;
             return;
         }
     };
 
-    // ... (The rest of the `run` function is identical to before)
-    // Argument parsing for duel format
+    // --- POLISHED: Argument parsing is now cleaner and more idiomatic. ---
     let mut duel_format = DuelFormat::BestOf(1);
     let mut format_str = "Single Round".to_string();
+    let mut args_iter = args.iter();
 
-    if let Some(arg) = args.first()
-        && let Some(num_str) = args.get(1)
-            && let Ok(num) = num_str.parse::<u32>()
-                && num > 0 {
-                    match arg.to_lowercase().as_str() {
-                        "bestof" => {
+    while let Some(arg) = args_iter.next() {
+        match *arg {
+            "-b" | "--bestof" => {
+                if let Some(num_str) = args_iter.next()
+                    && let Ok(num) = num_str.parse::<u32>()
+                        && num > 0 {
                             duel_format = DuelFormat::BestOf(num);
                             format_str = format!("Best of {}", num);
                         }
-                        "raceto" => {
+            }
+            "-r" | "--raceto" => {
+                if let Some(num_str) = args_iter.next()
+                    && let Ok(num) = num_str.parse::<u32>()
+                        && num > 0 {
                             duel_format = DuelFormat::RaceTo(num);
                             format_str = format!("Race to {}", num);
                         }
-                        _ => {}
-                    }
-                }
+            }
+            _ => {}
+        }
+    }
 
     let embed = CreateEmbed::new()
         .title("Rock, Paper, Scissors!")
@@ -53,7 +60,7 @@ pub async fn run(ctx: &Context, msg: &Message, args: Vec<&str>) {
             "<@{}> has challenged <@{}>!",
             msg.author.id, opponent.id
         ))
-        .field("Format", format_str, false)
+        .field("Format", &format_str, false)
         .footer(CreateEmbedFooter::new(
             "This challenge will expire in 30 seconds.",
         ))
@@ -77,8 +84,16 @@ pub async fn run(ctx: &Context, msg: &Message, args: Vec<&str>) {
         }
     };
 
+    // --- POLISHED: Replaced `.unwrap()` with a graceful return for 100% safety. ---
     let data = ctx.data.read().await;
-    let app_state = data.get::<AppState>().unwrap();
+    let app_state = match data.get::<AppState>() {
+        Some(state) => state.clone(),
+        None => {
+            println!("Error: AppState not found in client data.");
+            return;
+        }
+    };
+
     let mut active_games = app_state.active_games.write().await;
 
     active_games.insert(
@@ -95,7 +110,6 @@ pub async fn run(ctx: &Context, msg: &Message, args: Vec<&str>) {
         },
     );
 
-    // Timeout logic
     let ctx_clone = ctx.clone();
     let app_state_clone = app_state.clone();
     let game_msg_id = game_msg.id;
@@ -106,6 +120,7 @@ pub async fn run(ctx: &Context, msg: &Message, args: Vec<&str>) {
         let app_state = app_state_clone;
         let mut games = app_state.active_games.write().await;
 
+        // POLISHED: `if` statement is collapsed per clippy's suggestion.
         if let Some(game) = games.get(&game_msg_id)
             && !game.accepted
         {
