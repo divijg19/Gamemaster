@@ -17,7 +17,6 @@ use super::state::{DuelFormat, GameState};
 const PENDING_COLOR: u32 = 0xFFA500;
 const ERROR_COLOR: u32 = 0xFF0000;
 
-// DEFINITIVE FIX: The function now takes an owned Arc, not a reference.
 pub async fn run(
     ctx: &Context,
     msg: &Message,
@@ -32,7 +31,6 @@ pub async fn run(
                 .description("To start a duel, you must mention a valid opponent.")
                 .field("Example", "`!rps @username [-b 3]`", false)
                 .color(ERROR_COLOR);
-
             let builder = CreateMessage::new().embed(embed);
             let _ = msg.channel_id.send_message(&ctx.http, builder).await;
             return;
@@ -69,17 +67,21 @@ pub async fn run(
 
     let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
-    let player_block = format!(
-        "<@{}> - `{}`\nStatus: {}\n\n<@{}> - `{}`\nStatus: {}",
-        msg.author.id, 0, "… Waiting", opponent.id, 0, "… Waiting"
-    );
-
-    let log_block = "A challenge has been issued!".to_string();
-
+    // DEFINITIVE LAYOUT: Use inline fields for the side-by-side display.
     let embed = CreateEmbed::new()
         .author(author.clone())
         .color(PENDING_COLOR)
-        .description(format!("{}\n\n{}", player_block, log_block))
+        .description("A challenge has been issued!")
+        .field(
+            format!("<@{}> - `0`", msg.author.id),
+            "Status: … Waiting",
+            true, // This 'true' is the key to the side-by-side layout.
+        )
+        .field(
+            format!("<@{}> - `0`", opponent.id),
+            "Status: … Waiting",
+            true, // This 'true' makes the fields appear in columns.
+        )
         .footer(CreateEmbedFooter::new(format!(
             "{}, you have 30 seconds to respond.",
             opponent.name
@@ -114,26 +116,22 @@ pub async fn run(
 
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(30)).await;
-
-        // DEFINITIVE FIX: 'active_games' is now an owned Arc that can be safely used here.
-        // We also combine the check and remove into a single, elegant operation.
         if let Some(game) = active_games.write().await.remove(&game_msg.id)
             && !game.accepted {
-                let player_block = format!(
-                    "<@{}> - `{}`\nStatus: {}\n\n<@{}> - `{}`\nStatus: {}",
-                    game.player1.id,
-                    game.scores.p1,
-                    "—",
-                    game.player2.id,
-                    game.scores.p2,
-                    "Did not respond"
-                );
-                let log_block = "The challenge was not accepted in time.".to_string();
-
                 let embed = CreateEmbed::new()
                     .author(author)
                     .color(ERROR_COLOR)
-                    .description(format!("{}\n\n{}", player_block, log_block))
+                    .description("The challenge was not accepted in time.")
+                    .field(
+                        format!("<@{}> - `{}`", game.player1.id, game.scores.p1),
+                        "Status: —",
+                        true,
+                    )
+                    .field(
+                        format!("<@{}> - `{}`", game.player2.id, game.scores.p2),
+                        "Status: Did not respond",
+                        true,
+                    )
                     .footer(CreateEmbedFooter::new("Challenge expired."));
 
                 let disabled_buttons = CreateActionRow::Buttons(vec![
