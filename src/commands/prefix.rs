@@ -66,13 +66,13 @@ pub async fn run(ctx: &Context, msg: &Message, prefix: Arc<RwLock<String>>, args
                 let response = format!("Prefix has been updated to `{}`", new_prefix);
                 let _ = msg.reply(ctx, response).await;
             } else {
-                let _ = msg.reply(ctx, "Usage: `!prefix set <new_prefix>`").await;
+                let _ = msg.reply(ctx, "Usage: `$prefix set <new_prefix>`").await;
             }
         }
         _ => {
             let current_prefix = prefix.read().await;
             let response = format!(
-                "The current prefix is `{}`. Use `!prefix set <new_prefix>` to change it.",
+                "The current prefix is `{}`. Use `$prefix set <new_prefix>` to change it.",
                 current_prefix
             );
             let _ = msg.reply(ctx, response).await;

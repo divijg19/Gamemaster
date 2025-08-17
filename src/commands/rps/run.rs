@@ -66,17 +66,13 @@ pub async fn run(
         msg.author.id, opponent.id
     );
 
-    // DEFINITIVE REFACTOR: Initial embed now uses the three-column layout for consistency.
     let embed = CreateEmbed::new()
         .color(PENDING_COLOR)
-        .field(
-            format!("{} `0`", msg.author.name),
-            "Status: … Waiting",
-            true,
-        )
-        .field("vs", "\u{200B}", true)
-        .field(format!("`0` {}", opponent.name), "Status: … Waiting", true)
-        .description("A challenge has been issued!")
+        .field(msg.author.name.clone(), "Status: … Waiting", true)
+        .field("`0` vs `0`", "\u{200B}", true)
+        .field(opponent.name.clone(), "Status: … Waiting", true)
+        // DEFINITIVE FIX: Challenge text moved to a field to ensure it's below player info.
+        .field("\u{200B}", "A challenge has been issued!", false)
         .footer(CreateEmbedFooter::new(format!(
             "{}, you have 30 seconds to respond.",
             opponent.name
@@ -124,21 +120,17 @@ pub async fn run(
                     game.player1.id, game.player2.id
                 );
 
-                // DEFINITIVE REFACTOR: Timeout embed also updated to the consistent three-column layout.
                 let embed = CreateEmbed::new()
                     .color(ERROR_COLOR)
+                    .field(game.player1.name.clone(), "Status: —", true)
                     .field(
-                        format!("{} `{}`", game.player1.name, game.scores.p1),
-                        "Status: —",
+                        format!("`{}` vs `{}`", game.scores.p1, game.scores.p2),
+                        "\u{200B}",
                         true,
                     )
-                    .field("vs", "\u{200B}", true)
-                    .field(
-                        format!("`{}` {}", game.scores.p2, game.player2.name),
-                        "Status: Did not respond",
-                        true,
-                    )
-                    .description("The challenge was not accepted in time.");
+                    .field(game.player2.name.clone(), "Status: Did not respond", true)
+                    // DEFINITIVE FIX: Timeout text moved to a field.
+                    .field("\u{200B}", "The challenge was not accepted in time.", false);
 
                 let disabled_buttons = CreateActionRow::Buttons(vec![
                     CreateButton::new("disabled_accept")

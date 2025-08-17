@@ -45,7 +45,7 @@ async fn serenity(
         .parse::<u64>()
         .expect("SERVER_ID must be a valid number.");
     let allowed_guild_id = GuildId::new(server_id);
-    let initial_prefix = Arc::new(RwLock::new("!".to_string()));
+    let initial_prefix = Arc::new(RwLock::new("$".to_string()));
 
     let app_state = Arc::new(AppState {
         active_games: Arc::new(RwLock::new(HashMap::new())),

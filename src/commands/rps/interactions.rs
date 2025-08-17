@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-// DEFINITIVE FIX: Unused imports have been removed.
 use serenity::builder::{
     CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter, EditMessage,
 };
@@ -17,9 +16,8 @@ const SUCCESS_COLOR: u32 = 0x00FF00;
 const ERROR_COLOR: u32 = 0xFF0000;
 const ACTIVE_COLOR: u32 = 0x5865F2;
 
-// DEFINITIVE REFACTOR: Embed builder updated for perfect centered score alignment.
 fn build_game_embed(game: &GameState) -> CreateEmbed {
-    let log_description = if game.history.is_empty() {
+    let log_content = if game.history.is_empty() {
         "The duel has begun! Make your move.".to_string()
     } else {
         game.history
@@ -55,12 +53,12 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         let p1 = if game.p1_move.is_some() {
             "✅ Move Locked"
         } else {
-            "… Waiting"
+            "🕰️ Waiting"
         };
         let p2 = if game.p2_move.is_some() {
             "✅ Move Locked"
         } else {
-            "… Waiting"
+            "🕰️ Waiting"
         };
         (p1.to_string(), p2.to_string())
     };
@@ -87,6 +85,7 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         } else {
             ACTIVE_COLOR
         })
+        // Player info fields are first, ensuring they appear at the top.
         .field(
             game.player1.name.clone(),
             format!("Status: {}", p1_status),
@@ -94,7 +93,7 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         )
         .field(
             format!("`{}` vs `{}`", game.scores.p1, game.scores.p2),
-            "\u{200B}", // Zero-width space for alignment
+            "\u{200B}",
             true,
         )
         .field(
@@ -102,7 +101,9 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
             format!("Status: {}", p2_status),
             true,
         )
-        .description(log_description)
+        // DEFINITIVE FIX: Game log moved to a non-inline field below player info.
+        // A zero-width space is used for the title to keep it clean.
+        .field("\u{200B}", log_content, false)
         .footer(CreateEmbedFooter::new(footer_text))
 }
 
@@ -301,8 +302,6 @@ pub async fn handle_move(
         game_clone = game.clone();
     }
 
-    // The strikethrough logic correctly resets each round because `game.process_round()` sets
-    // p1_move and p2_move back to `None`.
     let p1_mention = if game_clone.p1_move.is_some() && !is_over {
         format!("~~<@{}>~~", game_clone.player1.id)
     } else {
