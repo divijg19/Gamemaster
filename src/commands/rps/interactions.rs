@@ -16,7 +16,7 @@ const SUCCESS_COLOR: u32 = 0x00FF00;
 const ERROR_COLOR: u32 = 0xFF0000;
 const ACTIVE_COLOR: u32 = 0x5865F2;
 
-// --- DEFINITIVE UI REWRITE: This renderer uses inline fields before the description for the final layout. ---
+// --- DEFINITIVE UI REWRITE: This renderer builds a single description string for the final layout. ---
 fn build_game_embed(game: &GameState) -> CreateEmbed {
     let format_str = match game.format {
         super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
@@ -24,7 +24,33 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
     };
     let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
-    let log_description = if game.history.is_empty() {
+    // Part 1: Player Status Block
+    let (p1_status, p2_status) = if game.is_over() {
+        (
+            game.history.last().unwrap().p1_move.to_emoji().to_string(),
+            game.history.last().unwrap().p2_move.to_emoji().to_string(),
+        )
+    } else {
+        let p1 = if game.p1_move.is_some() {
+            "✅ Move Locked"
+        } else {
+            "… Waiting"
+        };
+        let p2 = if game.p2_move.is_some() {
+            "✅ Move Locked"
+        } else {
+            "… Waiting"
+        };
+        (p1.to_string(), p2.to_string())
+    };
+
+    let player_block = format!(
+        "<@{}> - `{}`\nStatus: {}\n\n<@{}> - `{}`\nStatus: {}",
+        game.player1.id, game.scores.p1, p1_status, game.player2.id, game.scores.p2, p2_status
+    );
+
+    // Part 2: Game Log Block
+    let log_block = if game.history.is_empty() {
         "The duel has begun! Make your move.".to_string()
     } else {
         game.history
@@ -47,31 +73,7 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
             .join("\n")
     };
 
-    let (p1_status, p2_status) = if game.is_over() {
-        (
-            game.history.last().unwrap().p1_move.to_emoji().to_string(),
-            game.history.last().unwrap().p2_move.to_emoji().to_string(),
-        )
-    } else {
-        let p1 = if game.p1_move.is_some() {
-            "✅ Move Locked"
-        } else {
-            "… Waiting"
-        };
-        let p2 = if game.p2_move.is_some() {
-            "✅ Move Locked"
-        } else {
-            "… Waiting"
-        };
-        (p1.to_string(), p2.to_string())
-    };
-
-    let p1_field_title = format!("<@{}> - `{}`", game.player1.id, game.scores.p1);
-    let p1_field_content = format!("Status: {}", p1_status);
-
-    let p2_field_title = format!("<@{}> - `{}`", game.player2.id, game.scores.p2);
-    let p2_field_content = format!("Status: {}", p2_status);
-
+    // Part 3: Footer and Final Assembly
     let footer_text = if game.is_over() {
         let winner = if game.scores.p1 > game.scores.p2 {
             &game.player1
@@ -96,9 +98,7 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         } else {
             ACTIVE_COLOR
         })
-        .field(p1_field_title, p1_field_content, true)
-        .field(p2_field_title, p2_field_content, true)
-        .description(log_description)
+        .description(format!("{}\n\n{}", player_block, log_block))
         .footer(CreateEmbedFooter::new(footer_text))
 }
 

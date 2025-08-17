@@ -67,21 +67,17 @@ pub async fn run(
 
     let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
-    // DEFINITIVE LAYOUT: Use inline fields for the side-by-side display, placed before the description.
+    // DEFINITIVE LAYOUT: Build the initial state within the description field.
+    let player_block = format!(
+        "<@{}> - `{}`\nStatus: {}\n\n<@{}> - `{}`\nStatus: {}",
+        msg.author.id, 0, "… Waiting", opponent.id, 0, "… Waiting"
+    );
+    let log_block = "A challenge has been issued!".to_string();
+
     let embed = CreateEmbed::new()
         .author(author.clone())
         .color(PENDING_COLOR)
-        .field(
-            format!("<@{}> - `0`", msg.author.id),
-            "Status: … Waiting",
-            true,
-        )
-        .field(
-            format!("<@{}> - `0`", opponent.id),
-            "Status: … Waiting",
-            true,
-        )
-        .description("A challenge has been issued!")
+        .description(format!("{}\n\n{}", player_block, log_block))
         .footer(CreateEmbedFooter::new(format!(
             "{}, you have 30 seconds to respond.",
             opponent.name
@@ -116,22 +112,23 @@ pub async fn run(
 
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(30)).await;
-        if let Some(game) = active_games.write().await.remove(&game_msg.id) {
-            if !game.accepted {
+        if let Some(game) = active_games.write().await.remove(&game_msg.id)
+            && !game.accepted {
+                let player_block = format!(
+                    "<@{}> - `{}`\nStatus: {}\n\n<@{}> - `{}`\nStatus: {}",
+                    game.player1.id,
+                    game.scores.p1,
+                    "—",
+                    game.player2.id,
+                    game.scores.p2,
+                    "Did not respond"
+                );
+                let log_block = "The challenge was not accepted in time.".to_string();
+
                 let embed = CreateEmbed::new()
                     .author(author)
                     .color(ERROR_COLOR)
-                    .field(
-                        format!("<@{}> - `{}`", game.player1.id, game.scores.p1),
-                        "Status: —",
-                        true,
-                    )
-                    .field(
-                        format!("<@{}> - `{}`", game.player2.id, game.scores.p2),
-                        "Status: Did not respond",
-                        true,
-                    )
-                    .description("The challenge was not accepted in time.")
+                    .description(format!("{}\n\n{}", player_block, log_block))
                     .footer(CreateEmbedFooter::new("Challenge expired."));
 
                 let disabled_buttons = CreateActionRow::Buttons(vec![
@@ -156,6 +153,5 @@ pub async fn run(
                     let _ = message.edit(&ctx_clone.http, builder).await;
                 }
             }
-        }
     });
 }
