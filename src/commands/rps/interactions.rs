@@ -16,7 +16,7 @@ const SUCCESS_COLOR: u32 = 0x00FF00;
 const ERROR_COLOR: u32 = 0xFF0000;
 const ACTIVE_COLOR: u32 = 0x5865F2;
 
-// --- FINAL REWRITE: This renderer now builds a single description string for the correct layout. ---
+// --- FINAL UI REWRITE: This renderer now builds a single description string for the definitive layout. ---
 fn build_game_embed(game: &GameState) -> CreateEmbed {
     let format_str = match game.format {
         super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
@@ -24,7 +24,7 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
     };
     let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
-    // Part 1: Player Status Block
+    // Part 1: The Player Status Block
     let (p1_status, p2_status) = if game.is_over() {
         (
             game.history.last().unwrap().p1_move.to_emoji().to_string(),
@@ -44,15 +44,14 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         (p1.to_string(), p2.to_string())
     };
 
-    // Player mentions and scores are now built into a single string.
     let player_block = format!(
         "<@{}> - `{}`\nStatus: {}\n\n<@{}> - `{}`\nStatus: {}",
         game.player1.id, game.scores.p1, p1_status, game.player2.id, game.scores.p2, p2_status
     );
 
-    // Part 2: Game Log Block
+    // Part 2: The Game Log Block
     let log_block = if game.history.is_empty() {
-        "The duel has begun! Waiting for the first move.".to_string()
+        "The duel has begun! Make your move.".to_string()
     } else {
         game.history
             .iter()
@@ -74,7 +73,7 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
             .join("\n")
     };
 
-    // Part 3: Footer and final assembly
+    // Part 3: The Footer and Final Assembly
     let footer_text = if game.is_over() {
         let winner = if game.scores.p1 > game.scores.p2 {
             &game.player1
@@ -92,7 +91,7 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         format!("Round {} | {}", game.round, status)
     };
 
-    // The final description combines all parts in the correct visual order.
+    // The final description combines the blocks without a separator.
     CreateEmbed::new()
         .author(author)
         .color(if game.is_over() {
@@ -100,7 +99,7 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         } else {
             ACTIVE_COLOR
         })
-        .description(format!("{}\n\n---\n\n{}", player_block, log_block))
+        .description(format!("{}\n\n{}", player_block, log_block))
         .footer(CreateEmbedFooter::new(footer_text))
 }
 
@@ -318,7 +317,8 @@ pub async fn handle_move(
         game.p2_move = Some(player_move);
     }
 
-    if game.p1_move.is_some() && game.p2_move.is_some() {
+    let round_just_finished = game.p1_move.is_some() && game.p2_move.is_some();
+    if round_just_finished {
         game.process_round();
     }
 
