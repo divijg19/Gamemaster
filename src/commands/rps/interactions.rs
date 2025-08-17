@@ -16,38 +16,32 @@ const SUCCESS_COLOR: u32 = 0x00FF00;
 const ERROR_COLOR: u32 = 0xFF0000;
 const ACTIVE_COLOR: u32 = 0x5865F2;
 
-// FINAL REFINEMENT: The unused `bot_user` parameter has been removed.
 fn build_game_embed(game: &GameState) -> CreateEmbed {
+    // REFINEMENT: The author field is now clean, text-only as requested.
     let format_str = match game.format {
         super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
         super::state::DuelFormat::RaceTo(n) => format!("Race to {}", n),
     };
-    let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str))
-        .icon_url("https://i.imgur.com/KEngM4f.png");
+    let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
-    let p1_status = if let Some(last_round) = game.history.last() {
-        last_round.p1_move.to_emoji().to_string()
-    } else {
+    let p1_field_content = format!(
+        "Score: **{}**\nStatus: {}",
+        game.scores.p1,
         if game.p1_move.is_some() {
             "✅ Move Locked"
         } else {
             "… Waiting"
         }
-        .to_string()
-    };
-    let p2_status = if let Some(last_round) = game.history.last() {
-        last_round.p2_move.to_emoji().to_string()
-    } else {
+    );
+    let p2_field_content = format!(
+        "Score: **{}**\nStatus: {}",
+        game.scores.p2,
         if game.p2_move.is_some() {
             "✅ Move Locked"
         } else {
             "… Waiting"
         }
-        .to_string()
-    };
-
-    let p1_field_content = format!("Score: **{}**\nStatus: {}", game.scores.p1, p1_status);
-    let p2_field_content = format!("Score: **{}**\nStatus: {}", game.scores.p2, p2_status);
+    );
 
     let log_description = if game.history.is_empty() {
         "The duel has begun! Waiting for the first move.".to_string()
@@ -159,7 +153,6 @@ pub async fn handle_accept(
         }
     };
 
-    // FINAL REFINEMENT: The `bot_user` variable is no longer needed here.
     let embed = build_game_embed(&game);
     let components = vec![CreateActionRow::Buttons(vec![
         CreateButton::new(format!("rps_prompt_{}", interaction.message.id))
@@ -331,7 +324,6 @@ pub async fn handle_move(
 
     drop(games);
 
-    // FINAL REFINEMENT: The `bot_user` variable is no longer needed here.
     let embed = build_game_embed(&game_clone);
 
     let components = if is_over {
@@ -344,8 +336,15 @@ pub async fn handle_move(
         ])]
     };
 
-    let builder = EditMessage::new().embed(embed).components(components);
-    if let Err(e) = interaction.message.edit(&ctx.http, builder).await {
-        println!("Error editing game message: {:?}", e);
+    // FINAL, DEFINITIVE FIX: Fetch the original message by its ID and edit it directly.
+    if let Ok(mut original_message) = ctx
+        .http
+        .get_message(interaction.channel_id, game_message_id)
+        .await
+    {
+        let builder = EditMessage::new().embed(embed).components(components);
+        if let Err(e) = original_message.edit(&ctx.http, builder).await {
+            println!("Error editing game message: {:?}", e);
+        }
     }
 }
