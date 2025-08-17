@@ -17,7 +17,22 @@ const SUCCESS_COLOR: u32 = 0x00FF00;
 const ERROR_COLOR: u32 = 0xFF0000;
 const ACTIVE_COLOR: u32 = 0x5865F2;
 
-// --- DEFINITIVE UI REWRITE: This renderer builds a single description string for the final layout. ---
+fn build_live_content(game: &GameState) -> String {
+    if game.is_over() {
+        let winner = if game.scores.p1 > game.scores.p2 {
+            &game.player1
+        } else {
+            &game.player2
+        };
+        format!("<@{}> is the winner!", winner.id)
+    } else {
+        format!(
+            "[Round {}] <@{}> vs <@{}>",
+            game.round, game.player1.id, game.player2.id
+        )
+    }
+}
+
 fn build_game_embed(game: &GameState) -> CreateEmbed {
     let format_str = match game.format {
         super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
@@ -25,7 +40,29 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
     };
     let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
-    // Part 1: The Player Status Block with inward-facing scores.
+    let log_description = if game.history.is_empty() {
+        "The duel has begun! Make your move.".to_string()
+    } else {
+        game.history
+            .iter()
+            .enumerate()
+            .map(|(i, record)| {
+                let outcome_text = match &record.outcome {
+                    RoundOutcome::Tie => "Draw!".to_string(),
+                    RoundOutcome::Winner(id) => format!("<@{}> won!", id),
+                };
+                format!(
+                    "`{}.` {} vs {} — {}",
+                    i + 1,
+                    record.p1_move.to_emoji(),
+                    record.p2_move.to_emoji(),
+                    outcome_text
+                )
+            })
+            .collect::<Vec<String>>()
+            .join("\n")
+    };
+
     let (p1_status, p2_status) = if game.is_over() {
         if let Some(last_round) = game.history.last() {
             (
@@ -49,36 +86,15 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         (p1.to_string(), p2.to_string())
     };
 
-    let player_block = format!(
-        "{} `{}` vs `{}` {}\nStatus: {}\nStatus: {}",
-        game.player1.name, game.scores.p1, game.scores.p2, game.player2.name, p1_status, p2_status
+    let p1_field_content = format!(
+        "<@{}>\nScore: `{}`\nStatus: {}",
+        game.player1.id, game.scores.p1, p1_status
+    );
+    let p2_field_content = format!(
+        "<@{}>\nScore: `{}`\nStatus: {}",
+        game.player2.id, game.scores.p2, p2_status
     );
 
-    // Part 2: The Game Log Block
-    let log_block = if game.history.is_empty() {
-        "The duel has begun! Make your move.".to_string()
-    } else {
-        game.history
-            .iter()
-            .enumerate()
-            .map(|(i, record)| {
-                let outcome_text = match &record.outcome {
-                    RoundOutcome::Tie => "Draw!".to_string(),
-                    RoundOutcome::Winner(id) => format!("<@{}> won!", id),
-                };
-                format!(
-                    "`{}.` {} vs {} — {}",
-                    i + 1,
-                    record.p1_move.to_emoji(),
-                    record.p2_move.to_emoji(),
-                    outcome_text
-                )
-            })
-            .collect::<Vec<String>>()
-            .join("\n")
-    };
-
-    // Part 3: The Footer and Final Assembly
     let footer_text = if game.is_over() {
         let winner = if game.scores.p1 > game.scores.p2 {
             &game.player1
@@ -87,13 +103,7 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         };
         format!("{} is the winner!", winner.name)
     } else {
-        let status = match (game.p1_move, game.p2_move) {
-            (None, None) => "Waiting for both players...".to_string(),
-            (Some(_), None) => format!("Waiting for {}...", game.player2.name),
-            (None, Some(_)) => format!("Waiting for {}...", game.player1.name),
-            (Some(_), Some(_)) => "Processing round...".to_string(),
-        };
-        format!("Round {} | {}", game.round, status)
+        format!("Round {} | Waiting for moves...", game.round)
     };
 
     CreateEmbed::new()
@@ -103,7 +113,9 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         } else {
             ACTIVE_COLOR
         })
-        .description(format!("{}\n\n{}", player_block, log_block))
+        .field(&game.player1.name, p1_field_content, true)
+        .field(&game.player2.name, p2_field_content, true)
+        .description(log_description)
         .footer(CreateEmbedFooter::new(footer_text))
 }
 
@@ -166,6 +178,7 @@ pub async fn handle_accept(
         }
     };
 
+    let content = build_live_content(&game);
     let embed = build_game_embed(&game);
     let components = vec![CreateActionRow::Buttons(vec![
         CreateButton::new(format!("rps_prompt_{}", interaction.message.id))
@@ -173,7 +186,10 @@ pub async fn handle_accept(
             .style(ButtonStyle::Primary),
     ])];
 
-    let builder = EditMessage::new().embed(embed).components(components);
+    let builder = EditMessage::new()
+        .content(content)
+        .embed(embed)
+        .components(components);
     let _ = interaction.message.edit(&ctx.http, builder).await;
 }
 
@@ -205,20 +221,26 @@ pub async fn handle_decline(
             }
         ));
 
-        let score_header = format!(
-            "<@{}> `{}` vs `{}` <@{}>",
-            game.player1.id, game.scores.p1, game.scores.p2, game.player2.id
-        );
-        let status_block = "Status: —\nStatus: Declined".to_string();
-        let log_block = format!("The challenge was declined by <@{}>.", p2_id);
-
         let embed = CreateEmbed::new()
             .author(author)
             .color(ERROR_COLOR)
-            .description(format!(
-                "{}\n{}\n\n{}",
-                score_header, status_block, log_block
-            ));
+            .field(
+                &game.player1.name,
+                format!(
+                    "<@{}>\nScore: `{}`\nStatus: —",
+                    game.player1.id, game.scores.p1
+                ),
+                true,
+            )
+            .field(
+                &game.player2.name,
+                format!(
+                    "<@{}>\nScore: `{}`\nStatus: Declined",
+                    game.player2.id, game.scores.p2
+                ),
+                true,
+            )
+            .description(format!("The challenge was declined by <@{}>.", p2_id));
 
         let disabled_buttons = CreateActionRow::Buttons(vec![
             CreateButton::new("disabled_accept")
@@ -353,6 +375,7 @@ pub async fn handle_move(
         game_clone = game.clone();
     } // Write lock is dropped here
 
+    let content = build_live_content(&game_clone);
     let embed = build_game_embed(&game_clone);
 
     let components = if is_over {
@@ -370,7 +393,10 @@ pub async fn handle_move(
         .message(&ctx.http, game_message_id)
         .await
     {
-        let builder = EditMessage::new().embed(embed).components(components);
+        let builder = EditMessage::new()
+            .content(content)
+            .embed(embed)
+            .components(components);
         if let Err(e) = original_message.edit(&ctx.http, builder).await {
             println!("Error editing game message: {:?}", e);
         }
