@@ -18,14 +18,12 @@ const ACTIVE_COLOR: u32 = 0x5865F2;
 
 // --- FINAL UI REFINEMENT: The definitive "live game board" renderer. ---
 fn build_game_embed(game: &GameState) -> CreateEmbed {
-    // 1. The Author: Clean, thematic, and informative.
     let format_str = match game.format {
         super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
         super::state::DuelFormat::RaceTo(n) => format!("Race to {}", n),
     };
     let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
-    // 2. The Description: Now dedicated to the clean, historical game log.
     let log_description = if game.history.is_empty() {
         "The duel has begun! Waiting for the first move.".to_string()
     } else {
@@ -49,15 +47,12 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
             .join("\n")
     };
 
-    // 3. The Player Fields: Name and score are now elegantly combined in the field title.
     let (p1_status, p2_status) = if game.is_over() {
-        // A thoughtful final state: show the move that ended the game.
         (
             game.history.last().unwrap().p1_move.to_emoji().to_string(),
             game.history.last().unwrap().p2_move.to_emoji().to_string(),
         )
     } else {
-        // Game is in progress, show current action status.
         let p1 = if game.p1_move.is_some() {
             "✅ Move Locked"
         } else {
@@ -71,13 +66,13 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         (p1.to_string(), p2.to_string())
     };
 
-    let p1_field_title = format!("{} - {}", game.player1.name, game.scores.p1);
+    // REFINED: Field titles now use mentions and contain the score.
+    let p1_field_title = format!("<@{}> - `{}`", game.player1.id, game.scores.p1);
     let p1_field_content = format!("Status: {}", p1_status);
 
-    let p2_field_title = format!("{} - {}", game.player2.name, game.scores.p2);
+    let p2_field_title = format!("<@{}> - `{}`", game.player2.id, game.scores.p2);
     let p2_field_content = format!("Status: {}", p2_status);
 
-    // 4. The Footer: The primary, non-intrusive call to action.
     let footer_text = if game.is_over() {
         let winner = if game.scores.p1 > game.scores.p2 {
             &game.player1
@@ -95,6 +90,7 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         format!("Round {} | {}", game.round, status)
     };
 
+    // REFINED: The order is now Author -> Fields -> Description -> Footer for the ideal layout.
     CreateEmbed::new()
         .author(author)
         .color(if game.is_over() {
