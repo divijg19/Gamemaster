@@ -64,9 +64,7 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         (p1.to_string(), p2.to_string())
     };
 
-    let p1_field_content = format!("Score: `{}`\nStatus: {}", game.scores.p1, p1_status);
-    let p2_field_content = format!("Score: `{}`\nStatus: {}", game.scores.p2, p2_status);
-
+    // DEFINITIVE FIX: Applied the clippy suggestion to remove the redundant `let` binding.
     let footer_text = if game.is_over() {
         let winner = if game.scores.p1 > game.scores.p2 {
             &game.player1
@@ -75,7 +73,6 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         };
         format!("{} is the winner!", winner.name)
     } else {
-        
         match (game.p1_move, game.p2_move) {
             (None, None) => "Waiting for both players...".to_string(),
             (Some(_), None) => format!("Waiting for {}...", game.player2.name),
@@ -90,8 +87,13 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         } else {
             ACTIVE_COLOR
         })
-        .field(game.player1.name.clone(), p1_field_content, true)
-        .field(game.player2.name.clone(), p2_field_content, true)
+        .field(game.player1.name.clone(), p1_status, true)
+        .field(
+            "vs",
+            format!("`{}` - `{}`", game.scores.p1, game.scores.p2),
+            true,
+        )
+        .field(game.player2.name.clone(), p2_status, true)
         .description(log_description)
         .footer(CreateEmbedFooter::new(footer_text))
 }
@@ -231,9 +233,6 @@ pub async fn handle_move(
     parts: &[&str],
     active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
 ) {
-    // DEFINITIVE CHANGE: Defer the interaction immediately instead of sending an ephemeral reply.
-    // This acknowledges the button press and prevents an API error. The subsequent message edit
-    // provides the necessary visual feedback to the user.
     interaction.defer(&ctx.http).await.ok();
 
     let game_message_id = match parts.get(3).and_then(|id_str| id_str.parse::<u64>().ok()) {
@@ -251,7 +250,7 @@ pub async fn handle_move(
         let games = active_games.read().await;
         let game = match games.get(&game_message_id) {
             Some(g) => g,
-            None => return, // Game no longer exists, just stop.
+            None => return,
         };
 
         if interaction.user.id != game.player1.id && interaction.user.id != game.player2.id {
@@ -271,8 +270,6 @@ pub async fn handle_move(
             return;
         }
     }
-
-    // DEFINITIVE CHANGE: The ephemeral confirmation block has been removed from here.
 
     let mut round_processed = false;
     let is_over;
