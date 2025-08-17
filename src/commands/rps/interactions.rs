@@ -16,7 +16,7 @@ const SUCCESS_COLOR: u32 = 0x00FF00;
 const ERROR_COLOR: u32 = 0xFF0000;
 const ACTIVE_COLOR: u32 = 0x5865F2;
 
-// --- DEFINITIVE UI REWRITE: This renderer now uses inline fields for the final layout. ---
+// --- DEFINITIVE UI REWRITE: This renderer uses inline fields before the description for the final layout. ---
 fn build_game_embed(game: &GameState) -> CreateEmbed {
     let format_str = match game.format {
         super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),

@@ -67,21 +67,21 @@ pub async fn run(
 
     let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
-    // DEFINITIVE LAYOUT: Use inline fields for the side-by-side display.
+    // DEFINITIVE LAYOUT: Use inline fields for the side-by-side display, placed before the description.
     let embed = CreateEmbed::new()
         .author(author.clone())
         .color(PENDING_COLOR)
-        .description("A challenge has been issued!")
         .field(
             format!("<@{}> - `0`", msg.author.id),
             "Status: … Waiting",
-            true, // This 'true' is the key to the side-by-side layout.
+            true,
         )
         .field(
             format!("<@{}> - `0`", opponent.id),
             "Status: … Waiting",
-            true, // This 'true' makes the fields appear in columns.
+            true,
         )
+        .description("A challenge has been issued!")
         .footer(CreateEmbedFooter::new(format!(
             "{}, you have 30 seconds to respond.",
             opponent.name
@@ -116,12 +116,11 @@ pub async fn run(
 
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(30)).await;
-        if let Some(game) = active_games.write().await.remove(&game_msg.id)
-            && !game.accepted {
+        if let Some(game) = active_games.write().await.remove(&game_msg.id) {
+            if !game.accepted {
                 let embed = CreateEmbed::new()
                     .author(author)
                     .color(ERROR_COLOR)
-                    .description("The challenge was not accepted in time.")
                     .field(
                         format!("<@{}> - `{}`", game.player1.id, game.scores.p1),
                         "Status: —",
@@ -132,6 +131,7 @@ pub async fn run(
                         "Status: Did not respond",
                         true,
                     )
+                    .description("The challenge was not accepted in time.")
                     .footer(CreateEmbedFooter::new("Challenge expired."));
 
                 let disabled_buttons = CreateActionRow::Buttons(vec![
@@ -156,5 +156,6 @@ pub async fn run(
                     let _ = message.edit(&ctx_clone.http, builder).await;
                 }
             }
+        }
     });
 }
