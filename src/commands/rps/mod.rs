@@ -14,6 +14,7 @@ use crate::commands::rps::state::GameState;
 use interactions::*;
 pub use run::run;
 
+// DEFINITIVE FIX: This function now correctly accepts an owned Arc.
 pub async fn handle_interaction(
     ctx: &Context,
     interaction: &mut ComponentInteraction,

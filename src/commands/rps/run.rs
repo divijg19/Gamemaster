@@ -66,19 +66,19 @@ pub async fn run(
     }
 
     let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
-    let content = format!("[Round 1] <@{}> vs <@{}>", msg.author.id, opponent.id);
 
+    // DEFINITIVE LAYOUT: Use inline fields for the side-by-side display.
     let embed = CreateEmbed::new()
         .author(author.clone())
         .color(PENDING_COLOR)
         .field(
-            &msg.author.name,
-            format!("<@{}>\nScore: `0`\nStatus: … Waiting", msg.author.id),
+            format!("<@{}> - `0`", msg.author.id),
+            "Status: … Waiting",
             true,
         )
         .field(
-            &opponent.name,
-            format!("<@{}>\nScore: `0`\nStatus: … Waiting", opponent.id),
+            format!("<@{}> - `0`", opponent.id),
+            "Status: … Waiting",
             true,
         )
         .description("A challenge has been issued!")
@@ -96,10 +96,7 @@ pub async fn run(
             .style(ButtonStyle::Danger),
     ]);
 
-    let builder = CreateMessage::new()
-        .content(content)
-        .embed(embed)
-        .components(vec![buttons]);
+    let builder = CreateMessage::new().embed(embed).components(vec![buttons]);
     let game_msg = match msg.channel_id.send_message(&ctx.http, builder).await {
         Ok(msg) => msg,
         Err(e) => {
@@ -119,26 +116,19 @@ pub async fn run(
 
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(30)).await;
-        if let Some(game) = active_games.write().await.remove(&game_msg.id) {
-            if !game.accepted {
-                let content = "Challenge Expired".to_string();
+        if let Some(game) = active_games.write().await.remove(&game_msg.id)
+            && !game.accepted {
                 let embed = CreateEmbed::new()
                     .author(author)
                     .color(ERROR_COLOR)
                     .field(
-                        &game.player1.name,
-                        format!(
-                            "<@{}>\nScore: `{}`\nStatus: —",
-                            game.player1.id, game.scores.p1
-                        ),
+                        format!("<@{}> - `{}`", game.player1.id, game.scores.p1),
+                        "Status: —",
                         true,
                     )
                     .field(
-                        &game.player2.name,
-                        format!(
-                            "<@{}>\nScore: `{}`\nStatus: Did not respond",
-                            game.player2.id, game.scores.p2
-                        ),
+                        format!("<@{}> - `{}`", game.player2.id, game.scores.p2),
+                        "Status: Did not respond",
                         true,
                     )
                     .description("The challenge was not accepted in time.")
@@ -161,12 +151,10 @@ pub async fn run(
                     .await
                 {
                     let builder = EditMessage::new()
-                        .content(content)
                         .embed(embed)
                         .components(vec![disabled_buttons]);
                     let _ = message.edit(&ctx_clone.http, builder).await;
                 }
             }
-        }
     });
 }
