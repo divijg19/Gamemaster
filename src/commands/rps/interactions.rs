@@ -102,8 +102,8 @@ fn parse_id(s: &str) -> UserId {
 }
 
 async fn send_ephemeral_error(
-    ctx: &Context,
     interaction: &ComponentInteraction,
+    ctx: &Context,
     title: &str,
     description: &str,
 ) {
@@ -111,12 +111,10 @@ async fn send_ephemeral_error(
         .title(title)
         .description(description)
         .color(ERROR_COLOR);
-    let builder = CreateInteractionResponseMessage::new()
+    let builder = serenity::builder::CreateInteractionResponseFollowup::new()
         .embed(embed)
         .ephemeral(true);
-    let _ = interaction
-        .create_response(&ctx.http, CreateInteractionResponse::Message(builder))
-        .await;
+    let _ = interaction.create_followup(&ctx.http, builder).await;
 }
 
 pub async fn handle_accept(
@@ -127,13 +125,16 @@ pub async fn handle_accept(
 ) {
     let p2_id = parse_id(parts.get(3).unwrap_or(&""));
     if interaction.user.id != p2_id {
-        send_ephemeral_error(
-            ctx,
-            interaction,
-            "Not Your Duel",
-            "You cannot accept a challenge.",
-        )
-        .await;
+        let embed = CreateEmbed::new()
+            .title("Not Your Duel")
+            .description("You cannot accept this challenge.")
+            .color(ERROR_COLOR);
+        let builder = CreateInteractionResponseMessage::new()
+            .embed(embed)
+            .ephemeral(true);
+        let _ = interaction
+            .create_response(&ctx.http, CreateInteractionResponse::Message(builder))
+            .await;
         return;
     }
 
@@ -180,13 +181,16 @@ pub async fn handle_decline(
 ) {
     let p2_id = parse_id(parts.get(3).unwrap_or(&""));
     if interaction.user.id != p2_id {
-        send_ephemeral_error(
-            ctx,
-            interaction,
-            "Not Your Duel",
-            "You cannot decline a challenge.",
-        )
-        .await;
+        let embed = CreateEmbed::new()
+            .title("Not Your Duel")
+            .description("You cannot decline this challenge.")
+            .color(ERROR_COLOR);
+        let builder = CreateInteractionResponseMessage::new()
+            .embed(embed)
+            .ephemeral(true);
+        let _ = interaction
+            .create_response(&ctx.http, CreateInteractionResponse::Message(builder))
+            .await;
         return;
     }
     interaction.defer(&ctx.http).await.ok();
@@ -222,13 +226,16 @@ pub async fn handle_prompt(
 ) {
     if let Some(game) = active_games.read().await.get(&interaction.message.id) {
         if interaction.user.id != game.player1.id && interaction.user.id != game.player2.id {
-            send_ephemeral_error(
-                ctx,
-                interaction,
-                "Not Your Game",
-                "You are not a participant.",
-            )
-            .await;
+            let embed = CreateEmbed::new()
+                .title("Not Your Game")
+                .description("You are not a participant in this duel.")
+                .color(ERROR_COLOR);
+            let builder = CreateInteractionResponseMessage::new()
+                .embed(embed)
+                .ephemeral(true);
+            let _ = interaction
+                .create_response(&ctx.http, CreateInteractionResponse::Message(builder))
+                .await;
             return;
         }
         let embed = CreateEmbed::new()
@@ -239,7 +246,7 @@ pub async fn handle_prompt(
             ))
             .color(ACTIVE_COLOR);
         let buttons = CreateActionRow::Buttons(vec![
-            CreateButton::new(format!("rps_prompt_{}", interaction.message.id))
+            CreateButton::new(format!("rps_move_rock_{}", interaction.message.id))
                 .label("Rock")
                 .emoji('✊')
                 .style(ButtonStyle::Secondary),
@@ -268,6 +275,10 @@ pub async fn handle_move(
     parts: &[&str],
     active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
 ) {
+    // --- IDEOLOGICAL REFINEMENT: Defer immediately. ---
+    // This acknowledges the click without sending a message, preparing us to edit the original embed.
+    interaction.defer(&ctx.http).await.ok();
+
     let game_message_id = match parts.get(3).and_then(|id_str| id_str.parse::<u64>().ok()) {
         Some(id) => MessageId::new(id),
         None => return,
@@ -283,16 +294,14 @@ pub async fn handle_move(
     let game = match games.get_mut(&game_message_id) {
         Some(g) => g,
         None => {
-            let _ = interaction
-                .create_response(
-                    &ctx.http,
-                    CreateInteractionResponse::Message(
-                        CreateInteractionResponseMessage::new()
-                            .content("This game has expired.")
-                            .ephemeral(true),
-                    ),
-                )
-                .await;
+            // Since we deferred, we use a followup for this one-off error message.
+            send_ephemeral_error(
+                interaction,
+                ctx,
+                "Game Expired",
+                "This game is no longer active.",
+            )
+            .await;
             return;
         }
     };
@@ -301,10 +310,10 @@ pub async fn handle_move(
         || (interaction.user.id == game.player2.id && game.p2_move.is_some())
     {
         send_ephemeral_error(
-            ctx,
             interaction,
+            ctx,
             "Move Already Made",
-            "You have already selected a move for this round.",
+            "You have already selected a move.",
         )
         .await;
         return;
@@ -334,18 +343,17 @@ pub async fn handle_move(
         ])]
     };
 
-    // FINAL FIX: Use the correct `CreateInteractionResponseMessage` builder.
-    let builder = CreateInteractionResponseMessage::new()
-        .embed(embed)
-        .components(components);
-    if let Err(e) = interaction
-        .create_response(&ctx.http, CreateInteractionResponse::UpdateMessage(builder))
-        .await
-    {
-        println!("Error updating game message: {:?}", e);
-    }
-
     if is_over {
         games.remove(&game_message_id);
+    }
+
+    drop(games);
+
+    // This is now the one and only response, editing the original message.
+    let builder = EditInteractionResponse::new()
+        .embed(embed)
+        .components(components);
+    if let Err(e) = interaction.edit_response(&ctx.http, builder).await {
+        println!("Error editing game message: {:?}", e);
     }
 }
