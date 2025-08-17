@@ -17,11 +17,12 @@ use super::state::{DuelFormat, GameState};
 const PENDING_COLOR: u32 = 0xFFA500;
 const ERROR_COLOR: u32 = 0xFF0000;
 
+// DEFINITIVE FIX: The function now takes an owned Arc, not a reference.
 pub async fn run(
     ctx: &Context,
     msg: &Message,
     args: Vec<&str>,
-    active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
+    active_games: Arc<RwLock<HashMap<MessageId, GameState>>>,
 ) {
     let opponent = match msg.mentions.first() {
         Some(user) if user.id != msg.author.id => user,
@@ -31,6 +32,7 @@ pub async fn run(
                 .description("To start a duel, you must mention a valid opponent.")
                 .field("Example", "`!rps @username [-b 3]`", false)
                 .color(ERROR_COLOR);
+
             let builder = CreateMessage::new().embed(embed);
             let _ = msg.channel_id.send_message(&ctx.http, builder).await;
             return;
@@ -67,22 +69,17 @@ pub async fn run(
 
     let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
-    // DEFINITIVE REFINEMENT: Build the initial embed using the final field-based layout.
+    let player_block = format!(
+        "<@{}> - `{}`\nStatus: {}\n\n<@{}> - `{}`\nStatus: {}",
+        msg.author.id, 0, "… Waiting", opponent.id, 0, "… Waiting"
+    );
+
+    let log_block = "A challenge has been issued!".to_string();
+
     let embed = CreateEmbed::new()
         .author(author.clone())
         .color(PENDING_COLOR)
-        .field(
-            format!("<@{}> - `0`", msg.author.id),
-            "Status: … Waiting",
-            true, // inline = true
-        )
-        .field(
-            format!("<@{}> - `0`", opponent.id),
-            "Status: … Waiting",
-            true, // inline = true
-        )
-        .description("A challenge has been issued!")
-        // DEFINITIVE REFINEMENT: Use the opponent's name, as mentions do not work in footers.
+        .description(format!("{}\n\n{}", player_block, log_block))
         .footer(CreateEmbedFooter::new(format!(
             "{}, you have 30 seconds to respond.",
             opponent.name
@@ -113,28 +110,30 @@ pub async fn run(
     );
 
     active_games.write().await.insert(game_msg.id, game_state);
-    let games_clone = Arc::clone(active_games);
     let ctx_clone = ctx.clone();
 
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(30)).await;
-        let mut games = games_clone.write().await;
-        if let Some(game) = games.remove(&game_msg.id)
+
+        // DEFINITIVE FIX: 'active_games' is now an owned Arc that can be safely used here.
+        // We also combine the check and remove into a single, elegant operation.
+        if let Some(game) = active_games.write().await.remove(&game_msg.id)
             && !game.accepted {
+                let player_block = format!(
+                    "<@{}> - `{}`\nStatus: {}\n\n<@{}> - `{}`\nStatus: {}",
+                    game.player1.id,
+                    game.scores.p1,
+                    "—",
+                    game.player2.id,
+                    game.scores.p2,
+                    "Did not respond"
+                );
+                let log_block = "The challenge was not accepted in time.".to_string();
+
                 let embed = CreateEmbed::new()
                     .author(author)
                     .color(ERROR_COLOR)
-                    .field(
-                        format!("<@{}> - `{}`", game.player1.id, game.scores.p1),
-                        "Status: —",
-                        true,
-                    )
-                    .field(
-                        format!("<@{}> - `{}`", game.player2.id, game.scores.p2),
-                        "Status: Did not respond",
-                        true,
-                    )
-                    .description("The challenge was not accepted in time.")
+                    .description(format!("{}\n\n{}", player_block, log_block))
                     .footer(CreateEmbedFooter::new("Challenge expired."));
 
                 let disabled_buttons = CreateActionRow::Buttons(vec![

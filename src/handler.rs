@@ -90,7 +90,9 @@ impl EventHandler for Handler {
             Command::Ping => commands::ping::run(&ctx, &msg).await,
             Command::Prefix => commands::prefix::run(&ctx, &msg, &self.prefix, args_vec).await,
             // Pass the active_games state down to the command handler.
-            Command::Rps => commands::rps::run(&ctx, &msg, args_vec, &app_state.active_games).await,
+            Command::Rps => {
+                commands::rps::run(&ctx, &msg, args_vec, app_state.active_games.clone()).await
+            }
             // Handle the bread command
             //Command::Bread => {
             //    if let Err(why) = commands::bread::bread(&ctx, &msg).await {
