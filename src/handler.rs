@@ -2,21 +2,17 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use serenity::async_trait;
-use serenity::model::channel::Message;
-use serenity::model::gateway::Ready;
-use serenity::model::id::GuildId;
-use serenity::model::prelude::Interaction;
-use serenity::prelude::*;
+use serenity::client::Context;
+use serenity::model::{channel::Message, gateway::Ready, id::GuildId, prelude::Interaction};
+use serenity::prelude::EventHandler;
 use tokio::sync::RwLock;
 
-// AppState is now brought into scope to be retrieved from the context.
 use crate::{AppState, commands};
 
 enum Command {
     Ping,
     Prefix,
     Rps,
-    //Bread,
     Unknown,
 }
 
@@ -27,7 +23,6 @@ impl FromStr for Command {
             "ping" => Ok(Command::Ping),
             "prefix" => Ok(Command::Prefix),
             "rps" => Ok(Command::Rps),
-            //"bread" => Ok(Command::Bread),
             _ => Ok(Command::Unknown),
         }
     }
@@ -42,7 +37,6 @@ pub struct Handler {
 impl EventHandler for Handler {
     async fn interaction_create(&self, ctx: Context, mut interaction: Interaction) {
         if let Interaction::Component(component) = &mut interaction {
-            // Get the application state from the context.
             let app_state = {
                 let data = ctx.data.read().await;
                 data.get::<AppState>()
@@ -52,8 +46,8 @@ impl EventHandler for Handler {
 
             let command_family = component.data.custom_id.split('_').next().unwrap_or("");
             if command_family == "rps" {
-                // Pass the active_games state down to the interaction handler.
-                commands::rps::handle_interaction(&ctx, component, &app_state.active_games).await;
+                commands::rps::handle_interaction(&ctx, component, app_state.active_games.clone())
+                    .await;
             }
         }
     }
@@ -68,6 +62,7 @@ impl EventHandler for Handler {
             return;
         }
 
+        // DEFINITIVE FIX: Corrected the typo from `...` to `..`
         let command_body = &msg.content[prefix_string.len()..];
         let mut args = command_body.split_whitespace();
         let command_str = match args.next() {
@@ -75,7 +70,6 @@ impl EventHandler for Handler {
             None => return,
         };
 
-        // Get the application state from the context. This will be needed for stateful commands.
         let app_state = {
             let data = ctx.data.read().await;
             data.get::<AppState>()
@@ -88,17 +82,12 @@ impl EventHandler for Handler {
 
         match command {
             Command::Ping => commands::ping::run(&ctx, &msg).await,
-            Command::Prefix => commands::prefix::run(&ctx, &msg, &self.prefix, args_vec).await,
-            // Pass the active_games state down to the command handler.
+            Command::Prefix => {
+                commands::prefix::run(&ctx, &msg, self.prefix.clone(), args_vec).await
+            }
             Command::Rps => {
                 commands::rps::run(&ctx, &msg, args_vec, app_state.active_games.clone()).await
             }
-            // Handle the bread command
-            //Command::Bread => {
-            //    if let Err(why) = commands::bread::bread(&ctx, &msg).await {
-            //        println!("Error executing bread command: {:?}", why);
-            //    }
-            //}
             Command::Unknown => {}
         }
     }

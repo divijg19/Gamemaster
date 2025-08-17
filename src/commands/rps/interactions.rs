@@ -16,6 +16,23 @@ const SUCCESS_COLOR: u32 = 0x00FF00;
 const ERROR_COLOR: u32 = 0xFF0000;
 const ACTIVE_COLOR: u32 = 0x5865F2;
 
+// The new helper function to build the live content string.
+fn build_live_content(game: &GameState) -> String {
+    if game.is_over() {
+        let winner = if game.scores.p1 > game.scores.p2 {
+            &game.player1
+        } else {
+            &game.player2
+        };
+        format!("<@{}> is the winner!", winner.id)
+    } else {
+        format!(
+            "[Round {}] <@{}> vs <@{}>",
+            game.round, game.player1.id, game.player2.id
+        )
+    }
+}
+
 fn build_game_embed(game: &GameState) -> CreateEmbed {
     let format_str = match game.format {
         super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
@@ -23,10 +40,28 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
     };
     let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
-    let score_header = format!(
-        "<@{}> `{}` vs `{}` <@{}>",
-        game.player1.id, game.scores.p1, game.scores.p2, game.player2.id
-    );
+    let log_description = if game.history.is_empty() {
+        "The duel has begun! Make your move.".to_string()
+    } else {
+        game.history
+            .iter()
+            .enumerate()
+            .map(|(i, record)| {
+                let outcome_text = match &record.outcome {
+                    RoundOutcome::Tie => "Draw!".to_string(),
+                    RoundOutcome::Winner(id) => format!("<@{}> won!", id),
+                };
+                format!(
+                    "`{}.` {} vs {} — {}",
+                    i + 1,
+                    record.p1_move.to_emoji(),
+                    record.p2_move.to_emoji(),
+                    outcome_text
+                )
+            })
+            .collect::<Vec<String>>()
+            .join("\n")
+    };
 
     let (p1_status, p2_status) = if game.is_over() {
         if let Some(last_round) = game.history.last() {
@@ -49,30 +84,6 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
             "… Waiting"
         };
         (p1.to_string(), p2.to_string())
-    };
-    let status_block = format!("Status: {}\nStatus: {}", p1_status, p2_status);
-
-    let log_block = if game.history.is_empty() {
-        "The duel has begun! Make your move.".to_string()
-    } else {
-        game.history
-            .iter()
-            .enumerate()
-            .map(|(i, record)| {
-                let outcome_text = match &record.outcome {
-                    RoundOutcome::Tie => "Draw!".to_string(),
-                    RoundOutcome::Winner(id) => format!("<@{}> won!", id),
-                };
-                format!(
-                    "`{}.` {} vs {} — {}",
-                    i + 1,
-                    record.p1_move.to_emoji(),
-                    record.p2_move.to_emoji(),
-                    outcome_text
-                )
-            })
-            .collect::<Vec<String>>()
-            .join("\n")
     };
 
     let footer_text = if game.is_over() {
@@ -99,10 +110,17 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         } else {
             ACTIVE_COLOR
         })
-        .description(format!(
-            "{}\n{}\n\n{}",
-            score_header, status_block, log_block
-        ))
+        .field(
+            format!("<@{}>", game.player1.id),
+            format!("Score: `{}`\nStatus: {}", game.scores.p1, p1_status),
+            true,
+        )
+        .field(
+            format!("<@{}>", game.player2.id),
+            format!("Score: `{}`\nStatus: {}", game.scores.p2, p2_status),
+            true,
+        )
+        .description(log_description)
         .footer(CreateEmbedFooter::new(footer_text))
 }
 
@@ -151,17 +169,21 @@ pub async fn handle_accept(
                 g.clone()
             }
             None => {
-                let embed = CreateEmbed::new()
-                    .title("Challenge Expired")
-                    .description("This duel is no longer active.")
-                    .color(ERROR_COLOR);
-                let builder = EditMessage::new().embed(embed).components(vec![]);
+                let builder = EditMessage::new()
+                    .content("Challenge Expired")
+                    .embed(
+                        CreateEmbed::new()
+                            .description("This duel is no longer active.")
+                            .color(ERROR_COLOR),
+                    )
+                    .components(vec![]);
                 let _ = interaction.message.edit(&ctx.http, builder).await;
                 return;
             }
         }
     };
 
+    let content = build_live_content(&game);
     let embed = build_game_embed(&game);
     let components = vec![CreateActionRow::Buttons(vec![
         CreateButton::new(format!("rps_prompt_{}", interaction.message.id))
@@ -169,7 +191,10 @@ pub async fn handle_accept(
             .style(ButtonStyle::Primary),
     ])];
 
-    let builder = EditMessage::new().embed(embed).components(components);
+    let builder = EditMessage::new()
+        .content(content)
+        .embed(embed)
+        .components(components);
     let _ = interaction.message.edit(&ctx.http, builder).await;
 }
 
@@ -192,28 +217,28 @@ pub async fn handle_decline(
     }
 
     if let Some(game) = active_games.write().await.remove(&interaction.message.id) {
-        let format_str = match game.format {
-            super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
-            super::state::DuelFormat::RaceTo(n) => format!("Race to {}", n),
-        };
-        let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
-
-        let score_header = format!(
-            "<@{}> `{}` vs `{}` <@{}>",
-            game.player1.id, game.scores.p1, game.scores.p2, game.player2.id
-        );
-        // CLIPPY FIX: Replaced useless format! with .to_string()
-        let status_block = "Status: —\nStatus: Declined".to_string();
-        let log_block = format!("The challenge was declined by <@{}>.", p2_id);
-
+        let content = "Challenge Declined".to_string();
+        let author = CreateEmbedAuthor::new(format!(
+            "RPS | {}",
+            match game.format {
+                super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
+                super::state::DuelFormat::RaceTo(n) => format!("Race to {}", n),
+            }
+        ));
         let embed = CreateEmbed::new()
             .author(author)
             .color(ERROR_COLOR)
-            .description(format!(
-                "{}\n{}\n\n{}",
-                score_header, status_block, log_block
-            ));
-
+            .field(
+                format!("<@{}>", game.player1.id),
+                format!("Score: `{}`\nStatus: —", game.scores.p1),
+                true,
+            )
+            .field(
+                format!("<@{}>", game.player2.id),
+                format!("Score: `{}`\nStatus: Declined", game.scores.p2),
+                true,
+            )
+            .description(format!("The challenge was declined by <@{}>.", p2_id));
         let disabled_buttons = CreateActionRow::Buttons(vec![
             CreateButton::new("disabled_accept")
                 .label("Accept")
@@ -225,6 +250,7 @@ pub async fn handle_decline(
                 .disabled(true),
         ]);
         let builder = EditMessage::new()
+            .content(content)
             .embed(embed)
             .components(vec![disabled_buttons]);
         let _ = interaction.message.edit(&ctx.http, builder).await;
@@ -345,8 +371,8 @@ pub async fn handle_move(
 
     drop(games);
 
+    let content = build_live_content(&game_clone);
     let embed = build_game_embed(&game_clone);
-
     let components = if is_over {
         vec![]
     } else {
@@ -362,7 +388,10 @@ pub async fn handle_move(
         .message(&ctx.http, game_message_id)
         .await
     {
-        let builder = EditMessage::new().embed(embed).components(components);
+        let builder = EditMessage::new()
+            .content(content)
+            .embed(embed)
+            .components(components);
         if let Err(e) = original_message.edit(&ctx.http, builder).await {
             println!("Error editing game message: {:?}", e);
         }

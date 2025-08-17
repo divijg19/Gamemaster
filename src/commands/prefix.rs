@@ -24,7 +24,7 @@ fn get_guild_info_from_cache(ctx: &Context, msg: &Message) -> Option<GuildInfo> 
 }
 
 // The main function for the `prefix` command.
-pub async fn run(ctx: &Context, msg: &Message, prefix: &Arc<RwLock<String>>, args: Vec<&str>) {
+pub async fn run(ctx: &Context, msg: &Message, prefix: Arc<RwLock<String>>, args: Vec<&str>) {
     let guild_info = match get_guild_info_from_cache(ctx, msg) {
         Some(info) => info,
         None => {
