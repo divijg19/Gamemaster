@@ -1,3 +1,4 @@
+use serenity::model::id::UserId;
 use serenity::model::user::User;
 use std::sync::Arc;
 
@@ -11,7 +12,7 @@ pub enum Move {
 impl Move {
     pub fn to_emoji(self) -> &'static str {
         match self {
-            Move::Rock => "✊",
+            Move::Rock => "🤜",
             Move::Paper => "✋",
             Move::Scissors => "✌️",
         }
@@ -24,20 +25,29 @@ pub enum DuelFormat {
     RaceTo(u32),
 }
 
+// A thoughtful replacement for the ambiguous (u32, u32) tuple.
 #[derive(Clone, Copy, Debug)]
 pub struct Scores {
     pub p1: u32,
     pub p2: u32,
 }
 
-// CORRECTED: The enum no longer has a lifetime. It now owns the winner's data
-// by cloning the Arc, which is a cheap operation.
-#[derive(Debug, Clone)]
-pub enum RoundOutcome {
-    Tie,
-    Winner(Arc<User>),
+// A new struct to immutably store the result of a single round for the history log.
+#[derive(Clone, Debug)]
+pub struct RoundRecord {
+    pub p1_move: Move,
+    pub p2_move: Move,
+    pub outcome: RoundOutcome,
 }
 
+// The outcome now stores the UserId of the winner for easy display.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RoundOutcome {
+    Tie,
+    Winner(UserId),
+}
+
+// The GameState now includes a history of all completed rounds.
 #[derive(Clone)]
 pub struct GameState {
     pub player1: Arc<User>,
@@ -48,6 +58,7 @@ pub struct GameState {
     pub format: DuelFormat,
     pub scores: Scores,
     pub round: u32,
+    pub history: Vec<RoundRecord>,
 }
 
 impl GameState {
@@ -61,6 +72,7 @@ impl GameState {
             format,
             scores: Scores { p1: 0, p2: 0 },
             round: 1,
+            history: Vec::new(),
         }
     }
 
@@ -76,7 +88,9 @@ impl GameState {
         self.scores.p1 >= target || self.scores.p2 >= target
     }
 
-    pub fn process_round(&mut self) -> Option<RoundOutcome> {
+    // This is now the single source of truth for game logic. It processes moves,
+    // updates scores, and records the round in history all at once.
+    pub fn process_round(&mut self) {
         if let (Some(p1m), Some(p2m)) = (self.p1_move, self.p2_move) {
             let outcome = match (p1m, p2m) {
                 (u, b) if u == b => RoundOutcome::Tie,
@@ -84,23 +98,24 @@ impl GameState {
                 | (Move::Paper, Move::Rock)
                 | (Move::Scissors, Move::Paper) => {
                     self.scores.p1 += 1;
-                    // CORRECTED: Clone the Arc to give ownership to the outcome.
-                    RoundOutcome::Winner(self.player1.clone())
+                    RoundOutcome::Winner(self.player1.id)
                 }
                 _ => {
                     self.scores.p2 += 1;
-                    RoundOutcome::Winner(self.player2.clone())
+                    RoundOutcome::Winner(self.player2.id)
                 }
             };
-            Some(outcome)
-        } else {
-            None
-        }
-    }
 
-    pub fn prepare_for_next_round(&mut self) {
-        self.p1_move = None;
-        self.p2_move = None;
-        self.round += 1;
+            self.history.push(RoundRecord {
+                p1_move: p1m,
+                p2_move: p2m,
+                outcome,
+            });
+
+            // Prepare for next round immediately after processing
+            self.p1_move = None;
+            self.p2_move = None;
+            self.round += 1;
+        }
     }
 }

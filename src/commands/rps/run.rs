@@ -119,8 +119,8 @@ pub async fn run(
 
         let should_remove = games.get(&game_msg.id).is_some_and(|g| !g.accepted);
 
-        if should_remove {
-            if let Some(game) = games.remove(&game_msg.id) {
+        if should_remove
+            && let Some(game) = games.remove(&game_msg.id) {
                 let embed = CreateEmbed::new()
                     .author(author)
                     .title("Challenge Expired")
@@ -151,6 +151,5 @@ pub async fn run(
                     let _ = message.edit(&ctx_clone.http, builder).await;
                 }
             }
-        }
     });
 }

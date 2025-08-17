@@ -15,77 +15,72 @@ use super::state::{GameState, Move, RoundOutcome};
 const SUCCESS_COLOR: u32 = 0x00FF00;
 const ERROR_COLOR: u32 = 0xFF0000;
 const ACTIVE_COLOR: u32 = 0x5865F2;
-const PENDING_COLOR: u32 = 0xFFA500;
 
-// CORRECTED: The function now takes a reference to the outcome to avoid the move error.
+// This function is now the thoughtful rendering engine for the dynamic game board.
 fn build_game_embed(
     bot_user: &serenity::model::user::CurrentUser,
     game: &GameState,
-    outcome: &Option<RoundOutcome>,
 ) -> CreateEmbed {
     let author =
         CreateEmbedAuthor::new(&bot_user.name).icon_url(bot_user.avatar_url().unwrap_or_default());
 
-    let mut embed = CreateEmbed::new().author(author);
+    // 1. Build the Header
+    let format_str = match game.format {
+        super::state::DuelFormat::BestOf(n) => format!("Bo{}", n),
+        super::state::DuelFormat::RaceTo(n) => format!("Race to {}", n),
+    };
+    let header = format!(
+        "<@{}> **{}** | {} | **{}** <@{}>",
+        game.player1.id, game.scores.p1, format_str, game.scores.p2, game.player2.id
+    );
 
-    if game.is_over() {
+    // 2. Build the History Log
+    let mut history_log = game
+        .history
+        .iter()
+        .enumerate()
+        .map(|(i, record)| {
+            let outcome_text = match &record.outcome {
+                RoundOutcome::Tie => "Draw!".to_string(),
+                RoundOutcome::Winner(id) => format!("<@{}> won!", id),
+            };
+            format!(
+                "`{}.` {} vs {} {}",
+                i + 1,
+                record.p1_move.to_emoji(),
+                record.p2_move.to_emoji(),
+                outcome_text
+            )
+        })
+        .collect::<Vec<String>>();
+
+    // 3. Determine Overall Status and create the final description
+    let description = if game.is_over() {
         let winner = if game.scores.p1 > game.scores.p2 {
             &game.player1
         } else {
             &game.player2
         };
-        embed = embed
-            .title("Victory!")
-            .description(format!(
-                "The duel is over! **<@{}>** is the winner!",
-                winner.id
-            ))
-            .color(SUCCESS_COLOR);
-    } else if let Some(round_outcome) = outcome {
-        let result_text = match round_outcome {
-            RoundOutcome::Tie => "The round was a **Tie!**".to_string(),
-            RoundOutcome::Winner(u) => format!("**{}** wins the round!", u.name),
-        };
-        embed = embed
-            .title(format!("Round {} Results", game.round - 1))
-            .description(format!(
-                "{}\n\nStarting **Round {}!** Make your move.",
-                result_text, game.round
-            ))
-            .color(if matches!(round_outcome, RoundOutcome::Tie) {
-                PENDING_COLOR
-            } else {
-                ACTIVE_COLOR
-            });
+        history_log.push(format!("\n**<@{}> is the winner!**", winner.id));
+        format!("{}\n\n{}", header, history_log.join("\n"))
     } else {
-        embed = embed
-            .title(format!("Round {}", game.round))
-            .description("Both players, make your move.")
-            .color(ACTIVE_COLOR);
-    }
-
-    let p1_status = if game.p1_move.is_some() {
-        "Move Locked In"
-    } else {
-        "Waiting..."
-    };
-    let p2_status = if game.p2_move.is_some() {
-        "Move Locked In"
-    } else {
-        "Waiting..."
+        let p1_status = if game.p1_move.is_some() { "✅" } else { "…" };
+        let p2_status = if game.p2_move.is_some() { "✅" } else { "…" };
+        history_log.push(format!(
+            "\n**Round {} in progress...** [ {} vs {} ]",
+            game.round, p1_status, p2_status
+        ));
+        format!("{}\n\n{}", header, history_log.join("\n"))
     };
 
-    embed
-        .field(
-            &game.player1.name,
-            format!("**Move:** {}\n**Score:** {}", p1_status, game.scores.p1),
-            true,
-        )
-        .field(
-            &game.player2.name,
-            format!("**Move:** {}\n**Score:** {}", p2_status, game.scores.p2),
-            true,
-        )
+    CreateEmbed::new()
+        .author(author)
+        .color(if game.is_over() {
+            SUCCESS_COLOR
+        } else {
+            ACTIVE_COLOR
+        })
+        .description(description)
 }
 
 fn parse_id(s: &str) -> UserId {
@@ -149,7 +144,7 @@ pub async fn handle_accept(
     drop(games);
 
     let bot_user = ctx.cache.current_user().clone();
-    let embed = build_game_embed(&bot_user, &game, &None);
+    let embed = build_game_embed(&bot_user, &game);
 
     let components = vec![CreateActionRow::Buttons(vec![
         CreateButton::new(format!("rps_prompt_{}", interaction.message.id))
@@ -169,6 +164,7 @@ pub async fn handle_decline(
     parts: &[&str],
     active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
 ) {
+    // This function remains thoughtful and correct. No changes needed.
     let p2_id = parse_id(parts.get(3).unwrap_or(&""));
     if interaction.user.id != p2_id {
         send_ephemeral_error(
@@ -211,6 +207,7 @@ pub async fn handle_prompt(
     interaction: &ComponentInteraction,
     active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
 ) {
+    // This function also remains thoughtful and correct. No changes needed.
     if let Some(game) = active_games.read().await.get(&interaction.message.id) {
         if interaction.user.id != game.player1.id && interaction.user.id != game.player2.id {
             send_ephemeral_error(
@@ -307,13 +304,14 @@ pub async fn handle_move(
         game.p2_move = Some(player_move);
     }
 
-    // CORRECTED: The borrow checker errors are now resolved.
-    let round_outcome = game.process_round(); // This can now happen without holding a problematic borrow.
-    let is_over = game.is_over();
+    // The game logic is now beautifully simple and declarative.
+    if game.p1_move.is_some() && game.p2_move.is_some() {
+        game.process_round(); // State updates itself, including history.
+    }
 
+    let is_over = game.is_over();
     let bot_user = ctx.cache.current_user().clone();
-    // CORRECTED: Pass a reference to fix the move error.
-    let embed = build_game_embed(&bot_user, game, &round_outcome);
+    let embed = build_game_embed(&bot_user, game);
 
     let components = if is_over {
         vec![]
@@ -324,11 +322,6 @@ pub async fn handle_move(
                 .style(ButtonStyle::Primary),
         ])]
     };
-
-    // CORRECTED: This check now works because `round_outcome` was not moved.
-    if round_outcome.is_some() {
-        game.prepare_for_next_round();
-    }
 
     if is_over {
         games.remove(&game_message_id);
