@@ -8,7 +8,7 @@ use serenity::builder::{
 };
 use serenity::model::application::ButtonStyle;
 use serenity::model::channel::Message;
-use serenity::model::id::MessageId; // Keep this import
+use serenity::model::id::MessageId;
 use serenity::prelude::*;
 use tokio::sync::RwLock;
 
@@ -17,7 +17,6 @@ use super::state::{DuelFormat, GameState};
 const PENDING_COLOR: u32 = 0xFFA500;
 const ERROR_COLOR: u32 = 0xFF0000;
 
-// DEFINITIVE FIX: Corrected the HashMap key type from `Message.id` to `MessageId`.
 pub async fn run(
     ctx: &Context,
     msg: &Message,
@@ -68,22 +67,18 @@ pub async fn run(
 
     let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
-    let content = format!("[Round 1] <@{}> vs <@{}>", msg.author.id, opponent.id);
+    // DEFINITIVE LAYOUT: Build the initial state within the description field.
+    let score_header = format!("<@{}> `{}` vs `{}` <@{}>", msg.author.id, 0, 0, opponent.id);
+    let status_block = "Status: … Waiting\nStatus: … Waiting".to_string();
+    let log_block = "A challenge has been issued!".to_string();
 
     let embed = CreateEmbed::new()
         .author(author.clone())
         .color(PENDING_COLOR)
-        .field(
-            format!("<@{}>", msg.author.id),
-            "Score: `0`\nStatus: … Waiting",
-            true,
-        )
-        .field(
-            format!("<@{}>", opponent.id),
-            "Score: `0`\nStatus: … Waiting",
-            true,
-        )
-        .description("A challenge has been issued!")
+        .description(format!(
+            "{}\n{}\n\n{}",
+            score_header, status_block, log_block
+        ))
         .footer(CreateEmbedFooter::new(format!(
             "{}, you have 30 seconds to respond.",
             opponent.name
@@ -98,10 +93,7 @@ pub async fn run(
             .style(ButtonStyle::Danger),
     ]);
 
-    let builder = CreateMessage::new()
-        .content(content)
-        .embed(embed)
-        .components(vec![buttons]);
+    let builder = CreateMessage::new().embed(embed).components(vec![buttons]);
     let game_msg = match msg.channel_id.send_message(&ctx.http, builder).await {
         Ok(msg) => msg,
         Err(e) => {
@@ -121,50 +113,45 @@ pub async fn run(
 
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(30)).await;
-
-        // CLIPPY FIX: Collapsed the `if` statement for better readability.
         if let Some(game) = active_games.write().await.remove(&game_msg.id)
-            && !game.accepted
-        {
-            let content = "Challenge Expired".to_string();
-            let embed = CreateEmbed::new()
-                .author(author)
-                .color(ERROR_COLOR)
-                .field(
-                    format!("<@{}>", game.player1.id),
-                    format!("Score: `{}`\nStatus: —", game.scores.p1),
-                    true,
-                )
-                .field(
-                    format!("<@{}>", game.player2.id),
-                    format!("Score: `{}`\nStatus: Did not respond", game.scores.p2),
-                    true,
-                )
-                .description("The challenge was not accepted in time.")
-                .footer(CreateEmbedFooter::new("Challenge expired."));
+            && !game.accepted {
+                let score_header = format!(
+                    "<@{}> `{}` vs `{}` <@{}>",
+                    game.player1.id, game.scores.p1, game.scores.p2, game.player2.id
+                );
+                let status_block = "Status: —\nStatus: Did not respond".to_string();
+                let log_block = "The challenge was not accepted in time.".to_string();
 
-            let disabled_buttons = CreateActionRow::Buttons(vec![
-                CreateButton::new("disabled_accept")
-                    .label("Accept")
-                    .style(ButtonStyle::Success)
-                    .disabled(true),
-                CreateButton::new("disabled_decline")
-                    .label("Decline")
-                    .style(ButtonStyle::Danger)
-                    .disabled(true),
-            ]);
+                let embed = CreateEmbed::new()
+                    .author(author)
+                    .color(ERROR_COLOR)
+                    .description(format!(
+                        "{}\n{}\n\n{}",
+                        score_header, status_block, log_block
+                    ))
+                    .footer(CreateEmbedFooter::new("Challenge expired."));
 
-            if let Ok(mut message) = game_msg
-                .channel_id
-                .message(&ctx_clone.http, game_msg.id)
-                .await
-            {
-                let builder = EditMessage::new()
-                    .content(content)
-                    .embed(embed)
-                    .components(vec![disabled_buttons]);
-                let _ = message.edit(&ctx_clone.http, builder).await;
+                let disabled_buttons = CreateActionRow::Buttons(vec![
+                    CreateButton::new("disabled_accept")
+                        .label("Accept")
+                        .style(ButtonStyle::Success)
+                        .disabled(true),
+                    CreateButton::new("disabled_decline")
+                        .label("Decline")
+                        .style(ButtonStyle::Danger)
+                        .disabled(true),
+                ]);
+
+                if let Ok(mut message) = game_msg
+                    .channel_id
+                    .message(&ctx_clone.http, game_msg.id)
+                    .await
+                {
+                    let builder = EditMessage::new()
+                        .embed(embed)
+                        .components(vec![disabled_buttons]);
+                    let _ = message.edit(&ctx_clone.http, builder).await;
+                }
             }
-        }
     });
 }

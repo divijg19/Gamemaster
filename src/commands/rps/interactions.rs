@@ -17,7 +17,7 @@ const SUCCESS_COLOR: u32 = 0x00FF00;
 const ERROR_COLOR: u32 = 0xFF0000;
 const ACTIVE_COLOR: u32 = 0x5865F2;
 
-// --- DEFINITIVE UI REWRITE: This renderer uses inline fields before the description for the final layout. ---
+// --- DEFINITIVE UI REWRITE: This renderer builds a single description string for the final layout. ---
 fn build_game_embed(game: &GameState) -> CreateEmbed {
     let format_str = match game.format {
         super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
@@ -25,29 +25,7 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
     };
     let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
-    let log_description = if game.history.is_empty() {
-        "The duel has begun! Make your move.".to_string()
-    } else {
-        game.history
-            .iter()
-            .enumerate()
-            .map(|(i, record)| {
-                let outcome_text = match &record.outcome {
-                    RoundOutcome::Tie => "Draw!".to_string(),
-                    RoundOutcome::Winner(id) => format!("<@{}> won!", id),
-                };
-                format!(
-                    "`{}.` {} vs {} — {}",
-                    i + 1,
-                    record.p1_move.to_emoji(),
-                    record.p2_move.to_emoji(),
-                    outcome_text
-                )
-            })
-            .collect::<Vec<String>>()
-            .join("\n")
-    };
-
+    // Part 1: The Player Status Block with inward-facing scores.
     let (p1_status, p2_status) = if game.is_over() {
         if let Some(last_round) = game.history.last() {
             (
@@ -71,12 +49,36 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         (p1.to_string(), p2.to_string())
     };
 
-    let p1_field_title = format!("<@{}>", game.player1.id);
-    let p1_field_content = format!("Score: `{}`\nStatus: {}", game.scores.p1, p1_status);
+    let player_block = format!(
+        "{} `{}` vs `{}` {}\nStatus: {}\nStatus: {}",
+        game.player1.name, game.scores.p1, game.scores.p2, game.player2.name, p1_status, p2_status
+    );
 
-    let p2_field_title = format!("<@{}>", game.player2.id);
-    let p2_field_content = format!("Score: `{}`\nStatus: {}", game.scores.p2, p2_status);
+    // Part 2: The Game Log Block
+    let log_block = if game.history.is_empty() {
+        "The duel has begun! Make your move.".to_string()
+    } else {
+        game.history
+            .iter()
+            .enumerate()
+            .map(|(i, record)| {
+                let outcome_text = match &record.outcome {
+                    RoundOutcome::Tie => "Draw!".to_string(),
+                    RoundOutcome::Winner(id) => format!("<@{}> won!", id),
+                };
+                format!(
+                    "`{}.` {} vs {} — {}",
+                    i + 1,
+                    record.p1_move.to_emoji(),
+                    record.p2_move.to_emoji(),
+                    outcome_text
+                )
+            })
+            .collect::<Vec<String>>()
+            .join("\n")
+    };
 
+    // Part 3: The Footer and Final Assembly
     let footer_text = if game.is_over() {
         let winner = if game.scores.p1 > game.scores.p2 {
             &game.player1
@@ -101,9 +103,7 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         } else {
             ACTIVE_COLOR
         })
-        .field(p1_field_title, p1_field_content, true)
-        .field(p2_field_title, p2_field_content, true)
-        .description(log_description)
+        .description(format!("{}\n\n{}", player_block, log_block))
         .footer(CreateEmbedFooter::new(footer_text))
 }
 
@@ -152,11 +152,14 @@ pub async fn handle_accept(
                 g.clone()
             }
             None => {
-                let embed = CreateEmbed::new()
-                    .title("Challenge Expired")
-                    .description("This duel is no longer active.")
-                    .color(ERROR_COLOR);
-                let builder = EditMessage::new().embed(embed).components(vec![]);
+                let builder = EditMessage::new()
+                    .content("Challenge Expired")
+                    .embed(
+                        CreateEmbed::new()
+                            .description("This duel is no longer active.")
+                            .color(ERROR_COLOR),
+                    )
+                    .components(vec![]);
                 let _ = interaction.message.edit(&ctx.http, builder).await;
                 return;
             }
@@ -193,26 +196,29 @@ pub async fn handle_decline(
     }
 
     if let Some(game) = active_games.write().await.remove(&interaction.message.id) {
-        let format_str = match game.format {
-            super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
-            super::state::DuelFormat::RaceTo(n) => format!("Race to {}", n),
-        };
-        let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
+        let content = "Challenge Declined".to_string();
+        let author = CreateEmbedAuthor::new(format!(
+            "RPS | {}",
+            match game.format {
+                super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
+                super::state::DuelFormat::RaceTo(n) => format!("Race to {}", n),
+            }
+        ));
+
+        let score_header = format!(
+            "<@{}> `{}` vs `{}` <@{}>",
+            game.player1.id, game.scores.p1, game.scores.p2, game.player2.id
+        );
+        let status_block = "Status: —\nStatus: Declined".to_string();
+        let log_block = format!("The challenge was declined by <@{}>.", p2_id);
 
         let embed = CreateEmbed::new()
             .author(author)
             .color(ERROR_COLOR)
-            .field(
-                format!("<@{}>", game.player1.id),
-                format!("Score: `{}`\nStatus: —", game.scores.p1),
-                true,
-            )
-            .field(
-                format!("<@{}>", game.player2.id),
-                format!("Score: `{}`\nStatus: Declined", game.scores.p2),
-                true,
-            )
-            .description(format!("The challenge was declined by <@{}>.", p2_id));
+            .description(format!(
+                "{}\n{}\n\n{}",
+                score_header, status_block, log_block
+            ));
 
         let disabled_buttons = CreateActionRow::Buttons(vec![
             CreateButton::new("disabled_accept")
@@ -225,6 +231,7 @@ pub async fn handle_decline(
                 .disabled(true),
         ]);
         let builder = EditMessage::new()
+            .content(content)
             .embed(embed)
             .components(vec![disabled_buttons]);
         let _ = interaction.message.edit(&ctx.http, builder).await;
@@ -369,8 +376,6 @@ pub async fn handle_move(
         }
     }
 
-    // DEFINITIVE FIX: Spawn a separate, short-lived task to perform the cleanup.
-    // This solves the race condition entirely.
     if is_over {
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(5)).await;
