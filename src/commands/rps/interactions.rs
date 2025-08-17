@@ -101,8 +101,7 @@ fn parse_id(s: &str) -> UserId {
     UserId::new(s.parse().unwrap_or(0))
 }
 
-// This helper is now specifically for sending errors *after* an interaction has been deferred.
-async fn send_ephemeral_followup_error(
+async fn send_ephemeral_error(
     ctx: &Context,
     interaction: &ComponentInteraction,
     description: &str,
@@ -111,6 +110,7 @@ async fn send_ephemeral_followup_error(
         .title("Invalid Action")
         .description(description)
         .color(ERROR_COLOR);
+    // Use a followup because the interaction will have been deferred.
     let builder = serenity::builder::CreateInteractionResponseFollowup::new()
         .embed(embed)
         .ephemeral(true);
@@ -123,12 +123,11 @@ pub async fn handle_accept(
     parts: &[&str],
     active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
 ) {
-    // Defer immediately to prevent "interaction failed" and prepare for editing.
     interaction.defer(&ctx.http).await.ok();
 
     let p2_id = parse_id(parts.get(3).unwrap_or(&""));
     if interaction.user.id != p2_id {
-        send_ephemeral_followup_error(
+        send_ephemeral_error(
             ctx,
             interaction,
             "You cannot accept a challenge that was not meant for you.",
@@ -144,7 +143,7 @@ pub async fn handle_accept(
             g.clone()
         }
         None => {
-            send_ephemeral_followup_error(
+            send_ephemeral_error(
                 ctx,
                 interaction,
                 "This duel has expired and cannot be accepted.",
@@ -177,7 +176,7 @@ pub async fn handle_decline(
 
     let p2_id = parse_id(parts.get(3).unwrap_or(&""));
     if interaction.user.id != p2_id {
-        send_ephemeral_followup_error(
+        send_ephemeral_error(
             ctx,
             interaction,
             "You cannot decline a challenge that was not meant for you.",
@@ -218,7 +217,6 @@ pub async fn handle_prompt(
     interaction: &ComponentInteraction,
     active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
 ) {
-    // This is the only correct use of a non-deferring, ephemeral response.
     if let Some(game) = active_games.read().await.get(&interaction.message.id) {
         if interaction.user.id != game.player1.id && interaction.user.id != game.player2.id {
             let embed = CreateEmbed::new()
@@ -287,7 +285,7 @@ pub async fn handle_move(
     let game = match games.get_mut(&game_message_id) {
         Some(g) => g,
         None => {
-            send_ephemeral_followup_error(
+            send_ephemeral_error(
                 ctx,
                 interaction,
                 "This game has expired or could not be found.",
@@ -300,7 +298,7 @@ pub async fn handle_move(
     if (interaction.user.id == game.player1.id && game.p1_move.is_some())
         || (interaction.user.id == game.player2.id && game.p2_move.is_some())
     {
-        send_ephemeral_followup_error(
+        send_ephemeral_error(
             ctx,
             interaction,
             "You have already selected a move for this round.",
@@ -341,8 +339,15 @@ pub async fn handle_move(
         ])]
     };
 
-    let builder = EditMessage::new().embed(embed).components(components);
-    if let Err(e) = interaction.message.edit(&ctx.http, builder).await {
-        println!("Error editing game message: {:?}", e);
+    // FINAL FIX: Fetch the original message by its ID and edit it directly.
+    if let Ok(mut original_message) = interaction
+        .channel_id
+        .message(&ctx.http, game_message_id)
+        .await
+    {
+        let builder = EditMessage::new().embed(embed).components(components);
+        if let Err(e) = original_message.edit(&ctx.http, builder).await {
+            println!("Error editing game message: {:?}", e);
+        }
     }
 }
