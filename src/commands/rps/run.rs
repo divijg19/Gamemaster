@@ -16,7 +16,6 @@ use super::state::{DuelFormat, GameState};
 const PENDING_COLOR: u32 = 0xFFA500;
 const ERROR_COLOR: u32 = 0xFF0000;
 
-/// Entry point for the `!rps` command. Creates the initial challenge.
 pub async fn run(
     ctx: &Context,
     msg: &Message,
@@ -77,9 +76,10 @@ pub async fn run(
         .field("Challenger", format!("<@{}>", msg.author.id), true)
         .field("Opponent", format!("<@{}>", opponent.id), true)
         .field("Format", &format_str, true)
+        // FINAL REFINEMENT: The footer now uses a proper mention.
         .footer(serenity::builder::CreateEmbedFooter::new(format!(
-            "{}, you have 30 seconds to respond.",
-            opponent.name
+            "<@{}>, you have 30 seconds to respond.",
+            opponent.id
         )))
         .color(PENDING_COLOR);
 
@@ -101,8 +101,6 @@ pub async fn run(
         }
     };
 
-    // CORRECTED: Use the new constructor from the refactored state.rs.
-    // This is cleaner and ensures the game state is always created correctly.
     let game_state = GameState::new(
         Arc::new(msg.author.clone()),
         Arc::new(opponent.clone()),
