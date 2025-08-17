@@ -16,7 +16,7 @@ const SUCCESS_COLOR: u32 = 0x00FF00;
 const ERROR_COLOR: u32 = 0xFF0000;
 const ACTIVE_COLOR: u32 = 0x5865F2;
 
-// --- FINAL UI REWRITE: This renderer now builds a single description string for the definitive layout. ---
+// --- DEFINITIVE UI REWRITE: This renderer now uses inline fields for the final layout. ---
 fn build_game_embed(game: &GameState) -> CreateEmbed {
     let format_str = match game.format {
         super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
@@ -24,33 +24,7 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
     };
     let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
-    // Part 1: The Player Status Block
-    let (p1_status, p2_status) = if game.is_over() {
-        (
-            game.history.last().unwrap().p1_move.to_emoji().to_string(),
-            game.history.last().unwrap().p2_move.to_emoji().to_string(),
-        )
-    } else {
-        let p1 = if game.p1_move.is_some() {
-            "✅ Move Locked"
-        } else {
-            "… Waiting"
-        };
-        let p2 = if game.p2_move.is_some() {
-            "✅ Move Locked"
-        } else {
-            "… Waiting"
-        };
-        (p1.to_string(), p2.to_string())
-    };
-
-    let player_block = format!(
-        "<@{}> - `{}`\nStatus: {}\n\n<@{}> - `{}`\nStatus: {}",
-        game.player1.id, game.scores.p1, p1_status, game.player2.id, game.scores.p2, p2_status
-    );
-
-    // Part 2: The Game Log Block
-    let log_block = if game.history.is_empty() {
+    let log_description = if game.history.is_empty() {
         "The duel has begun! Make your move.".to_string()
     } else {
         game.history
@@ -73,7 +47,31 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
             .join("\n")
     };
 
-    // Part 3: The Footer and Final Assembly
+    let (p1_status, p2_status) = if game.is_over() {
+        (
+            game.history.last().unwrap().p1_move.to_emoji().to_string(),
+            game.history.last().unwrap().p2_move.to_emoji().to_string(),
+        )
+    } else {
+        let p1 = if game.p1_move.is_some() {
+            "✅ Move Locked"
+        } else {
+            "… Waiting"
+        };
+        let p2 = if game.p2_move.is_some() {
+            "✅ Move Locked"
+        } else {
+            "… Waiting"
+        };
+        (p1.to_string(), p2.to_string())
+    };
+
+    let p1_field_title = format!("<@{}> - `{}`", game.player1.id, game.scores.p1);
+    let p1_field_content = format!("Status: {}", p1_status);
+
+    let p2_field_title = format!("<@{}> - `{}`", game.player2.id, game.scores.p2);
+    let p2_field_content = format!("Status: {}", p2_status);
+
     let footer_text = if game.is_over() {
         let winner = if game.scores.p1 > game.scores.p2 {
             &game.player1
@@ -91,7 +89,6 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         format!("Round {} | {}", game.round, status)
     };
 
-    // The final description combines the blocks without a separator.
     CreateEmbed::new()
         .author(author)
         .color(if game.is_over() {
@@ -99,7 +96,9 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         } else {
             ACTIVE_COLOR
         })
-        .description(format!("{}\n\n{}", player_block, log_block))
+        .field(p1_field_title, p1_field_content, true)
+        .field(p2_field_title, p2_field_content, true)
+        .description(log_description)
         .footer(CreateEmbedFooter::new(footer_text))
 }
 
@@ -129,7 +128,6 @@ pub async fn handle_accept(
     active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
 ) {
     interaction.defer(&ctx.http).await.ok();
-
     let p2_id = parse_id(parts.get(3).unwrap_or(&""));
     if interaction.user.id != p2_id {
         send_ephemeral_followup_error(
@@ -178,7 +176,6 @@ pub async fn handle_decline(
     active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
 ) {
     interaction.defer(&ctx.http).await.ok();
-
     let p2_id = parse_id(parts.get(3).unwrap_or(&""));
     if interaction.user.id != p2_id {
         send_ephemeral_followup_error(
@@ -317,8 +314,7 @@ pub async fn handle_move(
         game.p2_move = Some(player_move);
     }
 
-    let round_just_finished = game.p1_move.is_some() && game.p2_move.is_some();
-    if round_just_finished {
+    if game.p1_move.is_some() && game.p2_move.is_some() {
         game.process_round();
     }
 

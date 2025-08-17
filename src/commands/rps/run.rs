@@ -17,7 +17,6 @@ use super::state::{DuelFormat, GameState};
 const PENDING_COLOR: u32 = 0xFFA500;
 const ERROR_COLOR: u32 = 0xFF0000;
 
-/// Entry point for the `!rps` command. Creates the initial challenge.
 pub async fn run(
     ctx: &Context,
     msg: &Message,
@@ -32,7 +31,6 @@ pub async fn run(
                 .description("To start a duel, you must mention a valid opponent.")
                 .field("Example", "`!rps @username [-b 3]`", false)
                 .color(ERROR_COLOR);
-
             let builder = CreateMessage::new().embed(embed);
             let _ = msg.channel_id.send_message(&ctx.http, builder).await;
             return;
@@ -69,20 +67,25 @@ pub async fn run(
 
     let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
-    let player_block = format!(
-        "<@{}> - `{}`\nStatus: {}\n\n<@{}> - `{}`\nStatus: {}",
-        msg.author.id, 0, "… Waiting", opponent.id, 0, "… Waiting"
-    );
-
-    let log_block = "A challenge has been issued!".to_string();
-
+    // DEFINITIVE REFINEMENT: Build the initial embed using the final field-based layout.
     let embed = CreateEmbed::new()
         .author(author.clone())
         .color(PENDING_COLOR)
-        .description(format!("{}\n\n{}", player_block, log_block))
+        .field(
+            format!("<@{}> - `0`", msg.author.id),
+            "Status: … Waiting",
+            true, // inline = true
+        )
+        .field(
+            format!("<@{}> - `0`", opponent.id),
+            "Status: … Waiting",
+            true, // inline = true
+        )
+        .description("A challenge has been issued!")
+        // DEFINITIVE REFINEMENT: Use the opponent's name, as mentions do not work in footers.
         .footer(CreateEmbedFooter::new(format!(
-            "<@{}>, you have 30 seconds to respond.",
-            opponent.id
+            "{}, you have 30 seconds to respond.",
+            opponent.name
         )));
 
     let buttons = CreateActionRow::Buttons(vec![
@@ -116,29 +119,24 @@ pub async fn run(
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(30)).await;
         let mut games = games_clone.write().await;
-
-        let should_remove = games.get(&game_msg.id).is_some_and(|g| !g.accepted);
-
-        if should_remove {
-            if let Some(game) = games.remove(&game_msg.id) {
-                let player_block = format!(
-                    "<@{}> - `{}`\nStatus: {}\n\n<@{}> - `{}`\nStatus: {}",
-                    game.player1.id,
-                    game.scores.p1,
-                    "—",
-                    game.player2.id,
-                    game.scores.p2,
-                    "Did not respond"
-                );
-                let log_block = "The challenge was not accepted in time.".to_string();
-
+        if let Some(game) = games.remove(&game_msg.id)
+            && !game.accepted {
                 let embed = CreateEmbed::new()
                     .author(author)
                     .color(ERROR_COLOR)
-                    .description(format!("{}\n\n{}", player_block, log_block))
+                    .field(
+                        format!("<@{}> - `{}`", game.player1.id, game.scores.p1),
+                        "Status: —",
+                        true,
+                    )
+                    .field(
+                        format!("<@{}> - `{}`", game.player2.id, game.scores.p2),
+                        "Status: Did not respond",
+                        true,
+                    )
+                    .description("The challenge was not accepted in time.")
                     .footer(CreateEmbedFooter::new("Challenge expired."));
 
-                // FINAL FIX: Corrected the syntax error here.
                 let disabled_buttons = CreateActionRow::Buttons(vec![
                     CreateButton::new("disabled_accept")
                         .label("Accept")
@@ -161,6 +159,5 @@ pub async fn run(
                     let _ = message.edit(&ctx_clone.http, builder).await;
                 }
             }
-        }
     });
 }
