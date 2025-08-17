@@ -3,8 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serenity::builder::{
-    CreateActionRow, CreateButton, CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter,
-    CreateMessage, EditMessage,
+    CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter, CreateMessage, EditMessage,
 };
 use serenity::model::application::ButtonStyle;
 use serenity::model::channel::Message;
@@ -38,7 +37,6 @@ pub async fn run(
     };
 
     let mut duel_format = DuelFormat::BestOf(1);
-    let mut format_str = "Single Round".to_string();
     let mut args_iter = args.iter();
 
     while let Some(arg) = args_iter.next() {
@@ -49,7 +47,6 @@ pub async fn run(
                     && num > 0
                 {
                     duel_format = DuelFormat::BestOf(num);
-                    format_str = format!("Best of {}", num);
                 }
             }
             "-r" | "--raceto" => {
@@ -58,29 +55,27 @@ pub async fn run(
                     && num > 0
                 {
                     duel_format = DuelFormat::RaceTo(num);
-                    format_str = format!("Race to {}", num);
                 }
             }
             _ => {}
         }
     }
 
-    let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
+    // REFACTOR: Use a message content for the top-level status.
+    let content = format!(
+        "<@{}> has challenged <@{}> to a duel!",
+        msg.author.id, opponent.id
+    );
 
-    // DEFINITIVE LAYOUT: Use inline fields for the side-by-side display.
+    // REFACTOR: Simplified embed for the initial challenge.
     let embed = CreateEmbed::new()
-        .author(author.clone())
         .color(PENDING_COLOR)
         .field(
-            format!("<@{}> - `0`", msg.author.id),
-            "Status: … Waiting",
+            msg.author.name.clone(),
+            "Score: `0`\nStatus: … Waiting",
             true,
         )
-        .field(
-            format!("<@{}> - `0`", opponent.id),
-            "Status: … Waiting",
-            true,
-        )
+        .field(opponent.name.clone(), "Score: `0`\nStatus: … Waiting", true)
         .description("A challenge has been issued!")
         .footer(CreateEmbedFooter::new(format!(
             "{}, you have 30 seconds to respond.",
@@ -96,7 +91,11 @@ pub async fn run(
             .style(ButtonStyle::Danger),
     ]);
 
-    let builder = CreateMessage::new().embed(embed).components(vec![buttons]);
+    // REFACTOR: Added the `content` field to the message builder.
+    let builder = CreateMessage::new()
+        .content(content)
+        .embed(embed)
+        .components(vec![buttons]);
     let game_msg = match msg.channel_id.send_message(&ctx.http, builder).await {
         Ok(msg) => msg,
         Err(e) => {
@@ -113,26 +112,29 @@ pub async fn run(
 
     active_games.write().await.insert(game_msg.id, game_state);
     let ctx_clone = ctx.clone();
+    let active_games_clone = active_games.clone();
 
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(30)).await;
-        if let Some(game) = active_games.write().await.remove(&game_msg.id)
+        // REFACTOR: Check if the game was removed (i.e., accepted/declined) before editing.
+        if let Some(game) = active_games_clone.read().await.get(&game_msg.id)
             && !game.accepted {
+                active_games_clone.write().await.remove(&game_msg.id);
+
+                let content = format!(
+                    "Challenge between <@{}> and <@{}> expired.",
+                    game.player1.id, game.player2.id
+                );
+
                 let embed = CreateEmbed::new()
-                    .author(author)
                     .color(ERROR_COLOR)
                     .field(
-                        format!("<@{}> - `{}`", game.player1.id, game.scores.p1),
-                        "Status: —",
+                        game.player1.name.clone(),
+                        format!("Score: `{}`", game.scores.p1),
                         true,
                     )
-                    .field(
-                        format!("<@{}> - `{}`", game.player2.id, game.scores.p2),
-                        "Status: Did not respond",
-                        true,
-                    )
-                    .description("The challenge was not accepted in time.")
-                    .footer(CreateEmbedFooter::new("Challenge expired."));
+                    .field(game.player2.name.clone(), "Status: Did not respond", true)
+                    .description("The challenge was not accepted in time.");
 
                 let disabled_buttons = CreateActionRow::Buttons(vec![
                     CreateButton::new("disabled_accept")
@@ -151,6 +153,7 @@ pub async fn run(
                     .await
                 {
                     let builder = EditMessage::new()
+                        .content(content)
                         .embed(embed)
                         .components(vec![disabled_buttons]);
                     let _ = message.edit(&ctx_clone.http, builder).await;

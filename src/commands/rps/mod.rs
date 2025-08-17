@@ -14,7 +14,6 @@ use crate::commands::rps::state::GameState;
 use interactions::*;
 pub use run::run;
 
-// DEFINITIVE FIX: This function now correctly accepts an owned Arc.
 pub async fn handle_interaction(
     ctx: &Context,
     interaction: &mut ComponentInteraction,
@@ -24,11 +23,10 @@ pub async fn handle_interaction(
     let custom_id_parts: Vec<&str> = custom_id.split('_').collect();
     let action = custom_id_parts.get(1).unwrap_or(&"");
 
-    // DEFINITIVE FIX: Pass a reference down to the handlers to satisfy the type checker.
     match *action {
         "accept" => handle_accept(ctx, interaction, &custom_id_parts, &active_games).await,
         "decline" => handle_decline(ctx, interaction, &custom_id_parts, &active_games).await,
-        "prompt" => handle_prompt(ctx, interaction, &active_games).await,
+        // REFACTOR: Removed the "prompt" action.
         "move" => handle_move(ctx, interaction, &custom_id_parts, &active_games).await,
         _ => {}
     }

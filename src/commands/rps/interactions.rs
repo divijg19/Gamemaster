@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serenity::builder::{
-    CreateActionRow, CreateButton, CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter,
-    CreateInteractionResponse, CreateInteractionResponseMessage, EditMessage,
+    CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter, CreateInteractionResponse,
+    CreateInteractionResponseMessage, EditMessage,
 };
 use serenity::model::application::{ButtonStyle, ComponentInteraction};
 use serenity::model::id::{MessageId, UserId};
@@ -18,12 +18,6 @@ const ERROR_COLOR: u32 = 0xFF0000;
 const ACTIVE_COLOR: u32 = 0x5865F2;
 
 fn build_game_embed(game: &GameState) -> CreateEmbed {
-    let format_str = match game.format {
-        super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
-        super::state::DuelFormat::RaceTo(n) => format!("Race to {}", n),
-    };
-    let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
-
     let log_description = if game.history.is_empty() {
         "The duel has begun! Make your move.".to_string()
     } else {
@@ -70,10 +64,7 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         (p1.to_string(), p2.to_string())
     };
 
-    let p1_field_title = format!("<@{}>", game.player1.id);
     let p1_field_content = format!("Score: `{}`\nStatus: {}", game.scores.p1, p1_status);
-
-    let p2_field_title = format!("<@{}>", game.player2.id);
     let p2_field_content = format!("Score: `{}`\nStatus: {}", game.scores.p2, p2_status);
 
     let footer_text = if game.is_over() {
@@ -84,24 +75,23 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         };
         format!("{} is the winner!", winner.name)
     } else {
-        let status = match (game.p1_move, game.p2_move) {
+        
+        match (game.p1_move, game.p2_move) {
             (None, None) => "Waiting for both players...".to_string(),
             (Some(_), None) => format!("Waiting for {}...", game.player2.name),
             (None, Some(_)) => format!("Waiting for {}...", game.player1.name),
             (Some(_), Some(_)) => "Processing round...".to_string(),
-        };
-        format!("Round {} | {}", game.round, status)
+        }
     };
 
     CreateEmbed::new()
-        .author(author)
         .color(if game.is_over() {
             SUCCESS_COLOR
         } else {
             ACTIVE_COLOR
         })
-        .field(p1_field_title, p1_field_content, true)
-        .field(p2_field_title, p2_field_content, true)
+        .field(game.player1.name.clone(), p1_field_content, true)
+        .field(game.player2.name.clone(), p2_field_content, true)
         .description(log_description)
         .footer(CreateEmbedFooter::new(footer_text))
 }
@@ -110,7 +100,7 @@ fn parse_id(s: &str) -> UserId {
     UserId::new(s.parse().unwrap_or(0))
 }
 
-async fn send_ephemeral_followup_error(
+async fn send_ephemeral_error(
     ctx: &Context,
     interaction: &ComponentInteraction,
     description: &str,
@@ -119,10 +109,12 @@ async fn send_ephemeral_followup_error(
         .title("Invalid Action")
         .description(description)
         .color(ERROR_COLOR);
-    let builder = serenity::builder::CreateInteractionResponseFollowup::new()
+    let builder = CreateInteractionResponseMessage::new()
         .embed(embed)
         .ephemeral(true);
-    let _ = interaction.create_followup(&ctx.http, builder).await;
+    let _ = interaction
+        .create_response(&ctx.http, CreateInteractionResponse::Message(builder))
+        .await;
 }
 
 pub async fn handle_accept(
@@ -134,7 +126,7 @@ pub async fn handle_accept(
     interaction.defer(&ctx.http).await.ok();
     let p2_id = parse_id(parts.get(3).unwrap_or(&""));
     if interaction.user.id != p2_id {
-        send_ephemeral_followup_error(
+        send_ephemeral_error(
             ctx,
             interaction,
             "You cannot accept a challenge that was not meant for you.",
@@ -151,28 +143,36 @@ pub async fn handle_accept(
                 g.clone()
             }
             None => {
-                let builder = EditMessage::new()
-                    .content("Challenge Expired")
-                    .embed(
-                        CreateEmbed::new()
-                            .description("This duel is no longer active.")
-                            .color(ERROR_COLOR),
-                    )
-                    .components(vec![]);
-                let _ = interaction.message.edit(&ctx.http, builder).await;
                 return;
             }
         }
     };
 
+    let content = format!(
+        "[ROUND {}] <@{}> vs <@{}>",
+        game.round, game.player1.id, game.player2.id
+    );
     let embed = build_game_embed(&game);
+
     let components = vec![CreateActionRow::Buttons(vec![
-        CreateButton::new(format!("rps_prompt_{}", interaction.message.id))
-            .label("Make Your Move")
-            .style(ButtonStyle::Primary),
+        CreateButton::new(format!("rps_move_rock_{}", interaction.message.id))
+            .label("Rock")
+            .emoji('✊')
+            .style(ButtonStyle::Secondary),
+        CreateButton::new(format!("rps_move_paper_{}", interaction.message.id))
+            .label("Paper")
+            .emoji('✋')
+            .style(ButtonStyle::Secondary),
+        CreateButton::new(format!("rps_move_scissors_{}", interaction.message.id))
+            .label("Scissors")
+            .emoji('✌')
+            .style(ButtonStyle::Secondary),
     ])];
 
-    let builder = EditMessage::new().embed(embed).components(components);
+    let builder = EditMessage::new()
+        .content(content)
+        .embed(embed)
+        .components(components);
     let _ = interaction.message.edit(&ctx.http, builder).await;
 }
 
@@ -183,9 +183,11 @@ pub async fn handle_decline(
     active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
 ) {
     interaction.defer(&ctx.http).await.ok();
+    let p1_id = parse_id(parts.get(2).unwrap_or(&""));
     let p2_id = parse_id(parts.get(3).unwrap_or(&""));
+
     if interaction.user.id != p2_id {
-        send_ephemeral_followup_error(
+        send_ephemeral_error(
             ctx,
             interaction,
             "You cannot decline a challenge that was not meant for you.",
@@ -194,27 +196,16 @@ pub async fn handle_decline(
         return;
     }
 
-    if let Some(game) = active_games.write().await.remove(&interaction.message.id) {
-        let format_str = match game.format {
-            super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
-            super::state::DuelFormat::RaceTo(n) => format!("Race to {}", n),
-        };
-        let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
-
+    if active_games
+        .write()
+        .await
+        .remove(&interaction.message.id)
+        .is_some()
+    {
+        let content = format!("<@{}> declined the challenge from <@{}>.", p2_id, p1_id);
         let embed = CreateEmbed::new()
-            .author(author)
             .color(ERROR_COLOR)
-            .field(
-                format!("<@{}>", game.player1.id),
-                format!("Score: `{}`\nStatus: —", game.scores.p1),
-                true,
-            )
-            .field(
-                format!("<@{}>", game.player2.id),
-                format!("Score: `{}`\nStatus: Declined", game.scores.p2),
-                true,
-            )
-            .description(format!("The challenge was declined by <@{}>.", p2_id));
+            .description(format!("The duel was declined by <@{}>.", p2_id));
 
         let disabled_buttons = CreateActionRow::Buttons(vec![
             CreateButton::new("disabled_accept")
@@ -227,59 +218,10 @@ pub async fn handle_decline(
                 .disabled(true),
         ]);
         let builder = EditMessage::new()
+            .content(content)
             .embed(embed)
             .components(vec![disabled_buttons]);
         let _ = interaction.message.edit(&ctx.http, builder).await;
-    }
-}
-
-pub async fn handle_prompt(
-    ctx: &Context,
-    interaction: &ComponentInteraction,
-    active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
-) {
-    if let Some(game) = active_games.read().await.get(&interaction.message.id) {
-        if interaction.user.id != game.player1.id && interaction.user.id != game.player2.id {
-            let embed = CreateEmbed::new()
-                .title("Not Your Game")
-                .description("You are not a participant in this duel.")
-                .color(ERROR_COLOR);
-            let builder = CreateInteractionResponseMessage::new()
-                .embed(embed)
-                .ephemeral(true);
-            let _ = interaction
-                .create_response(&ctx.http, CreateInteractionResponse::Message(builder))
-                .await;
-            return;
-        }
-        let embed = CreateEmbed::new()
-            .title("Choose Your Move")
-            .description(format!(
-                "Round {} - Your choice will be hidden.",
-                game.round
-            ))
-            .color(ACTIVE_COLOR);
-        let buttons = CreateActionRow::Buttons(vec![
-            CreateButton::new(format!("rps_move_rock_{}", interaction.message.id))
-                .label("Rock")
-                .emoji('✊')
-                .style(ButtonStyle::Secondary),
-            CreateButton::new(format!("rps_move_paper_{}", interaction.message.id))
-                .label("Paper")
-                .emoji('✋')
-                .style(ButtonStyle::Secondary),
-            CreateButton::new(format!("rps_move_scissors_{}", interaction.message.id))
-                .label("Scissors")
-                .emoji('✌')
-                .style(ButtonStyle::Secondary),
-        ]);
-        let builder = CreateInteractionResponseMessage::new()
-            .embed(embed)
-            .components(vec![buttons])
-            .ephemeral(true);
-        let _ = interaction
-            .create_response(&ctx.http, CreateInteractionResponse::Message(builder))
-            .await;
     }
 }
 
@@ -289,6 +231,9 @@ pub async fn handle_move(
     parts: &[&str],
     active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
 ) {
+    // DEFINITIVE CHANGE: Defer the interaction immediately instead of sending an ephemeral reply.
+    // This acknowledges the button press and prevents an API error. The subsequent message edit
+    // provides the necessary visual feedback to the user.
     interaction.defer(&ctx.http).await.ok();
 
     let game_message_id = match parts.get(3).and_then(|id_str| id_str.parse::<u64>().ok()) {
@@ -302,30 +247,22 @@ pub async fn handle_move(
         _ => return,
     };
 
-    let active_games_clone = active_games.clone();
-    let is_over;
-    let game_clone;
-
     {
-        // Scoped lock to ensure it's dropped before any awaits
-        let mut games = active_games.write().await;
-        let game = match games.get_mut(&game_message_id) {
+        let games = active_games.read().await;
+        let game = match games.get(&game_message_id) {
             Some(g) => g,
-            None => {
-                send_ephemeral_followup_error(
-                    ctx,
-                    interaction,
-                    "This game has expired or could not be found.",
-                )
-                .await;
-                return;
-            }
+            None => return, // Game no longer exists, just stop.
         };
+
+        if interaction.user.id != game.player1.id && interaction.user.id != game.player2.id {
+            send_ephemeral_error(ctx, interaction, "You are not a participant in this duel.").await;
+            return;
+        }
 
         if (interaction.user.id == game.player1.id && game.p1_move.is_some())
             || (interaction.user.id == game.player2.id && game.p2_move.is_some())
         {
-            send_ephemeral_followup_error(
+            send_ephemeral_error(
                 ctx,
                 interaction,
                 "You have already selected a move for this round.",
@@ -333,6 +270,20 @@ pub async fn handle_move(
             .await;
             return;
         }
+    }
+
+    // DEFINITIVE CHANGE: The ephemeral confirmation block has been removed from here.
+
+    let mut round_processed = false;
+    let is_over;
+    let game_clone;
+
+    {
+        let mut games = active_games.write().await;
+        let game = match games.get_mut(&game_message_id) {
+            Some(g) => g,
+            None => return,
+        };
 
         if interaction.user.id == game.player1.id {
             game.p1_move = Some(player_move);
@@ -342,11 +293,21 @@ pub async fn handle_move(
 
         if game.p1_move.is_some() && game.p2_move.is_some() {
             game.process_round();
+            round_processed = true;
         }
 
         is_over = game.is_over();
         game_clone = game.clone();
-    } // Write lock is dropped here
+    }
+
+    let content = if round_processed && !is_over {
+        format!(
+            "[ROUND {}] <@{}> vs <@{}>",
+            game_clone.round, game_clone.player1.id, game_clone.player2.id
+        )
+    } else {
+        interaction.message.content.clone()
+    };
 
     let embed = build_game_embed(&game_clone);
 
@@ -354,9 +315,18 @@ pub async fn handle_move(
         vec![]
     } else {
         vec![CreateActionRow::Buttons(vec![
-            CreateButton::new(format!("rps_prompt_{}", interaction.message.id))
-                .label("Make Your Move")
-                .style(ButtonStyle::Primary),
+            CreateButton::new(format!("rps_move_rock_{}", game_message_id))
+                .label("Rock")
+                .emoji('✊')
+                .style(ButtonStyle::Secondary),
+            CreateButton::new(format!("rps_move_paper_{}", game_message_id))
+                .label("Paper")
+                .emoji('✋')
+                .style(ButtonStyle::Secondary),
+            CreateButton::new(format!("rps_move_scissors_{}", game_message_id))
+                .label("Scissors")
+                .emoji('✌')
+                .style(ButtonStyle::Secondary),
         ])]
     };
 
@@ -365,15 +335,19 @@ pub async fn handle_move(
         .message(&ctx.http, game_message_id)
         .await
     {
-        let builder = EditMessage::new().embed(embed).components(components);
+        let builder = EditMessage::new()
+            .content(content)
+            .embed(embed)
+            .components(components);
         if let Err(e) = original_message.edit(&ctx.http, builder).await {
             println!("Error editing game message: {:?}", e);
         }
     }
 
     if is_over {
+        let active_games_clone = active_games.clone();
         tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(5)).await;
+            tokio::time::sleep(Duration::from_secs(15)).await;
             active_games_clone.write().await.remove(&game_message_id);
         });
     }
