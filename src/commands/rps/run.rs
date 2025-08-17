@@ -9,6 +9,7 @@ use serenity::builder::{
 use serenity::model::application::ButtonStyle;
 use serenity::model::channel::Message;
 use serenity::model::id::MessageId;
+// The Mention trait is not needed as .mention() is available by default on User
 use serenity::prelude::*;
 use tokio::sync::RwLock;
 
@@ -67,19 +68,18 @@ pub async fn run(
 
     let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
-    // DEFINITIVE LAYOUT: Use inline fields before the description for the correct side-by-side layout.
     let embed = CreateEmbed::new()
         .author(author.clone())
         .color(PENDING_COLOR)
         .field(
-            format!("<@{}> - `0`", msg.author.id),
+            format!("{} - `0`", msg.author.mention()),
             "Status: … Waiting",
-            true, // This 'true' is the key to the side-by-side layout.
+            true,
         )
         .field(
-            format!("<@{}> - `0`", opponent.id),
+            format!("{} - `0`", opponent.mention()),
             "Status: … Waiting",
-            true, // This 'true' makes the fields appear in columns.
+            true,
         )
         .description("A challenge has been issued!")
         .footer(CreateEmbedFooter::new(format!(
@@ -117,50 +117,47 @@ pub async fn run(
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(30)).await;
 
-        // DEFINITIVE FIX: This logic is now atomic and race-condition-free.
-        let mut games = active_games.write().await;
-        let should_remove = games.get(&game_msg.id).is_some_and(|g| !g.accepted);
+        // CLIPPY FIX: The nested `if` statement has been collapsed for better readability.
+        if let Some(game) = active_games.write().await.remove(&game_msg.id)
+            && !game.accepted
+        {
+            let embed = CreateEmbed::new()
+                .author(author)
+                .color(ERROR_COLOR)
+                .field(
+                    format!("{} - `{}`", game.player1.mention(), game.scores.p1),
+                    "Status: —",
+                    true,
+                )
+                .field(
+                    format!("{} - `{}`", game.player2.mention(), game.scores.p2),
+                    "Status: Did not respond",
+                    true,
+                )
+                .description("The challenge was not accepted in time.")
+                .footer(CreateEmbedFooter::new("Challenge expired."));
 
-        if should_remove
-            && let Some(game) = games.remove(&game_msg.id) {
-                // The UI for the timeout now matches the final, correct layout.
-                let embed = CreateEmbed::new()
-                    .author(author)
-                    .color(ERROR_COLOR)
-                    .field(
-                        format!("<@{}> - `{}`", game.player1.id, game.scores.p1),
-                        "Status: —",
-                        true,
-                    )
-                    .field(
-                        format!("<@{}> - `{}`", game.player2.id, game.scores.p2),
-                        "Status: Did not respond",
-                        true,
-                    )
-                    .description("The challenge was not accepted in time.")
-                    .footer(CreateEmbedFooter::new("Challenge expired."));
+            let disabled_buttons = CreateActionRow::Buttons(vec![
+                CreateButton::new("disabled_accept")
+                    .label("Accept")
+                    .style(ButtonStyle::Success)
+                    .disabled(true),
+                CreateButton::new("disabled_decline")
+                    .label("Decline")
+                    .style(ButtonStyle::Danger)
+                    .disabled(true),
+            ]);
 
-                let disabled_buttons = CreateActionRow::Buttons(vec![
-                    CreateButton::new("disabled_accept")
-                        .label("Accept")
-                        .style(ButtonStyle::Success)
-                        .disabled(true),
-                    CreateButton::new("disabled_decline")
-                        .label("Decline")
-                        .style(ButtonStyle::Danger)
-                        .disabled(true),
-                ]);
-
-                if let Ok(mut message) = game_msg
-                    .channel_id
-                    .message(&ctx_clone.http, game_msg.id)
-                    .await
-                {
-                    let builder = EditMessage::new()
-                        .embed(embed)
-                        .components(vec![disabled_buttons]);
-                    let _ = message.edit(&ctx_clone.http, builder).await;
-                }
+            if let Ok(mut message) = game_msg
+                .channel_id
+                .message(&ctx_clone.http, game_msg.id)
+                .await
+            {
+                let builder = EditMessage::new()
+                    .embed(embed)
+                    .components(vec![disabled_buttons]);
+                let _ = message.edit(&ctx_clone.http, builder).await;
             }
+        }
     });
 }
