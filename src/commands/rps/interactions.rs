@@ -78,7 +78,6 @@ fn build_game_embed(
             ),
             (Some(_), Some(_)) => format!("**Round {}: Processing...**", game.round),
         };
-
         log_entries.push(format!("\n{}", status_line));
         format!(
             "**{}**\n{}\n\n{}",
@@ -240,7 +239,7 @@ pub async fn handle_prompt(
             ))
             .color(ACTIVE_COLOR);
         let buttons = CreateActionRow::Buttons(vec![
-            CreateButton::new(format!("rps_move_rock_{}", interaction.message.id))
+            CreateButton::new(format!("rps_prompt_{}", interaction.message.id))
                 .label("Rock")
                 .emoji('✊')
                 .style(ButtonStyle::Secondary),
@@ -248,7 +247,6 @@ pub async fn handle_prompt(
                 .label("Paper")
                 .emoji('✋')
                 .style(ButtonStyle::Secondary),
-            // FINAL FIX: Use the single-codepoint char '✌' which satisfies the type checker.
             CreateButton::new(format!("rps_move_scissors_{}", interaction.message.id))
                 .label("Scissors")
                 .emoji('✌')
@@ -270,8 +268,6 @@ pub async fn handle_move(
     parts: &[&str],
     active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
 ) {
-    interaction.defer(&ctx.http).await.ok();
-
     let game_message_id = match parts.get(3).and_then(|id_str| id_str.parse::<u64>().ok()) {
         Some(id) => MessageId::new(id),
         None => return,
@@ -286,7 +282,19 @@ pub async fn handle_move(
     let mut games = active_games.write().await;
     let game = match games.get_mut(&game_message_id) {
         Some(g) => g,
-        None => return,
+        None => {
+            let _ = interaction
+                .create_response(
+                    &ctx.http,
+                    CreateInteractionResponse::Message(
+                        CreateInteractionResponseMessage::new()
+                            .content("This game has expired.")
+                            .ephemeral(true),
+                    ),
+                )
+                .await;
+            return;
+        }
     };
 
     if (interaction.user.id == game.player1.id && game.p1_move.is_some())
@@ -326,14 +334,18 @@ pub async fn handle_move(
         ])]
     };
 
+    // FINAL FIX: Use the correct `CreateInteractionResponseMessage` builder.
+    let builder = CreateInteractionResponseMessage::new()
+        .embed(embed)
+        .components(components);
+    if let Err(e) = interaction
+        .create_response(&ctx.http, CreateInteractionResponse::UpdateMessage(builder))
+        .await
+    {
+        println!("Error updating game message: {:?}", e);
+    }
+
     if is_over {
         games.remove(&game_message_id);
     }
-
-    drop(games);
-
-    let builder = EditInteractionResponse::new()
-        .embed(embed)
-        .components(components);
-    let _ = interaction.edit_response(&ctx.http, builder).await;
 }
