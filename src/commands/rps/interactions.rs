@@ -16,7 +16,6 @@ const SUCCESS_COLOR: u32 = 0x00FF00;
 const ERROR_COLOR: u32 = 0xFF0000;
 const ACTIVE_COLOR: u32 = 0x5865F2;
 
-// This function is now the thoughtful rendering engine for the dynamic game board.
 fn build_game_embed(
     bot_user: &serenity::model::user::CurrentUser,
     game: &GameState,
@@ -24,18 +23,17 @@ fn build_game_embed(
     let author =
         CreateEmbedAuthor::new(&bot_user.name).icon_url(bot_user.avatar_url().unwrap_or_default());
 
-    // 1. Build the Header
     let format_str = match game.format {
-        super::state::DuelFormat::BestOf(n) => format!("Bo{}", n),
+        super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
         super::state::DuelFormat::RaceTo(n) => format!("Race to {}", n),
     };
-    let header = format!(
-        "<@{}> **{}** | {} | **{}** <@{}>",
-        game.player1.id, game.scores.p1, format_str, game.scores.p2, game.player2.id
+
+    let score_header = format!(
+        "<@{}> **{}** vs **{}** <@{}>",
+        game.player1.id, game.scores.p1, game.scores.p2, game.player2.id
     );
 
-    // 2. Build the History Log
-    let mut history_log = game
+    let mut log_entries: Vec<String> = game
         .history
         .iter()
         .enumerate()
@@ -52,25 +50,42 @@ fn build_game_embed(
                 outcome_text
             )
         })
-        .collect::<Vec<String>>();
+        .collect();
 
-    // 3. Determine Overall Status and create the final description
-    let description = if game.is_over() {
+    let final_description = if game.is_over() {
         let winner = if game.scores.p1 > game.scores.p2 {
             &game.player1
         } else {
             &game.player2
         };
-        history_log.push(format!("\n**<@{}> is the winner!**", winner.id));
-        format!("{}\n\n{}", header, history_log.join("\n"))
+        log_entries.push(format!("\n**<@{}> is the winner!**", winner.id));
+        format!(
+            "**{}**\n{}\n\n{}",
+            format_str,
+            score_header,
+            log_entries.join("\n")
+        )
     } else {
-        let p1_status = if game.p1_move.is_some() { "✅" } else { "…" };
-        let p2_status = if game.p2_move.is_some() { "✅" } else { "…" };
-        history_log.push(format!(
-            "\n**Round {} in progress...** [ {} vs {} ]",
-            game.round, p1_status, p2_status
-        ));
-        format!("{}\n\n{}", header, history_log.join("\n"))
+        let status_line = match (game.p1_move, game.p2_move) {
+            (None, None) => format!("**Round {}: Make your move!** [ … vs … ]", game.round),
+            (Some(_), None) => format!(
+                "**Round {}: Waiting for <@{}>...** [ ✅ vs … ]",
+                game.round, game.player2.id
+            ),
+            (None, Some(_)) => format!(
+                "**Round {}: Waiting for <@{}>...** [ … vs ✅ ]",
+                game.round, game.player1.id
+            ),
+            (Some(_), Some(_)) => format!("**Round {}: Processing...**", game.round),
+        };
+
+        log_entries.push(format!("\n{}", status_line));
+        format!(
+            "**{}**\n{}\n\n{}",
+            format_str,
+            score_header,
+            log_entries.join("\n")
+        )
     };
 
     CreateEmbed::new()
@@ -80,7 +95,7 @@ fn build_game_embed(
         } else {
             ACTIVE_COLOR
         })
-        .description(description)
+        .description(final_description)
 }
 
 fn parse_id(s: &str) -> UserId {
@@ -164,7 +179,6 @@ pub async fn handle_decline(
     parts: &[&str],
     active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
 ) {
-    // This function remains thoughtful and correct. No changes needed.
     let p2_id = parse_id(parts.get(3).unwrap_or(&""));
     if interaction.user.id != p2_id {
         send_ephemeral_error(
@@ -207,7 +221,6 @@ pub async fn handle_prompt(
     interaction: &ComponentInteraction,
     active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
 ) {
-    // This function also remains thoughtful and correct. No changes needed.
     if let Some(game) = active_games.read().await.get(&interaction.message.id) {
         if interaction.user.id != game.player1.id && interaction.user.id != game.player2.id {
             send_ephemeral_error(
@@ -235,6 +248,7 @@ pub async fn handle_prompt(
                 .label("Paper")
                 .emoji('✋')
                 .style(ButtonStyle::Secondary),
+            // FINAL FIX: Use the single-codepoint char '✌' which satisfies the type checker.
             CreateButton::new(format!("rps_move_scissors_{}", interaction.message.id))
                 .label("Scissors")
                 .emoji('✌')
@@ -256,16 +270,7 @@ pub async fn handle_move(
     parts: &[&str],
     active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
 ) {
-    let embed = CreateEmbed::new()
-        .title("Move Confirmed")
-        .description("Waiting for your opponent...")
-        .color(SUCCESS_COLOR);
-    let builder = CreateInteractionResponseMessage::new()
-        .embed(embed)
-        .ephemeral(true);
-    let _ = interaction
-        .create_response(&ctx.http, CreateInteractionResponse::Message(builder))
-        .await;
+    interaction.defer(&ctx.http).await.ok();
 
     let game_message_id = match parts.get(3).and_then(|id_str| id_str.parse::<u64>().ok()) {
         Some(id) => MessageId::new(id),
@@ -287,14 +292,13 @@ pub async fn handle_move(
     if (interaction.user.id == game.player1.id && game.p1_move.is_some())
         || (interaction.user.id == game.player2.id && game.p2_move.is_some())
     {
-        let embed = CreateEmbed::new()
-            .title("Move Already Made")
-            .description("You have already selected a move.")
-            .color(ERROR_COLOR);
-        let builder = serenity::builder::CreateInteractionResponseFollowup::new()
-            .embed(embed)
-            .ephemeral(true);
-        let _ = interaction.create_followup(&ctx.http, builder).await;
+        send_ephemeral_error(
+            ctx,
+            interaction,
+            "Move Already Made",
+            "You have already selected a move for this round.",
+        )
+        .await;
         return;
     }
 
@@ -304,9 +308,8 @@ pub async fn handle_move(
         game.p2_move = Some(player_move);
     }
 
-    // The game logic is now beautifully simple and declarative.
     if game.p1_move.is_some() && game.p2_move.is_some() {
-        game.process_round(); // State updates itself, including history.
+        game.process_round();
     }
 
     let is_over = game.is_over();

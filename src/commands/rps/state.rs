@@ -10,6 +10,7 @@ pub enum Move {
 }
 
 impl Move {
+    // UI/UX REFINEMENT: Updated emojis to exactly match the user's specified look.
     pub fn to_emoji(self) -> &'static str {
         match self {
             Move::Rock => "🤜",
@@ -25,14 +26,12 @@ pub enum DuelFormat {
     RaceTo(u32),
 }
 
-// A thoughtful replacement for the ambiguous (u32, u32) tuple.
 #[derive(Clone, Copy, Debug)]
 pub struct Scores {
     pub p1: u32,
     pub p2: u32,
 }
 
-// A new struct to immutably store the result of a single round for the history log.
 #[derive(Clone, Debug)]
 pub struct RoundRecord {
     pub p1_move: Move,
@@ -40,14 +39,12 @@ pub struct RoundRecord {
     pub outcome: RoundOutcome,
 }
 
-// The outcome now stores the UserId of the winner for easy display.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RoundOutcome {
     Tie,
     Winner(UserId),
 }
 
-// The GameState now includes a history of all completed rounds.
 #[derive(Clone)]
 pub struct GameState {
     pub player1: Arc<User>,
@@ -88,8 +85,6 @@ impl GameState {
         self.scores.p1 >= target || self.scores.p2 >= target
     }
 
-    // This is now the single source of truth for game logic. It processes moves,
-    // updates scores, and records the round in history all at once.
     pub fn process_round(&mut self) {
         if let (Some(p1m), Some(p2m)) = (self.p1_move, self.p2_move) {
             let outcome = match (p1m, p2m) {
@@ -112,7 +107,6 @@ impl GameState {
                 outcome,
             });
 
-            // Prepare for next round immediately after processing
             self.p1_move = None;
             self.p2_move = None;
             self.round += 1;
