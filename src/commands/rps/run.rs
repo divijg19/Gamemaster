@@ -61,21 +61,21 @@ pub async fn run(
         }
     }
 
-    // REFACTOR: Use a message content for the top-level status.
     let content = format!(
         "<@{}> has challenged <@{}> to a duel!",
         msg.author.id, opponent.id
     );
 
-    // REFACTOR: Simplified embed for the initial challenge.
+    // DEFINITIVE REFACTOR: Initial embed now uses the three-column layout for consistency.
     let embed = CreateEmbed::new()
         .color(PENDING_COLOR)
         .field(
-            msg.author.name.clone(),
-            "Score: `0`\nStatus: … Waiting",
+            format!("{} `0`", msg.author.name),
+            "Status: … Waiting",
             true,
         )
-        .field(opponent.name.clone(), "Score: `0`\nStatus: … Waiting", true)
+        .field("vs", "\u{200B}", true)
+        .field(format!("`0` {}", opponent.name), "Status: … Waiting", true)
         .description("A challenge has been issued!")
         .footer(CreateEmbedFooter::new(format!(
             "{}, you have 30 seconds to respond.",
@@ -91,7 +91,6 @@ pub async fn run(
             .style(ButtonStyle::Danger),
     ]);
 
-    // REFACTOR: Added the `content` field to the message builder.
     let builder = CreateMessage::new()
         .content(content)
         .embed(embed)
@@ -116,7 +115,6 @@ pub async fn run(
 
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(30)).await;
-        // REFACTOR: Check if the game was removed (i.e., accepted/declined) before editing.
         if let Some(game) = active_games_clone.read().await.get(&game_msg.id)
             && !game.accepted {
                 active_games_clone.write().await.remove(&game_msg.id);
@@ -126,14 +124,20 @@ pub async fn run(
                     game.player1.id, game.player2.id
                 );
 
+                // DEFINITIVE REFACTOR: Timeout embed also updated to the consistent three-column layout.
                 let embed = CreateEmbed::new()
                     .color(ERROR_COLOR)
                     .field(
-                        game.player1.name.clone(),
-                        format!("Score: `{}`", game.scores.p1),
+                        format!("{} `{}`", game.player1.name, game.scores.p1),
+                        "Status: —",
                         true,
                     )
-                    .field(game.player2.name.clone(), "Status: Did not respond", true)
+                    .field("vs", "\u{200B}", true)
+                    .field(
+                        format!("`{}` {}", game.scores.p2, game.player2.name),
+                        "Status: Did not respond",
+                        true,
+                    )
                     .description("The challenge was not accepted in time.");
 
                 let disabled_buttons = CreateActionRow::Buttons(vec![

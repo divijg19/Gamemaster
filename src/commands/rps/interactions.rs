@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+// DEFINITIVE FIX: Unused imports have been removed.
 use serenity::builder::{
-    CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter, CreateInteractionResponse,
-    CreateInteractionResponseMessage, EditMessage,
+    CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter, EditMessage,
 };
 use serenity::model::application::{ButtonStyle, ComponentInteraction};
 use serenity::model::id::{MessageId, UserId};
@@ -17,7 +17,7 @@ const SUCCESS_COLOR: u32 = 0x00FF00;
 const ERROR_COLOR: u32 = 0xFF0000;
 const ACTIVE_COLOR: u32 = 0x5865F2;
 
-// DEFINITIVE REFACTOR: The embed builder is updated for the final layout request.
+// DEFINITIVE REFACTOR: Embed builder updated for perfect centered score alignment.
 fn build_game_embed(game: &GameState) -> CreateEmbed {
     let log_description = if game.history.is_empty() {
         "The duel has begun! Make your move.".to_string()
@@ -87,21 +87,21 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         } else {
             ACTIVE_COLOR
         })
-        // Column 1: Player 1 name and score are in the title.
         .field(
-            format!("{} `{}`", game.player1.name, game.scores.p1),
-            format!("Status: {}", p1_status), // Value contains the status.
+            game.player1.name.clone(),
+            format!("Status: {}", p1_status),
             true,
         )
-        // Column 2: The "vs" separator. The value is a zero-width space to ensure alignment.
-        .field("vs", "\u{200B}", true)
-        // Column 3: Player 2 score and name are in the title.
         .field(
-            format!("`{}` {}", game.scores.p2, game.player2.name),
-            format!("Status: {}", p2_status), // Value contains the status.
+            format!("`{}` vs `{}`", game.scores.p1, game.scores.p2),
+            "\u{200B}", // Zero-width space for alignment
             true,
         )
-        // The description contains the game log, which is always rendered below the fields.
+        .field(
+            game.player2.name.clone(),
+            format!("Status: {}", p2_status),
+            true,
+        )
         .description(log_description)
         .footer(CreateEmbedFooter::new(footer_text))
 }
@@ -119,12 +119,10 @@ async fn send_ephemeral_error(
         .title("Invalid Action")
         .description(description)
         .color(ERROR_COLOR);
-    let builder = CreateInteractionResponseMessage::new()
+    let builder = serenity::builder::CreateInteractionResponseFollowup::new()
         .embed(embed)
         .ephemeral(true);
-    let _ = interaction
-        .create_response(&ctx.http, CreateInteractionResponse::Message(builder))
-        .await;
+    let _ = interaction.create_followup(&ctx.http, builder).await;
 }
 
 pub async fn handle_accept(
@@ -279,7 +277,6 @@ pub async fn handle_move(
         }
     }
 
-    let mut round_processed = false;
     let is_over;
     let game_clone;
 
@@ -298,21 +295,30 @@ pub async fn handle_move(
 
         if game.p1_move.is_some() && game.p2_move.is_some() {
             game.process_round();
-            round_processed = true;
         }
 
         is_over = game.is_over();
         game_clone = game.clone();
     }
 
-    let content = if round_processed && !is_over {
-        format!(
-            "[ROUND {}] <@{}> vs <@{}>",
-            game_clone.round, game_clone.player1.id, game_clone.player2.id
-        )
+    // The strikethrough logic correctly resets each round because `game.process_round()` sets
+    // p1_move and p2_move back to `None`.
+    let p1_mention = if game_clone.p1_move.is_some() && !is_over {
+        format!("~~<@{}>~~", game_clone.player1.id)
     } else {
-        interaction.message.content.clone()
+        format!("<@{}>", game_clone.player1.id)
     };
+
+    let p2_mention = if game_clone.p2_move.is_some() && !is_over {
+        format!("~~<@{}>~~", game_clone.player2.id)
+    } else {
+        format!("<@{}>", game_clone.player2.id)
+    };
+
+    let content = format!(
+        "[ROUND {}] {} vs {}",
+        game_clone.round, p1_mention, p2_mention
+    );
 
     let embed = build_game_embed(&game_clone);
 
