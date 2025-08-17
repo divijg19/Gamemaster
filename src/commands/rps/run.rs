@@ -67,19 +67,18 @@ pub async fn run(
 
     let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
-    // DEFINITIVE FIX: Manually construct the mention string `<@ID>` for guaranteed rendering.
-    // Also remove the hyphen between the mention and the score.
+    // DEFINITIVE LAYOUT: Use fields correctly by separating the mention into the title.
     let embed = CreateEmbed::new()
         .author(author.clone())
         .color(PENDING_COLOR)
         .field(
-            format!("<@{}> `{}`", msg.author.id, 0),
-            "Status: … Waiting",
+            format!("<@{}>", msg.author.id),
+            "Score: `0`\nStatus: … Waiting",
             true,
         )
         .field(
-            format!("<@{}> `{}`", opponent.id, 0),
-            "Status: … Waiting",
+            format!("<@{}>", opponent.id),
+            "Score: `0`\nStatus: … Waiting",
             true,
         )
         .description("A challenge has been issued!")
@@ -117,48 +116,45 @@ pub async fn run(
 
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(30)).await;
-
         if let Some(game) = active_games.write().await.remove(&game_msg.id)
-            && !game.accepted
-        {
-            // DEFINITIVE FIX: Apply the same robust mention format to the timeout embed.
-            let embed = CreateEmbed::new()
-                .author(author)
-                .color(ERROR_COLOR)
-                .field(
-                    format!("<@{}> `{}`", game.player1.id, game.scores.p1),
-                    "Status: —",
-                    true,
-                )
-                .field(
-                    format!("<@{}> `{}`", game.player2.id, game.scores.p2),
-                    "Status: Did not respond",
-                    true,
-                )
-                .description("The challenge was not accepted in time.")
-                .footer(CreateEmbedFooter::new("Challenge expired."));
+            && !game.accepted {
+                let embed = CreateEmbed::new()
+                    .author(author)
+                    .color(ERROR_COLOR)
+                    .field(
+                        format!("<@{}>", game.player1.id),
+                        format!("Score: `{}`\nStatus: —", game.scores.p1),
+                        true,
+                    )
+                    .field(
+                        format!("<@{}>", game.player2.id),
+                        format!("Score: `{}`\nStatus: Did not respond", game.scores.p2),
+                        true,
+                    )
+                    .description("The challenge was not accepted in time.")
+                    .footer(CreateEmbedFooter::new("Challenge expired."));
 
-            let disabled_buttons = CreateActionRow::Buttons(vec![
-                CreateButton::new("disabled_accept")
-                    .label("Accept")
-                    .style(ButtonStyle::Success)
-                    .disabled(true),
-                CreateButton::new("disabled_decline")
-                    .label("Decline")
-                    .style(ButtonStyle::Danger)
-                    .disabled(true),
-            ]);
+                let disabled_buttons = CreateActionRow::Buttons(vec![
+                    CreateButton::new("disabled_accept")
+                        .label("Accept")
+                        .style(ButtonStyle::Success)
+                        .disabled(true),
+                    CreateButton::new("disabled_decline")
+                        .label("Decline")
+                        .style(ButtonStyle::Danger)
+                        .disabled(true),
+                ]);
 
-            if let Ok(mut message) = game_msg
-                .channel_id
-                .message(&ctx_clone.http, game_msg.id)
-                .await
-            {
-                let builder = EditMessage::new()
-                    .embed(embed)
-                    .components(vec![disabled_buttons]);
-                let _ = message.edit(&ctx_clone.http, builder).await;
+                if let Ok(mut message) = game_msg
+                    .channel_id
+                    .message(&ctx_clone.http, game_msg.id)
+                    .await
+                {
+                    let builder = EditMessage::new()
+                        .embed(embed)
+                        .components(vec![disabled_buttons]);
+                    let _ = message.edit(&ctx_clone.http, builder).await;
+                }
             }
-        }
     });
 }

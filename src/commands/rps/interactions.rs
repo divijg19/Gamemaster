@@ -16,7 +16,7 @@ const SUCCESS_COLOR: u32 = 0x00FF00;
 const ERROR_COLOR: u32 = 0xFF0000;
 const ACTIVE_COLOR: u32 = 0x5865F2;
 
-// --- DEFINITIVE UI REWRITE: This renderer now uses inline fields for the final layout. ---
+// --- DEFINITIVE UI REWRITE: This renderer uses inline fields before the description for the final layout. ---
 fn build_game_embed(game: &GameState) -> CreateEmbed {
     let format_str = match game.format {
         super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
@@ -48,14 +48,12 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
     };
 
     let (p1_status, p2_status) = if game.is_over() {
-        // REFINEMENT: Safely access the last round's history.
         if let Some(last_round) = game.history.last() {
             (
                 last_round.p1_move.to_emoji().to_string(),
                 last_round.p2_move.to_emoji().to_string(),
             )
         } else {
-            // Fallback for an unlikely edge case.
             ("—".to_string(), "—".to_string())
         }
     } else {
@@ -72,11 +70,11 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         (p1.to_string(), p2.to_string())
     };
 
-    let p1_field_title = format!("<@{}> - `{}`", game.player1.id, game.scores.p1);
-    let p1_field_content = format!("Status: {}", p1_status);
+    let p1_field_title = format!("<@{}>", game.player1.id);
+    let p1_field_content = format!("Score: `{}`\nStatus: {}", game.scores.p1, p1_status);
 
-    let p2_field_title = format!("<@{}> - `{}`", game.player2.id, game.scores.p2);
-    let p2_field_content = format!("Status: {}", p2_status);
+    let p2_field_title = format!("<@{}>", game.player2.id);
+    let p2_field_content = format!("Score: `{}`\nStatus: {}", game.scores.p2, p2_status);
 
     let footer_text = if game.is_over() {
         let winner = if game.scores.p1 > game.scores.p2 {
@@ -193,7 +191,6 @@ pub async fn handle_decline(
         return;
     }
 
-    // REFINEMENT: Create a consistent "declined" UI that matches the other layouts.
     if let Some(game) = active_games.write().await.remove(&interaction.message.id) {
         let format_str = match game.format {
             super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
@@ -205,13 +202,13 @@ pub async fn handle_decline(
             .author(author)
             .color(ERROR_COLOR)
             .field(
-                format!("<@{}> - `{}`", game.player1.id, game.scores.p1),
-                "Status: —",
+                format!("<@{}>", game.player1.id),
+                format!("Score: `{}`\nStatus: —", game.scores.p1),
                 true,
             )
             .field(
-                format!("<@{}> - `{}`", game.player2.id, game.scores.p2),
-                "Status: Declined",
+                format!("<@{}>", game.player2.id),
+                format!("Score: `{}`\nStatus: Declined", game.scores.p2),
                 true,
             )
             .description(format!("The challenge was declined by <@{}>.", p2_id));
