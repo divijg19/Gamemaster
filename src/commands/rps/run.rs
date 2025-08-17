@@ -9,7 +9,6 @@ use serenity::builder::{
 use serenity::model::application::ButtonStyle;
 use serenity::model::channel::Message;
 use serenity::model::id::MessageId;
-// The Mention trait is not needed as .mention() is available by default on User
 use serenity::prelude::*;
 use tokio::sync::RwLock;
 
@@ -68,16 +67,18 @@ pub async fn run(
 
     let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
+    // DEFINITIVE FIX: Manually construct the mention string `<@ID>` for guaranteed rendering.
+    // Also remove the hyphen between the mention and the score.
     let embed = CreateEmbed::new()
         .author(author.clone())
         .color(PENDING_COLOR)
         .field(
-            format!("{} - `0`", msg.author.mention()),
+            format!("<@{}> `{}`", msg.author.id, 0),
             "Status: … Waiting",
             true,
         )
         .field(
-            format!("{} - `0`", opponent.mention()),
+            format!("<@{}> `{}`", opponent.id, 0),
             "Status: … Waiting",
             true,
         )
@@ -117,20 +118,20 @@ pub async fn run(
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(30)).await;
 
-        // CLIPPY FIX: The nested `if` statement has been collapsed for better readability.
         if let Some(game) = active_games.write().await.remove(&game_msg.id)
             && !game.accepted
         {
+            // DEFINITIVE FIX: Apply the same robust mention format to the timeout embed.
             let embed = CreateEmbed::new()
                 .author(author)
                 .color(ERROR_COLOR)
                 .field(
-                    format!("{} - `{}`", game.player1.mention(), game.scores.p1),
+                    format!("<@{}> `{}`", game.player1.id, game.scores.p1),
                     "Status: —",
                     true,
                 )
                 .field(
-                    format!("{} - `{}`", game.player2.mention(), game.scores.p2),
+                    format!("<@{}> `{}`", game.player2.id, game.scores.p2),
                     "Status: Did not respond",
                     true,
                 )
