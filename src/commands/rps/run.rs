@@ -67,17 +67,21 @@ pub async fn run(
 
     let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
-    // DEFINITIVE LAYOUT: Build the initial state within the description field.
-    let player_block = format!(
-        "<@{}> - `{}`\nStatus: {}\n\n<@{}> - `{}`\nStatus: {}",
-        msg.author.id, 0, "… Waiting", opponent.id, 0, "… Waiting"
-    );
-    let log_block = "A challenge has been issued!".to_string();
-
+    // DEFINITIVE LAYOUT: Use inline fields before the description for the correct side-by-side layout.
     let embed = CreateEmbed::new()
         .author(author.clone())
         .color(PENDING_COLOR)
-        .description(format!("{}\n\n{}", player_block, log_block))
+        .field(
+            format!("<@{}> - `0`", msg.author.id),
+            "Status: … Waiting",
+            true, // This 'true' is the key to the side-by-side layout.
+        )
+        .field(
+            format!("<@{}> - `0`", opponent.id),
+            "Status: … Waiting",
+            true, // This 'true' makes the fields appear in columns.
+        )
+        .description("A challenge has been issued!")
         .footer(CreateEmbedFooter::new(format!(
             "{}, you have 30 seconds to respond.",
             opponent.name
@@ -112,23 +116,28 @@ pub async fn run(
 
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(30)).await;
-        if let Some(game) = active_games.write().await.remove(&game_msg.id)
-            && !game.accepted {
-                let player_block = format!(
-                    "<@{}> - `{}`\nStatus: {}\n\n<@{}> - `{}`\nStatus: {}",
-                    game.player1.id,
-                    game.scores.p1,
-                    "—",
-                    game.player2.id,
-                    game.scores.p2,
-                    "Did not respond"
-                );
-                let log_block = "The challenge was not accepted in time.".to_string();
 
+        // DEFINITIVE FIX: This logic is now atomic and race-condition-free.
+        let mut games = active_games.write().await;
+        let should_remove = games.get(&game_msg.id).is_some_and(|g| !g.accepted);
+
+        if should_remove
+            && let Some(game) = games.remove(&game_msg.id) {
+                // The UI for the timeout now matches the final, correct layout.
                 let embed = CreateEmbed::new()
                     .author(author)
                     .color(ERROR_COLOR)
-                    .description(format!("{}\n\n{}", player_block, log_block))
+                    .field(
+                        format!("<@{}> - `{}`", game.player1.id, game.scores.p1),
+                        "Status: —",
+                        true,
+                    )
+                    .field(
+                        format!("<@{}> - `{}`", game.player2.id, game.scores.p2),
+                        "Status: Did not respond",
+                        true,
+                    )
+                    .description("The challenge was not accepted in time.")
                     .footer(CreateEmbedFooter::new("Challenge expired."));
 
                 let disabled_buttons = CreateActionRow::Buttons(vec![

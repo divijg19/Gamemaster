@@ -16,7 +16,7 @@ const SUCCESS_COLOR: u32 = 0x00FF00;
 const ERROR_COLOR: u32 = 0xFF0000;
 const ACTIVE_COLOR: u32 = 0x5865F2;
 
-// --- DEFINITIVE UI REWRITE: This renderer builds a single description string for the final layout. ---
+// --- DEFINITIVE UI REWRITE: This renderer now uses inline fields for the final layout. ---
 fn build_game_embed(game: &GameState) -> CreateEmbed {
     let format_str = match game.format {
         super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
@@ -24,33 +24,7 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
     };
     let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
-    // Part 1: Player Status Block
-    let (p1_status, p2_status) = if game.is_over() {
-        (
-            game.history.last().unwrap().p1_move.to_emoji().to_string(),
-            game.history.last().unwrap().p2_move.to_emoji().to_string(),
-        )
-    } else {
-        let p1 = if game.p1_move.is_some() {
-            "✅ Move Locked"
-        } else {
-            "… Waiting"
-        };
-        let p2 = if game.p2_move.is_some() {
-            "✅ Move Locked"
-        } else {
-            "… Waiting"
-        };
-        (p1.to_string(), p2.to_string())
-    };
-
-    let player_block = format!(
-        "<@{}> - `{}`\nStatus: {}\n\n<@{}> - `{}`\nStatus: {}",
-        game.player1.id, game.scores.p1, p1_status, game.player2.id, game.scores.p2, p2_status
-    );
-
-    // Part 2: Game Log Block
-    let log_block = if game.history.is_empty() {
+    let log_description = if game.history.is_empty() {
         "The duel has begun! Make your move.".to_string()
     } else {
         game.history
@@ -73,7 +47,37 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
             .join("\n")
     };
 
-    // Part 3: Footer and Final Assembly
+    let (p1_status, p2_status) = if game.is_over() {
+        // REFINEMENT: Safely access the last round's history.
+        if let Some(last_round) = game.history.last() {
+            (
+                last_round.p1_move.to_emoji().to_string(),
+                last_round.p2_move.to_emoji().to_string(),
+            )
+        } else {
+            // Fallback for an unlikely edge case.
+            ("—".to_string(), "—".to_string())
+        }
+    } else {
+        let p1 = if game.p1_move.is_some() {
+            "✅ Move Locked"
+        } else {
+            "… Waiting"
+        };
+        let p2 = if game.p2_move.is_some() {
+            "✅ Move Locked"
+        } else {
+            "… Waiting"
+        };
+        (p1.to_string(), p2.to_string())
+    };
+
+    let p1_field_title = format!("<@{}> - `{}`", game.player1.id, game.scores.p1);
+    let p1_field_content = format!("Status: {}", p1_status);
+
+    let p2_field_title = format!("<@{}> - `{}`", game.player2.id, game.scores.p2);
+    let p2_field_content = format!("Status: {}", p2_status);
+
     let footer_text = if game.is_over() {
         let winner = if game.scores.p1 > game.scores.p2 {
             &game.player1
@@ -98,7 +102,9 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         } else {
             ACTIVE_COLOR
         })
-        .description(format!("{}\n\n{}", player_block, log_block))
+        .field(p1_field_title, p1_field_content, true)
+        .field(p2_field_title, p2_field_content, true)
+        .description(log_description)
         .footer(CreateEmbedFooter::new(footer_text))
 }
 
@@ -187,30 +193,44 @@ pub async fn handle_decline(
         return;
     }
 
-    active_games.write().await.remove(&interaction.message.id);
+    // REFINEMENT: Create a consistent "declined" UI that matches the other layouts.
+    if let Some(game) = active_games.write().await.remove(&interaction.message.id) {
+        let format_str = match game.format {
+            super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
+            super::state::DuelFormat::RaceTo(n) => format!("Race to {}", n),
+        };
+        let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
-    let bot_user = ctx.cache.current_user().clone();
-    let author =
-        CreateEmbedAuthor::new(&bot_user.name).icon_url(bot_user.avatar_url().unwrap_or_default());
-    let embed = CreateEmbed::new()
-        .author(author)
-        .title("Challenge Declined")
-        .description(format!("The duel was declined by <@{}>.", p2_id))
-        .color(ERROR_COLOR);
-    let disabled_buttons = CreateActionRow::Buttons(vec![
-        CreateButton::new("disabled_accept")
-            .label("Accept")
-            .style(ButtonStyle::Success)
-            .disabled(true),
-        CreateButton::new("disabled_decline")
-            .label("Decline")
-            .style(ButtonStyle::Danger)
-            .disabled(true),
-    ]);
-    let builder = EditMessage::new()
-        .embed(embed)
-        .components(vec![disabled_buttons]);
-    let _ = interaction.message.edit(&ctx.http, builder).await;
+        let embed = CreateEmbed::new()
+            .author(author)
+            .color(ERROR_COLOR)
+            .field(
+                format!("<@{}> - `{}`", game.player1.id, game.scores.p1),
+                "Status: —",
+                true,
+            )
+            .field(
+                format!("<@{}> - `{}`", game.player2.id, game.scores.p2),
+                "Status: Declined",
+                true,
+            )
+            .description(format!("The challenge was declined by <@{}>.", p2_id));
+
+        let disabled_buttons = CreateActionRow::Buttons(vec![
+            CreateButton::new("disabled_accept")
+                .label("Accept")
+                .style(ButtonStyle::Success)
+                .disabled(true),
+            CreateButton::new("disabled_decline")
+                .label("Decline")
+                .style(ButtonStyle::Danger)
+                .disabled(true),
+        ]);
+        let builder = EditMessage::new()
+            .embed(embed)
+            .components(vec![disabled_buttons]);
+        let _ = interaction.message.edit(&ctx.http, builder).await;
+    }
 }
 
 pub async fn handle_prompt(
