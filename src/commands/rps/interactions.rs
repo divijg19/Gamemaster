@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serenity::builder::{
-    CreateActionRow, CreateButton, CreateEmbed, CreateEmbedAuthor, CreateInteractionResponse,
-    CreateInteractionResponseMessage, EditMessage,
+    CreateActionRow, CreateButton, CreateEmbed, CreateEmbedAuthor, CreateEmbedFooter,
+    CreateInteractionResponse, CreateInteractionResponseMessage, EditMessage,
 };
 use serenity::model::application::{ButtonStyle, ComponentInteraction};
 use serenity::model::id::{MessageId, UserId};
@@ -16,75 +16,77 @@ const SUCCESS_COLOR: u32 = 0x00FF00;
 const ERROR_COLOR: u32 = 0xFF0000;
 const ACTIVE_COLOR: u32 = 0x5865F2;
 
-fn build_game_embed(
-    bot_user: &serenity::model::user::CurrentUser,
-    game: &GameState,
-) -> CreateEmbed {
-    let author =
-        CreateEmbedAuthor::new(&bot_user.name).icon_url(bot_user.avatar_url().unwrap_or_default());
-
+// FINAL REFINEMENT: The unused `bot_user` parameter has been removed.
+fn build_game_embed(game: &GameState) -> CreateEmbed {
     let format_str = match game.format {
         super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
         super::state::DuelFormat::RaceTo(n) => format!("Race to {}", n),
     };
+    let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str))
+        .icon_url("https://i.imgur.com/KEngM4f.png");
 
-    let score_header = format!(
-        "<@{}> **{}** vs **{}** <@{}>",
-        game.player1.id, game.scores.p1, game.scores.p2, game.player2.id
-    );
+    let p1_status = if let Some(last_round) = game.history.last() {
+        last_round.p1_move.to_emoji().to_string()
+    } else {
+        if game.p1_move.is_some() {
+            "✅ Move Locked"
+        } else {
+            "… Waiting"
+        }
+        .to_string()
+    };
+    let p2_status = if let Some(last_round) = game.history.last() {
+        last_round.p2_move.to_emoji().to_string()
+    } else {
+        if game.p2_move.is_some() {
+            "✅ Move Locked"
+        } else {
+            "… Waiting"
+        }
+        .to_string()
+    };
 
-    let mut log_entries: Vec<String> = game
-        .history
-        .iter()
-        .enumerate()
-        .map(|(i, record)| {
-            let outcome_text = match &record.outcome {
-                RoundOutcome::Tie => "Draw!".to_string(),
-                RoundOutcome::Winner(id) => format!("<@{}> won!", id),
-            };
-            format!(
-                "`{}.` {} vs {} {}",
-                i + 1,
-                record.p1_move.to_emoji(),
-                record.p2_move.to_emoji(),
-                outcome_text
-            )
-        })
-        .collect();
+    let p1_field_content = format!("Score: **{}**\nStatus: {}", game.scores.p1, p1_status);
+    let p2_field_content = format!("Score: **{}**\nStatus: {}", game.scores.p2, p2_status);
 
-    let final_description = if game.is_over() {
+    let log_description = if game.history.is_empty() {
+        "The duel has begun! Waiting for the first move.".to_string()
+    } else {
+        game.history
+            .iter()
+            .enumerate()
+            .map(|(i, record)| {
+                let outcome_text = match &record.outcome {
+                    RoundOutcome::Tie => "Draw!".to_string(),
+                    RoundOutcome::Winner(id) => format!("<@{}> won!", id),
+                };
+                format!(
+                    "`{}.` {} vs {} — {}",
+                    i + 1,
+                    record.p1_move.to_emoji(),
+                    record.p2_move.to_emoji(),
+                    outcome_text
+                )
+            })
+            .collect::<Vec<String>>()
+            .join("\n")
+    };
+
+    let footer_text = if game.is_over() {
         let winner = if game.scores.p1 > game.scores.p2 {
             &game.player1
         } else {
             &game.player2
         };
-        log_entries.push(format!("\n**<@{}> is the winner!**", winner.id));
-        format!(
-            "**{}**\n{}\n\n{}",
-            format_str,
-            score_header,
-            log_entries.join("\n")
-        )
+        format!("{} is the winner!", winner.name)
     } else {
-        let status_line = match (game.p1_move, game.p2_move) {
-            (None, None) => format!("**Round {}: Make your move!** [ … vs … ]", game.round),
-            (Some(_), None) => format!(
-                "**Round {}: Waiting for <@{}>...** [ ✅ vs … ]",
-                game.round, game.player2.id
-            ),
-            (None, Some(_)) => format!(
-                "**Round {}: Waiting for <@{}>...** [ … vs ✅ ]",
-                game.round, game.player1.id
-            ),
-            (Some(_), Some(_)) => format!("**Round {}: Processing...**", game.round),
+        let status = match (game.p1_move, game.p2_move) {
+            (None, None) => "Waiting for both players...".to_string(),
+            (Some(_), None) => format!("Waiting for {}...", game.player2.name),
+            (None, Some(_)) => format!("Waiting for {}...", game.player1.name),
+            (Some(_), Some(_)) => "Processing round...".to_string(),
         };
-        log_entries.push(format!("\n{}", status_line));
-        format!(
-            "**{}**\n{}\n\n{}",
-            format_str,
-            score_header,
-            log_entries.join("\n")
-        )
+        format!("Round {} | {}", game.round, status)
     };
 
     CreateEmbed::new()
@@ -94,14 +96,17 @@ fn build_game_embed(
         } else {
             ACTIVE_COLOR
         })
-        .description(final_description)
+        .description(log_description)
+        .field(&game.player1.name, p1_field_content, true)
+        .field(&game.player2.name, p2_field_content, true)
+        .footer(CreateEmbedFooter::new(footer_text))
 }
 
 fn parse_id(s: &str) -> UserId {
     UserId::new(s.parse().unwrap_or(0))
 }
 
-async fn send_ephemeral_error(
+async fn send_ephemeral_followup_error(
     ctx: &Context,
     interaction: &ComponentInteraction,
     description: &str,
@@ -110,7 +115,6 @@ async fn send_ephemeral_error(
         .title("Invalid Action")
         .description(description)
         .color(ERROR_COLOR);
-    // Use a followup because the interaction will have been deferred.
     let builder = serenity::builder::CreateInteractionResponseFollowup::new()
         .embed(embed)
         .ephemeral(true);
@@ -127,7 +131,7 @@ pub async fn handle_accept(
 
     let p2_id = parse_id(parts.get(3).unwrap_or(&""));
     if interaction.user.id != p2_id {
-        send_ephemeral_error(
+        send_ephemeral_followup_error(
             ctx,
             interaction,
             "You cannot accept a challenge that was not meant for you.",
@@ -136,26 +140,27 @@ pub async fn handle_accept(
         return;
     }
 
-    let mut games = active_games.write().await;
-    let game = match games.get_mut(&interaction.message.id) {
-        Some(g) => {
-            g.accepted = true;
-            g.clone()
-        }
-        None => {
-            send_ephemeral_error(
-                ctx,
-                interaction,
-                "This duel has expired and cannot be accepted.",
-            )
-            .await;
-            return;
+    let game = {
+        let mut games = active_games.write().await;
+        match games.get_mut(&interaction.message.id) {
+            Some(g) => {
+                g.accepted = true;
+                g.clone()
+            }
+            None => {
+                let embed = CreateEmbed::new()
+                    .title("Challenge Expired")
+                    .description("This duel is no longer active.")
+                    .color(ERROR_COLOR);
+                let builder = EditMessage::new().embed(embed).components(vec![]);
+                let _ = interaction.message.edit(&ctx.http, builder).await;
+                return;
+            }
         }
     };
-    drop(games);
 
-    let bot_user = ctx.cache.current_user().clone();
-    let embed = build_game_embed(&bot_user, &game);
+    // FINAL REFINEMENT: The `bot_user` variable is no longer needed here.
+    let embed = build_game_embed(&game);
     let components = vec![CreateActionRow::Buttons(vec![
         CreateButton::new(format!("rps_prompt_{}", interaction.message.id))
             .label("Make Your Move")
@@ -176,7 +181,7 @@ pub async fn handle_decline(
 
     let p2_id = parse_id(parts.get(3).unwrap_or(&""));
     if interaction.user.id != p2_id {
-        send_ephemeral_error(
+        send_ephemeral_followup_error(
             ctx,
             interaction,
             "You cannot decline a challenge that was not meant for you.",
@@ -205,7 +210,6 @@ pub async fn handle_decline(
             .style(ButtonStyle::Danger)
             .disabled(true),
     ]);
-
     let builder = EditMessage::new()
         .embed(embed)
         .components(vec![disabled_buttons]);
@@ -285,7 +289,7 @@ pub async fn handle_move(
     let game = match games.get_mut(&game_message_id) {
         Some(g) => g,
         None => {
-            send_ephemeral_error(
+            send_ephemeral_followup_error(
                 ctx,
                 interaction,
                 "This game has expired or could not be found.",
@@ -298,7 +302,7 @@ pub async fn handle_move(
     if (interaction.user.id == game.player1.id && game.p1_move.is_some())
         || (interaction.user.id == game.player2.id && game.p2_move.is_some())
     {
-        send_ephemeral_error(
+        send_ephemeral_followup_error(
             ctx,
             interaction,
             "You have already selected a move for this round.",
@@ -313,7 +317,8 @@ pub async fn handle_move(
         game.p2_move = Some(player_move);
     }
 
-    if game.p1_move.is_some() && game.p2_move.is_some() {
+    let round_just_finished = game.p1_move.is_some() && game.p2_move.is_some();
+    if round_just_finished {
         game.process_round();
     }
 
@@ -326,8 +331,8 @@ pub async fn handle_move(
 
     drop(games);
 
-    let bot_user = ctx.cache.current_user().clone();
-    let embed = build_game_embed(&bot_user, &game_clone);
+    // FINAL REFINEMENT: The `bot_user` variable is no longer needed here.
+    let embed = build_game_embed(&game_clone);
 
     let components = if is_over {
         vec![]
@@ -339,15 +344,8 @@ pub async fn handle_move(
         ])]
     };
 
-    // FINAL FIX: Fetch the original message by its ID and edit it directly.
-    if let Ok(mut original_message) = interaction
-        .channel_id
-        .message(&ctx.http, game_message_id)
-        .await
-    {
-        let builder = EditMessage::new().embed(embed).components(components);
-        if let Err(e) = original_message.edit(&ctx.http, builder).await {
-            println!("Error editing game message: {:?}", e);
-        }
+    let builder = EditMessage::new().embed(embed).components(components);
+    if let Err(e) = interaction.message.edit(&ctx.http, builder).await {
+        println!("Error editing game message: {:?}", e);
     }
 }
