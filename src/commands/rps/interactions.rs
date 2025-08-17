@@ -101,20 +101,22 @@ fn parse_id(s: &str) -> UserId {
     UserId::new(s.parse().unwrap_or(0))
 }
 
+// This helper is now only for private, one-off error messages that do not affect the public game state.
 async fn send_ephemeral_error(
-    interaction: &ComponentInteraction,
     ctx: &Context,
-    title: &str,
+    interaction: &ComponentInteraction,
     description: &str,
 ) {
     let embed = CreateEmbed::new()
-        .title(title)
+        .title("Invalid Action")
         .description(description)
         .color(ERROR_COLOR);
-    let builder = serenity::builder::CreateInteractionResponseFollowup::new()
+    let builder = CreateInteractionResponseMessage::new()
         .embed(embed)
         .ephemeral(true);
-    let _ = interaction.create_followup(&ctx.http, builder).await;
+    let _ = interaction
+        .create_response(&ctx.http, CreateInteractionResponse::Message(builder))
+        .await;
 }
 
 pub async fn handle_accept(
@@ -125,25 +127,40 @@ pub async fn handle_accept(
 ) {
     let p2_id = parse_id(parts.get(3).unwrap_or(&""));
     if interaction.user.id != p2_id {
-        let embed = CreateEmbed::new()
-            .title("Not Your Duel")
-            .description("You cannot accept this challenge.")
-            .color(ERROR_COLOR);
-        let builder = CreateInteractionResponseMessage::new()
-            .embed(embed)
-            .ephemeral(true);
-        let _ = interaction
-            .create_response(&ctx.http, CreateInteractionResponse::Message(builder))
-            .await;
+        send_ephemeral_error(
+            ctx,
+            interaction,
+            "You cannot accept a challenge that was not meant for you.",
+        )
+        .await;
         return;
     }
 
     interaction.defer(&ctx.http).await.ok();
 
     let mut games = active_games.write().await;
+    // The game's state is mutated and the public board is updated. This is correct.
     if let Some(game) = games.get_mut(&interaction.message.id) {
         game.accepted = true;
+
+        let game_clone = game.clone();
+        drop(games); // Drop lock before await
+
+        let bot_user = ctx.cache.current_user().clone();
+        let embed = build_game_embed(&bot_user, &game_clone);
+
+        let components = vec![CreateActionRow::Buttons(vec![
+            CreateButton::new(format!("rps_prompt_{}", interaction.message.id))
+                .label("Make Your Move")
+                .style(ButtonStyle::Primary),
+        ])];
+
+        let builder = EditInteractionResponse::new()
+            .embed(embed)
+            .components(components);
+        let _ = interaction.edit_response(&ctx.http, builder).await;
     } else {
+        // The game state has changed (expired). The public board is updated to reflect this. This is correct.
         let embed = CreateEmbed::new()
             .title("Challenge Expired")
             .description("This duel is no longer active.")
@@ -152,25 +169,7 @@ pub async fn handle_accept(
             .embed(embed)
             .components(vec![]);
         let _ = interaction.edit_response(&ctx.http, builder).await;
-        return;
     }
-
-    let game = games.get(&interaction.message.id).unwrap().clone();
-    drop(games);
-
-    let bot_user = ctx.cache.current_user().clone();
-    let embed = build_game_embed(&bot_user, &game);
-
-    let components = vec![CreateActionRow::Buttons(vec![
-        CreateButton::new(format!("rps_prompt_{}", interaction.message.id))
-            .label("Make Your Move")
-            .style(ButtonStyle::Primary),
-    ])];
-
-    let builder = EditInteractionResponse::new()
-        .embed(embed)
-        .components(components);
-    let _ = interaction.edit_response(&ctx.http, builder).await;
 }
 
 pub async fn handle_decline(
@@ -181,19 +180,19 @@ pub async fn handle_decline(
 ) {
     let p2_id = parse_id(parts.get(3).unwrap_or(&""));
     if interaction.user.id != p2_id {
-        let embed = CreateEmbed::new()
-            .title("Not Your Duel")
-            .description("You cannot decline this challenge.")
-            .color(ERROR_COLOR);
-        let builder = CreateInteractionResponseMessage::new()
-            .embed(embed)
-            .ephemeral(true);
-        let _ = interaction
-            .create_response(&ctx.http, CreateInteractionResponse::Message(builder))
-            .await;
+        send_ephemeral_error(
+            ctx,
+            interaction,
+            "You cannot decline a challenge that was not meant for you.",
+        )
+        .await;
         return;
     }
+
+    // This interaction correctly ends the game and edits the public board to show the result.
     interaction.defer(&ctx.http).await.ok();
+    active_games.write().await.remove(&interaction.message.id);
+
     let bot_user = ctx.cache.current_user().clone();
     let author =
         CreateEmbedAuthor::new(&bot_user.name).icon_url(bot_user.avatar_url().unwrap_or_default());
@@ -216,7 +215,6 @@ pub async fn handle_decline(
         .embed(embed)
         .components(vec![disabled_buttons]);
     let _ = interaction.edit_response(&ctx.http, builder).await;
-    active_games.write().await.remove(&interaction.message.id);
 }
 
 pub async fn handle_prompt(
@@ -224,18 +222,10 @@ pub async fn handle_prompt(
     interaction: &ComponentInteraction,
     active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
 ) {
+    // This is the ONLY interaction that should be ephemeral, as it's a private action. This is correct.
     if let Some(game) = active_games.read().await.get(&interaction.message.id) {
         if interaction.user.id != game.player1.id && interaction.user.id != game.player2.id {
-            let embed = CreateEmbed::new()
-                .title("Not Your Game")
-                .description("You are not a participant in this duel.")
-                .color(ERROR_COLOR);
-            let builder = CreateInteractionResponseMessage::new()
-                .embed(embed)
-                .ephemeral(true);
-            let _ = interaction
-                .create_response(&ctx.http, CreateInteractionResponse::Message(builder))
-                .await;
+            send_ephemeral_error(ctx, interaction, "You are not a participant in this duel.").await;
             return;
         }
         let embed = CreateEmbed::new()
@@ -275,10 +265,6 @@ pub async fn handle_move(
     parts: &[&str],
     active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
 ) {
-    // --- IDEOLOGICAL REFINEMENT: Defer immediately. ---
-    // This acknowledges the click without sending a message, preparing us to edit the original embed.
-    interaction.defer(&ctx.http).await.ok();
-
     let game_message_id = match parts.get(3).and_then(|id_str| id_str.parse::<u64>().ok()) {
         Some(id) => MessageId::new(id),
         None => return,
@@ -294,12 +280,10 @@ pub async fn handle_move(
     let game = match games.get_mut(&game_message_id) {
         Some(g) => g,
         None => {
-            // Since we deferred, we use a followup for this one-off error message.
             send_ephemeral_error(
-                interaction,
                 ctx,
-                "Game Expired",
-                "This game is no longer active.",
+                interaction,
+                "This game has expired or could not be found.",
             )
             .await;
             return;
@@ -310,10 +294,9 @@ pub async fn handle_move(
         || (interaction.user.id == game.player2.id && game.p2_move.is_some())
     {
         send_ephemeral_error(
-            interaction,
             ctx,
-            "Move Already Made",
-            "You have already selected a move.",
+            interaction,
+            "You have already selected a move for this round.",
         )
         .await;
         return;
@@ -343,17 +326,18 @@ pub async fn handle_move(
         ])]
     };
 
-    if is_over {
-        games.remove(&game_message_id);
-    }
-
-    drop(games);
-
-    // This is now the one and only response, editing the original message.
-    let builder = EditInteractionResponse::new()
+    // The single, authoritative response that updates the public game board.
+    let builder = CreateInteractionResponseMessage::new()
         .embed(embed)
         .components(components);
-    if let Err(e) = interaction.edit_response(&ctx.http, builder).await {
-        println!("Error editing game message: {:?}", e);
+    if let Err(e) = interaction
+        .create_response(&ctx.http, CreateInteractionResponse::UpdateMessage(builder))
+        .await
+    {
+        println!("Error updating game message: {:?}", e);
+    }
+
+    if is_over {
+        games.remove(&game_message_id);
     }
 }
