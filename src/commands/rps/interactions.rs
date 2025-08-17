@@ -17,6 +17,7 @@ const SUCCESS_COLOR: u32 = 0x00FF00;
 const ERROR_COLOR: u32 = 0xFF0000;
 const ACTIVE_COLOR: u32 = 0x5865F2;
 
+// DEFINITIVE REFACTOR: The embed builder is updated for the final layout request.
 fn build_game_embed(game: &GameState) -> CreateEmbed {
     let log_description = if game.history.is_empty() {
         "The duel has begun! Make your move.".to_string()
@@ -64,7 +65,6 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         (p1.to_string(), p2.to_string())
     };
 
-    // DEFINITIVE FIX: Applied the clippy suggestion to remove the redundant `let` binding.
     let footer_text = if game.is_over() {
         let winner = if game.scores.p1 > game.scores.p2 {
             &game.player1
@@ -87,13 +87,21 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         } else {
             ACTIVE_COLOR
         })
-        .field(game.player1.name.clone(), p1_status, true)
+        // Column 1: Player 1 name and score are in the title.
         .field(
-            "vs",
-            format!("`{}` - `{}`", game.scores.p1, game.scores.p2),
+            format!("{} `{}`", game.player1.name, game.scores.p1),
+            format!("Status: {}", p1_status), // Value contains the status.
             true,
         )
-        .field(game.player2.name.clone(), p2_status, true)
+        // Column 2: The "vs" separator. The value is a zero-width space to ensure alignment.
+        .field("vs", "\u{200B}", true)
+        // Column 3: Player 2 score and name are in the title.
+        .field(
+            format!("`{}` {}", game.scores.p2, game.player2.name),
+            format!("Status: {}", p2_status), // Value contains the status.
+            true,
+        )
+        // The description contains the game log, which is always rendered below the fields.
         .description(log_description)
         .footer(CreateEmbedFooter::new(footer_text))
 }
