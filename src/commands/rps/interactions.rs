@@ -16,33 +16,16 @@ const SUCCESS_COLOR: u32 = 0x00FF00;
 const ERROR_COLOR: u32 = 0xFF0000;
 const ACTIVE_COLOR: u32 = 0x5865F2;
 
+// --- FINAL UI REFINEMENT: The definitive "live game board" renderer. ---
 fn build_game_embed(game: &GameState) -> CreateEmbed {
-    // REFINEMENT: The author field is now clean, text-only as requested.
+    // 1. The Author: Clean, thematic, and informative.
     let format_str = match game.format {
         super::state::DuelFormat::BestOf(n) => format!("Best of {}", n),
         super::state::DuelFormat::RaceTo(n) => format!("Race to {}", n),
     };
     let author = CreateEmbedAuthor::new(format!("RPS | {}", format_str));
 
-    let p1_field_content = format!(
-        "Score: **{}**\nStatus: {}",
-        game.scores.p1,
-        if game.p1_move.is_some() {
-            "✅ Move Locked"
-        } else {
-            "… Waiting"
-        }
-    );
-    let p2_field_content = format!(
-        "Score: **{}**\nStatus: {}",
-        game.scores.p2,
-        if game.p2_move.is_some() {
-            "✅ Move Locked"
-        } else {
-            "… Waiting"
-        }
-    );
-
+    // 2. The Description: Now dedicated to the clean, historical game log.
     let log_description = if game.history.is_empty() {
         "The duel has begun! Waiting for the first move.".to_string()
     } else {
@@ -66,6 +49,35 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
             .join("\n")
     };
 
+    // 3. The Player Fields: Name and score are now elegantly combined in the field title.
+    let (p1_status, p2_status) = if game.is_over() {
+        // A thoughtful final state: show the move that ended the game.
+        (
+            game.history.last().unwrap().p1_move.to_emoji().to_string(),
+            game.history.last().unwrap().p2_move.to_emoji().to_string(),
+        )
+    } else {
+        // Game is in progress, show current action status.
+        let p1 = if game.p1_move.is_some() {
+            "✅ Move Locked"
+        } else {
+            "… Waiting"
+        };
+        let p2 = if game.p2_move.is_some() {
+            "✅ Move Locked"
+        } else {
+            "… Waiting"
+        };
+        (p1.to_string(), p2.to_string())
+    };
+
+    let p1_field_title = format!("{} - {}", game.player1.name, game.scores.p1);
+    let p1_field_content = format!("Status: {}", p1_status);
+
+    let p2_field_title = format!("{} - {}", game.player2.name, game.scores.p2);
+    let p2_field_content = format!("Status: {}", p2_status);
+
+    // 4. The Footer: The primary, non-intrusive call to action.
     let footer_text = if game.is_over() {
         let winner = if game.scores.p1 > game.scores.p2 {
             &game.player1
@@ -90,9 +102,9 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         } else {
             ACTIVE_COLOR
         })
+        .field(p1_field_title, p1_field_content, true)
+        .field(p2_field_title, p2_field_content, true)
         .description(log_description)
-        .field(&game.player1.name, p1_field_content, true)
-        .field(&game.player2.name, p2_field_content, true)
         .footer(CreateEmbedFooter::new(footer_text))
 }
 
@@ -336,10 +348,9 @@ pub async fn handle_move(
         ])]
     };
 
-    // FINAL, DEFINITIVE FIX: Fetch the original message by its ID and edit it directly.
-    if let Ok(mut original_message) = ctx
-        .http
-        .get_message(interaction.channel_id, game_message_id)
+    if let Ok(mut original_message) = interaction
+        .channel_id
+        .message(&ctx.http, game_message_id)
         .await
     {
         let builder = EditMessage::new().embed(embed).components(components);
