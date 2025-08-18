@@ -322,7 +322,7 @@ pub async fn handle_move(
     };
 
     let content = format!(
-        "[ROUND {}] {} vs {}",
+        "`[ROUND {}]` {} vs {}",
         game_clone.round, p1_mention, p2_mention
     );
 
