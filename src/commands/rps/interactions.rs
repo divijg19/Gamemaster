@@ -79,13 +79,14 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         }
     };
 
+    // DEFINITIVE FIX: Simplified format call to use the Display trait.
     CreateEmbed::new()
+        .title(format!("Rock Paper Scissors | {}", game.format))
         .color(if game.is_over() {
             SUCCESS_COLOR
         } else {
             ACTIVE_COLOR
         })
-        // Player info fields are first, ensuring they appear at the top.
         .field(
             game.player1.name.clone(),
             format!("Status: {}", p1_status),
@@ -101,8 +102,6 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
             format!("Status: {}", p2_status),
             true,
         )
-        // DEFINITIVE FIX: Game log moved to a non-inline field below player info.
-        // A zero-width space is used for the title to keep it clean.
         .field("\u{200B}", log_content, false)
         .footer(CreateEmbedFooter::new(footer_text))
 }
@@ -205,16 +204,24 @@ pub async fn handle_decline(
         return;
     }
 
-    if active_games
-        .write()
-        .await
-        .remove(&interaction.message.id)
-        .is_some()
-    {
+    if let Some(game) = active_games.write().await.remove(&interaction.message.id) {
         let content = format!("<@{}> declined the challenge from <@{}>.", p2_id, p1_id);
+
         let embed = CreateEmbed::new()
+            .title(format!("Rock Paper Scissors | {}", game.format))
             .color(ERROR_COLOR)
-            .description(format!("The duel was declined by <@{}>.", p2_id));
+            .field(game.player1.name.clone(), "Status: —", true)
+            .field(
+                format!("`{}` vs `{}`", game.scores.p1, game.scores.p2),
+                "\u{200B}",
+                true,
+            )
+            .field(game.player2.name.clone(), "Status: Declined", true)
+            .field(
+                "\u{200B}",
+                format!("The duel was declined by <@{}>.", p2_id),
+                false,
+            );
 
         let disabled_buttons = CreateActionRow::Buttons(vec![
             CreateButton::new("disabled_accept")

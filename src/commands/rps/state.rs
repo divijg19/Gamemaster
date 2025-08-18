@@ -1,6 +1,7 @@
 use serenity::model::id::UserId;
 use serenity::model::user::User;
-use std::sync::Arc;
+use std::fmt;
+use std::sync::Arc; // DEFINITIVE FIX: Import the formatting module.
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Move {
@@ -10,7 +11,6 @@ pub enum Move {
 }
 
 impl Move {
-    // UI/UX REFINEMENT: Updated emojis to exactly match the user's specified look.
     pub fn to_emoji(self) -> &'static str {
         match self {
             Move::Rock => "🤜",
@@ -24,6 +24,17 @@ impl Move {
 pub enum DuelFormat {
     BestOf(u32),
     RaceTo(u32),
+}
+
+// DEFINITIVE FIX: Replaced the custom `to_string` method with an implementation
+// of the standard `Display` trait. This is more idiomatic and resolves all clippy warnings.
+impl fmt::Display for DuelFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DuelFormat::BestOf(n) => write!(f, "Best of {}", n),
+            DuelFormat::RaceTo(n) => write!(f, "Race to {}", n),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

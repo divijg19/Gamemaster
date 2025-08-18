@@ -66,12 +66,13 @@ pub async fn run(
         msg.author.id, opponent.id
     );
 
+    // DEFINITIVE FIX: Simplified format call to use the Display trait.
     let embed = CreateEmbed::new()
+        .title(format!("Rock Paper Scissors | {}", duel_format))
         .color(PENDING_COLOR)
-        .field(msg.author.name.clone(), "Status: … Waiting", true)
+        .field(msg.author.name.clone(), "Status: 🕰️ Waiting", true)
         .field("`0` vs `0`", "\u{200B}", true)
-        .field(opponent.name.clone(), "Status: … Waiting", true)
-        // DEFINITIVE FIX: Challenge text moved to a field to ensure it's below player info.
+        .field(opponent.name.clone(), "Status: 🕰️ Waiting", true)
         .field("\u{200B}", "A challenge has been issued!", false)
         .footer(CreateEmbedFooter::new(format!(
             "{}, you have 30 seconds to respond.",
@@ -120,7 +121,9 @@ pub async fn run(
                     game.player1.id, game.player2.id
                 );
 
+                // DEFINITIVE FIX: Simplified format call to use the Display trait.
                 let embed = CreateEmbed::new()
+                    .title(format!("Rock Paper Scissors | {}", game.format))
                     .color(ERROR_COLOR)
                     .field(game.player1.name.clone(), "Status: —", true)
                     .field(
@@ -129,7 +132,6 @@ pub async fn run(
                         true,
                     )
                     .field(game.player2.name.clone(), "Status: Did not respond", true)
-                    // DEFINITIVE FIX: Timeout text moved to a field.
                     .field("\u{200B}", "The challenge was not accepted in time.", false);
 
                 let disabled_buttons = CreateActionRow::Buttons(vec![
