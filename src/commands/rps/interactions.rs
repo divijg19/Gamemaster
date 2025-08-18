@@ -157,7 +157,7 @@ pub async fn handle_accept(
     };
 
     let content = format!(
-        "[ROUND {}] <@{}> vs <@{}>",
+        "`[ROUND {}]` <@{}> vs <@{}>",
         game.round, game.player1.id, game.player2.id
     );
     let embed = build_game_embed(&game);
