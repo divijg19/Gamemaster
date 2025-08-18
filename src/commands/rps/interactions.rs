@@ -69,7 +69,7 @@ fn build_game_embed(game: &GameState) -> CreateEmbed {
         } else {
             &game.player2
         };
-        format!("{} is the winner!", winner.name)
+        format!("`{}` is the winner!", winner.name)
     } else {
         match (game.p1_move, game.p2_move) {
             (None, None) => "Waiting for both players...".to_string(),
