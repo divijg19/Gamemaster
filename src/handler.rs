@@ -1,6 +1,5 @@
 use crate::{AppState, commands};
 use serenity::async_trait;
-// (✓) CORRECTED: Removed unused imports to resolve the compiler warning.
 use serenity::builder::{CreateCommand, CreateCommandOption};
 use serenity::client::Context;
 use serenity::model::application::{CommandOptionType, Interaction};
@@ -8,12 +7,14 @@ use serenity::model::{channel::Message, gateway::Ready, id::GuildId};
 use serenity::prelude::EventHandler;
 use std::str::FromStr;
 
+// (✓) The Command enum is updated to include the new `Help` variant.
 enum Command {
     Ping,
     Prefix,
     Rps,
     Profile,
     Work,
+    Help,
     Unknown,
 }
 
@@ -26,6 +27,7 @@ impl FromStr for Command {
             "rps" => Ok(Command::Rps),
             "profile" => Ok(Command::Profile),
             "work" => Ok(Command::Work),
+            "help" => Ok(Command::Help), // (✓) Added the "help" string
             _ => Ok(Command::Unknown),
         }
     }
@@ -56,8 +58,8 @@ impl EventHandler for Handler {
                     "prefix" => commands::prefix::run_slash(&ctx, &command).await,
                     "profile" => commands::economy::profile::run_slash(&ctx, &command).await,
                     "work" => commands::economy::work::run_slash(&ctx, &command).await,
+                    "help" => commands::help::run_slash(&ctx, &command).await, // (✓) Added routing for the /help command
                     _ => {
-                        // The builders for this response are inlined to avoid unused import warnings.
                         let response = serenity::builder::CreateInteractionResponseMessage::new()
                             .content("Command not implemented yet.");
                         let builder =
@@ -69,7 +71,6 @@ impl EventHandler for Handler {
             Interaction::Component(mut component) => {
                 let command_family = component.data.custom_id.split('_').next().unwrap_or("");
                 if command_family == "rps" {
-                    // (✓) CORRECTED: Cloned the Arc to pass a new reference, not move the original.
                     commands::rps::handle_interaction(
                         &ctx,
                         &mut component,
@@ -115,11 +116,11 @@ impl EventHandler for Handler {
             Command::Ping => commands::ping::run_prefix(&ctx, &msg).await,
             Command::Prefix => commands::prefix::run_prefix(&ctx, &msg, args_vec).await,
             Command::Rps => {
-                // (✓) CORRECTED: Cloned the Arc to pass a new reference, not move the original.
                 commands::rps::run(&ctx, &msg, args_vec, app_state.active_games.clone()).await
             }
             Command::Profile => commands::economy::profile::run_prefix(&ctx, &msg).await,
             Command::Work => commands::economy::work::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Help => commands::help::run_prefix(&ctx, &msg, args_vec).await, // (✓) Added routing for the !help command
             Command::Unknown => {}
         }
     }
@@ -157,6 +158,17 @@ impl EventHandler for Handler {
                             .add_string_choice("Fishing", "fishing")
                             .add_string_choice("Mining", "mining")
                             .add_string_choice("Coding", "coding"),
+                        ),
+                    // (✓) Added the registration for the new /help command.
+                    CreateCommand::new("help")
+                        .description("Shows information about commands")
+                        .add_option(
+                            CreateCommandOption::new(
+                                CommandOptionType::String,
+                                "command",
+                                "The specific command you want help with",
+                            )
+                            .required(false),
                         ),
                 ],
             )
