@@ -113,49 +113,50 @@ pub async fn run(
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(30)).await;
         if let Some(game) = active_games_clone.read().await.get(&game_msg.id)
-            && !game.accepted {
-                active_games_clone.write().await.remove(&game_msg.id);
+            && !game.accepted
+        {
+            active_games_clone.write().await.remove(&game_msg.id);
 
-                let content = format!(
-                    "Challenge between <@{}> and <@{}> expired.",
-                    game.player1.id, game.player2.id
-                );
+            let content = format!(
+                "Challenge between <@{}> and <@{}> expired.",
+                game.player1.id, game.player2.id
+            );
 
-                // DEFINITIVE FIX: Simplified format call to use the Display trait.
-                let embed = CreateEmbed::new()
-                    .title(format!("Rock Paper Scissors | {}", game.format))
-                    .color(ERROR_COLOR)
-                    .field(game.player1.name.clone(), "Status: —", true)
-                    .field(
-                        format!("`{}` vs `{}`", game.scores.p1, game.scores.p2),
-                        "\u{200B}",
-                        true,
-                    )
-                    .field(game.player2.name.clone(), "Status: Did not respond", true)
-                    .field("\u{200B}", "The challenge was not accepted in time.", false);
+            // DEFINITIVE FIX: Simplified format call to use the Display trait.
+            let embed = CreateEmbed::new()
+                .title(format!("Rock Paper Scissors | {}", game.format))
+                .color(ERROR_COLOR)
+                .field(game.player1.name.clone(), "Status: —", true)
+                .field(
+                    format!("`{}` vs `{}`", game.scores.p1, game.scores.p2),
+                    "\u{200B}",
+                    true,
+                )
+                .field(game.player2.name.clone(), "Status: Did not respond", true)
+                .field("\u{200B}", "The challenge was not accepted in time.", false);
 
-                let disabled_buttons = CreateActionRow::Buttons(vec![
-                    CreateButton::new("disabled_accept")
-                        .label("Accept")
-                        .style(ButtonStyle::Success)
-                        .disabled(true),
-                    CreateButton::new("disabled_decline")
-                        .label("Decline")
-                        .style(ButtonStyle::Danger)
-                        .disabled(true),
-                ]);
+            let disabled_buttons = CreateActionRow::Buttons(vec![
+                CreateButton::new("disabled_accept")
+                    .label("Accept")
+                    .style(ButtonStyle::Success)
+                    .disabled(true),
+                CreateButton::new("disabled_decline")
+                    .label("Decline")
+                    .style(ButtonStyle::Danger)
+                    .disabled(true),
+            ]);
 
-                if let Ok(mut message) = game_msg
-                    .channel_id
-                    .message(&ctx_clone.http, game_msg.id)
-                    .await
-                {
-                    let builder = EditMessage::new()
-                        .content(content)
-                        .embed(embed)
-                        .components(vec![disabled_buttons]);
-                    let _ = message.edit(&ctx_clone.http, builder).await;
-                }
+            if let Ok(mut message) = game_msg
+                .channel_id
+                .message(&ctx_clone.http, game_msg.id)
+                .await
+            {
+                let builder = EditMessage::new()
+                    .content(content)
+                    .embed(embed)
+                    .components(vec![disabled_buttons]);
+                let _ = message.edit(&ctx_clone.http, builder).await;
             }
+        }
     });
 }
