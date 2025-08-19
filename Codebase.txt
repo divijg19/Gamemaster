@@ -1,6 +1,12 @@
 .github/workflows/deploy.yml
 Cargo.lock
 Cargo.toml
+Codebase.txt
+migrations/20250818213840_create_profiles_table.sql
+migrations/20250819101459_add_inventory_to_profiles.sql
+src/commands/economy/mod.rs
+src/commands/economy/profile.rs
+src/commands/economy/work.rs
 src/commands/mod.rs
 src/commands/ping.rs
 src/commands/prefix.rs
@@ -8,6 +14,9 @@ src/commands/rps/interactions.rs
 src/commands/rps/mod.rs
 src/commands/rps/run.rs
 src/commands/rps/state.rs
+src/database/init.rs
+src/database/mod.rs
+src/database/profile.rs
 src/handler.rs
 src/main.rs
 src/model.rs
