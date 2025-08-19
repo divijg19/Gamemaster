@@ -7,6 +7,7 @@ migrations/20250819101459_add_inventory_to_profiles.sql
 src/commands/economy/mod.rs
 src/commands/economy/profile.rs
 src/commands/economy/work.rs
+src/commands/help.rs
 src/commands/mod.rs
 src/commands/ping.rs
 src/commands/prefix.rs
