@@ -1,7 +1,7 @@
 use serenity::model::id::UserId;
 use serenity::model::user::User;
 use std::fmt;
-use std::sync::Arc; // DEFINITIVE FIX: Import the formatting module.
+use std::sync::Arc;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Move {
@@ -26,8 +26,6 @@ pub enum DuelFormat {
     RaceTo(u32),
 }
 
-// DEFINITIVE FIX: Replaced the custom `to_string` method with an implementation
-// of the standard `Display` trait. This is more idiomatic and resolves all clippy warnings.
 impl fmt::Display for DuelFormat {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -67,10 +65,13 @@ pub struct GameState {
     pub scores: Scores,
     pub round: u32,
     pub history: Vec<RoundRecord>,
+    #[allow(dead_code)]
+    pub bet: i64, // (✓) The bet amount for the game.
 }
 
 impl GameState {
-    pub fn new(player1: Arc<User>, player2: Arc<User>, format: DuelFormat) -> Self {
+    // (✓) The `new` function now accepts a bet.
+    pub fn new(player1: Arc<User>, player2: Arc<User>, format: DuelFormat, bet: i64) -> Self {
         Self {
             player1,
             player2,
@@ -81,6 +82,7 @@ impl GameState {
             scores: Scores { p1: 0, p2: 0 },
             round: 1,
             history: Vec::new(),
+            bet,
         }
     }
 
@@ -111,13 +113,11 @@ impl GameState {
                     RoundOutcome::Winner(self.player2.id)
                 }
             };
-
             self.history.push(RoundRecord {
                 p1_move: p1m,
                 p2_move: p2m,
                 outcome,
             });
-
             self.p1_move = None;
             self.p2_move = None;
             self.round += 1;

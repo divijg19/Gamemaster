@@ -7,7 +7,6 @@ use serenity::model::{channel::Message, gateway::Ready, id::GuildId};
 use serenity::prelude::EventHandler;
 use std::str::FromStr;
 
-// (✓) The Command enum is updated to include the new `Help` variant.
 enum Command {
     Ping,
     Prefix,
@@ -15,6 +14,7 @@ enum Command {
     Profile,
     Work,
     Help,
+    Blackjack,
     Unknown,
 }
 
@@ -27,7 +27,8 @@ impl FromStr for Command {
             "rps" => Ok(Command::Rps),
             "profile" => Ok(Command::Profile),
             "work" => Ok(Command::Work),
-            "help" => Ok(Command::Help), // (✓) Added the "help" string
+            "help" => Ok(Command::Help),
+            "blackjack" | "bj" => Ok(Command::Blackjack),
             _ => Ok(Command::Unknown),
         }
     }
@@ -39,7 +40,7 @@ pub struct Handler {
 
 #[async_trait]
 impl EventHandler for Handler {
-    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
+    async fn interaction_create(&self, ctx: Context, mut interaction: Interaction) {
         let app_state = {
             ctx.data
                 .read()
@@ -49,16 +50,18 @@ impl EventHandler for Handler {
                 .clone()
         };
 
-        match interaction {
+        match &mut interaction {
             Interaction::Command(command) => {
                 println!("[HANDLER] Received slash command: {}", command.data.name);
 
                 match command.data.name.as_str() {
-                    "ping" => commands::ping::run_slash(&ctx, &command).await,
-                    "prefix" => commands::prefix::run_slash(&ctx, &command).await,
-                    "profile" => commands::economy::profile::run_slash(&ctx, &command).await,
-                    "work" => commands::economy::work::run_slash(&ctx, &command).await,
-                    "help" => commands::help::run_slash(&ctx, &command).await, // (✓) Added routing for the /help command
+                    "ping" => commands::ping::run_slash(&ctx, command).await,
+                    "prefix" => commands::prefix::run_slash(&ctx, command).await,
+                    "profile" => commands::economy::profile::run_slash(&ctx, command).await,
+                    "work" => commands::economy::work::run_slash(&ctx, command).await,
+                    "help" => commands::help::run_slash(&ctx, command).await,
+                    // (✓) CORRECTED: The path now correctly points to the new `blackjack` module.
+                    "blackjack" => commands::blackjack::run_slash(&ctx, command).await,
                     _ => {
                         let response = serenity::builder::CreateInteractionResponseMessage::new()
                             .content("Command not implemented yet.");
@@ -68,16 +71,9 @@ impl EventHandler for Handler {
                     }
                 }
             }
-            Interaction::Component(mut component) => {
-                let command_family = component.data.custom_id.split('_').next().unwrap_or("");
-                if command_family == "rps" {
-                    commands::rps::handle_interaction(
-                        &ctx,
-                        &mut component,
-                        app_state.active_games.clone(),
-                    )
-                    .await;
-                }
+            Interaction::Component(component) => {
+                let mut game_manager = app_state.game_manager.write().await;
+                game_manager.on_interaction(&ctx, component).await;
             }
             _ => {}
         }
@@ -116,11 +112,13 @@ impl EventHandler for Handler {
             Command::Ping => commands::ping::run_prefix(&ctx, &msg).await,
             Command::Prefix => commands::prefix::run_prefix(&ctx, &msg, args_vec).await,
             Command::Rps => {
-                commands::rps::run(&ctx, &msg, args_vec, app_state.active_games.clone()).await
+                commands::rps::run(&ctx, &msg, args_vec, app_state.game_manager.clone()).await
             }
             Command::Profile => commands::economy::profile::run_prefix(&ctx, &msg).await,
             Command::Work => commands::economy::work::run_prefix(&ctx, &msg, args_vec).await,
-            Command::Help => commands::help::run_prefix(&ctx, &msg, args_vec).await, // (✓) Added routing for the !help command
+            Command::Help => commands::help::run_prefix(&ctx, &msg, args_vec).await,
+            // (✓) CORRECTED: The path now correctly points to the new `blackjack` module.
+            Command::Blackjack => commands::blackjack::run_prefix(&ctx, &msg, args_vec).await,
             Command::Unknown => {}
         }
     }
@@ -159,7 +157,6 @@ impl EventHandler for Handler {
                             .add_string_choice("Mining", "mining")
                             .add_string_choice("Coding", "coding"),
                         ),
-                    // (✓) Added the registration for the new /help command.
                     CreateCommand::new("help")
                         .description("Shows information about commands")
                         .add_option(
@@ -170,6 +167,8 @@ impl EventHandler for Handler {
                             )
                             .required(false),
                         ),
+                    CreateCommand::new("blackjack")
+                        .description("Play a game of Blackjack against the house."),
                 ],
             )
             .await

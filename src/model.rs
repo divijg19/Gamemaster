@@ -1,12 +1,11 @@
 //! This module defines the shared data structures used throughout the application.
 //! These structs are used as `TypeMapKey`s to store shared state in Serenity's global context.
 
-use crate::commands::rps::state::GameState;
+// (✓) CORRECTED: Replaced RPS-specific imports with our new generic GameManager.
+use crate::commands::games::GameManager;
 use crate::database::init::DbPool;
 use serenity::gateway::ShardManager;
-use serenity::model::id::MessageId;
 use serenity::prelude::TypeMapKey;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -22,8 +21,9 @@ impl TypeMapKey for ShardManagerContainer {
 /// An `Arc<AppState>` is stored in the global context for easy and safe access
 /// from any command or event handler.
 pub struct AppState {
-    /// A map of currently active Rock, Paper, Scissors games, keyed by message ID.
-    pub active_games: Arc<RwLock<HashMap<MessageId, GameState>>>,
+    /// The manager for all active game instances, such as Blackjack or Poker.
+    /// This is the single point of entry for all game-related logic.
+    pub game_manager: Arc<RwLock<GameManager>>,
     /// The connection pool for the PostgreSQL database.
     pub db: DbPool,
     /// The current command prefix, which can be changed at runtime by administrators.

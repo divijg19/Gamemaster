@@ -1,3 +1,6 @@
+use crate::commands::games::GameManager; // (✓) Add this import for our new game engine
+use crate::handler::Handler;
+use crate::model::{AppState, ShardManagerContainer};
 use serenity::model::gateway::GatewayIntents;
 use serenity::model::id::GuildId;
 use serenity::prelude::*;
@@ -12,17 +15,12 @@ mod database;
 mod handler;
 mod model;
 
-// (✓) Import our centralized data structures from the new model.rs file.
-use crate::handler::Handler;
-use crate::model::{AppState, ShardManagerContainer};
-
 #[shuttle_runtime::main]
 async fn serenity(
     #[shuttle_shared_db::Postgres] pool: PgPool,
     #[shuttle_runtime::Secrets] secrets: SecretStore,
 ) -> ShuttleSerenity {
-    // Run database migrations on startup. This is a critical step to ensure
-    // the database schema is always in sync with the application code.
+    // Run database migrations on startup.
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
@@ -42,15 +40,14 @@ async fn serenity(
         .expect("SERVER_ID must be a valid number.");
     let allowed_guild_id = GuildId::new(server_id);
 
-    // (✓) All shared state is now neatly bundled into the AppState struct from our model.
+    // (✓) CORRECTED: The AppState is now initialized with our new GameManager.
     let app_state = Arc::new(AppState {
-        active_games: Default::default(), // A cleaner way to initialize an empty HashMap
+        game_manager: Arc::new(tokio::sync::RwLock::new(GameManager::new())),
         db: pool,
         prefix: Arc::new(tokio::sync::RwLock::new("$".to_string())),
     });
 
-    // Set gateway intents, which decides what events the bot will be notified about.
-    // (✓) Corrected a typo where GUILDS was listed twice.
+    // Set gateway intents.
     let intents =
         GatewayIntents::GUILDS | GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
 
@@ -59,7 +56,7 @@ async fn serenity(
         .await
         .expect("Error creating the Discord client.");
 
-    // Insert the shared state containers into the client's global data TypeMap.
+    // Insert the shared state into the client's data TypeMap.
     {
         let mut data = client.data.write().await;
         data.insert::<ShardManagerContainer>(client.shard_manager.clone());
