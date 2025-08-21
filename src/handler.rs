@@ -1,5 +1,5 @@
 use crate::{AppState, commands};
-use serenity::async_trait;
+use serenity::async_trait; // (✓) CORRECTED: Re-added the essential `async_trait` macro.
 use serenity::builder::{CreateCommand, CreateCommandOption};
 use serenity::client::Context;
 use serenity::model::application::{CommandOptionType, Interaction};
@@ -38,6 +38,7 @@ pub struct Handler {
     pub allowed_guild_id: GuildId,
 }
 
+// (✓) CORRECTED: The `async_trait` macro is REQUIRED for the `EventHandler` trait to be satisfied.
 #[async_trait]
 impl EventHandler for Handler {
     async fn interaction_create(&self, ctx: Context, mut interaction: Interaction) {
@@ -60,7 +61,6 @@ impl EventHandler for Handler {
                     "profile" => commands::economy::profile::run_slash(&ctx, command).await,
                     "work" => commands::economy::work::run_slash(&ctx, command).await,
                     "help" => commands::help::run_slash(&ctx, command).await,
-                    // (✓) CORRECTED: The path now correctly points to the new `blackjack` module.
                     "blackjack" => commands::blackjack::run_slash(&ctx, command).await,
                     _ => {
                         let response = serenity::builder::CreateInteractionResponseMessage::new()
@@ -72,8 +72,13 @@ impl EventHandler for Handler {
                 }
             }
             Interaction::Component(component) => {
-                let mut game_manager = app_state.game_manager.write().await;
-                game_manager.on_interaction(&ctx, component).await;
+                let command_family = component.data.custom_id.split('_').next().unwrap_or("");
+                if command_family == "rps" || command_family == "bj" {
+                    let mut game_manager = app_state.game_manager.write().await;
+                    game_manager.on_interaction(&ctx, component).await;
+                } else if command_family == "help" {
+                    commands::help::handle_interaction(&ctx, component).await;
+                }
             }
             _ => {}
         }
@@ -98,6 +103,7 @@ impl EventHandler for Handler {
             return;
         }
 
+        // (✓) CORRECTED: The invalid `...` syntax is replaced with the correct `..` syntax for an exclusive range.
         let command_body = &msg.content[prefix_string.len()..];
         let mut args = command_body.split_whitespace();
         let command_str = match args.next() {
@@ -117,7 +123,6 @@ impl EventHandler for Handler {
             Command::Profile => commands::economy::profile::run_prefix(&ctx, &msg).await,
             Command::Work => commands::economy::work::run_prefix(&ctx, &msg, args_vec).await,
             Command::Help => commands::help::run_prefix(&ctx, &msg, args_vec).await,
-            // (✓) CORRECTED: The path now correctly points to the new `blackjack` module.
             Command::Blackjack => commands::blackjack::run_prefix(&ctx, &msg, args_vec).await,
             Command::Unknown => {}
         }
@@ -126,51 +131,41 @@ impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, ready: Ready) {
         println!("{} is connected and ready!", ready.user.name);
 
+        let mut commands_to_register = vec![
+            CreateCommand::new("ping").description("A simple ping command"),
+            CreateCommand::new("prefix").description("Check the bot's current command prefix"),
+            CreateCommand::new("profile")
+                .description("View your or another user's economy profile")
+                .add_option(
+                    CreateCommandOption::new(
+                        CommandOptionType::User,
+                        "user",
+                        "The user whose profile you want to see",
+                    )
+                    .required(false),
+                ),
+            CreateCommand::new("work")
+                .description("Work to earn coins")
+                .add_option(
+                    CreateCommandOption::new(
+                        CommandOptionType::String,
+                        "job",
+                        "The type of job you want to do",
+                    )
+                    .required(true)
+                    .add_string_choice("Fishing", "fishing")
+                    .add_string_choice("Mining", "mining")
+                    .add_string_choice("Coding", "coding"),
+                ),
+            CreateCommand::new("blackjack")
+                .description("Play a game of Blackjack against the house."),
+        ];
+
+        commands_to_register.push(commands::help::register());
+
         if let Err(e) = self
             .allowed_guild_id
-            .set_commands(
-                &ctx.http,
-                vec![
-                    CreateCommand::new("ping").description("A simple ping command"),
-                    CreateCommand::new("prefix")
-                        .description("Check the bot's current command prefix"),
-                    CreateCommand::new("profile")
-                        .description("View your or another user's economy profile")
-                        .add_option(
-                            CreateCommandOption::new(
-                                CommandOptionType::User,
-                                "user",
-                                "The user whose profile you want to see",
-                            )
-                            .required(false),
-                        ),
-                    CreateCommand::new("work")
-                        .description("Work to earn coins")
-                        .add_option(
-                            CreateCommandOption::new(
-                                CommandOptionType::String,
-                                "job",
-                                "The type of job you want to do",
-                            )
-                            .required(true)
-                            .add_string_choice("Fishing", "fishing")
-                            .add_string_choice("Mining", "mining")
-                            .add_string_choice("Coding", "coding"),
-                        ),
-                    CreateCommand::new("help")
-                        .description("Shows information about commands")
-                        .add_option(
-                            CreateCommandOption::new(
-                                CommandOptionType::String,
-                                "command",
-                                "The specific command you want help with",
-                            )
-                            .required(false),
-                        ),
-                    CreateCommand::new("blackjack")
-                        .description("Play a game of Blackjack against the house."),
-                ],
-            )
+            .set_commands(&ctx.http, commands_to_register)
             .await
         {
             println!("[HANDLER] Error creating guild commands: {:?}", e);
