@@ -1,22 +1,32 @@
 //! This module contains the full implementation of the Blackjack game,
-//! including its state, rules, and adherence to the `Game` trait.
+//! including its state, rules, multiplayer support, and adherence to the `Game` trait.
 
-// (✓) CORRECTED: Removed the unused `Rank` enum from the import statement.
 use crate::commands::games::card::Card;
 use crate::commands::games::deck::Deck;
 use crate::commands::games::{Game, GameUpdate};
 use serenity::async_trait;
 use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed};
 use serenity::model::application::{ButtonStyle, ComponentInteraction};
+use serenity::model::user::User;
 use serenity::prelude::Context;
 use std::any::Any;
+use std::sync::Arc;
 
 /// Represents the current phase of a Blackjack game.
 #[derive(Debug, PartialEq, Eq)]
 enum GamePhase {
-    PlayerTurn,
+    WaitingForPlayers,
+    PlayerTurns,
     DealerTurn,
     GameOver,
+}
+
+/// Represents a player's current state within an active game.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlayerStatus {
+    Playing,
+    Stood,
+    Busted,
 }
 
 /// A helper struct to manage a hand of cards and calculate its score.
@@ -36,15 +46,13 @@ impl Hand {
     fn score(&self) -> u8 {
         let mut score: u8 = 0;
         let mut ace_count: u8 = 0;
-
         for card in &self.cards {
             let (val1, val2_opt) = card.rank.value();
-            score += val1;
+            score = score.saturating_add(val1);
             if val2_opt.is_some() {
                 ace_count += 1;
             }
         }
-
         while ace_count > 0 && score.saturating_add(10) <= 21 {
             score += 10;
             ace_count -= 1;
@@ -64,50 +72,87 @@ impl Hand {
     }
 }
 
-/// The main struct for the Blackjack game state.
+/// A struct to hold the state for a single player in the game.
+struct Player {
+    user: Arc<User>,
+    hand: Hand,
+    status: PlayerStatus,
+}
+
+/// The main struct for the Blackjack game state, now supporting multiplayer.
 pub struct BlackjackGame {
-    deck: Deck,
-    player_hand: Hand,
+    host_id: u64,
+    players: Vec<Player>,
     dealer_hand: Hand,
+    deck: Deck,
     phase: GamePhase,
-    // TODO: bet: i64,
+    current_player_index: usize,
 }
 
 impl BlackjackGame {
-    /// Creates a new game, shuffles the deck, and deals the initial hands.
-    pub fn new() -> Self {
-        let mut deck = Deck::new();
-        deck.shuffle();
-        let mut player_hand = Hand::new();
-        let mut dealer_hand = Hand::new();
-
-        player_hand.add_card(deck.deal_one().unwrap());
-        dealer_hand.add_card(deck.deal_one().unwrap());
-        player_hand.add_card(deck.deal_one().unwrap());
-        dealer_hand.add_card(deck.deal_one().unwrap());
-
-        let phase = if player_hand.score() == 21 {
-            GamePhase::DealerTurn
-        } else {
-            GamePhase::PlayerTurn
-        };
-
-        let mut game = Self {
-            deck,
-            player_hand,
-            dealer_hand,
-            phase,
-        };
-
-        if game.phase == GamePhase::DealerTurn {
-            game.play_dealer_turn();
+    /// Creates a new game lobby with the host as the first player.
+    pub fn new(host: Arc<User>) -> Self {
+        Self {
+            host_id: host.id.get(),
+            players: vec![Player {
+                user: host,
+                hand: Hand::new(),
+                status: PlayerStatus::Playing,
+            }],
+            dealer_hand: Hand::new(),
+            deck: Deck::new(),
+            phase: GamePhase::WaitingForPlayers,
+            current_player_index: 0,
         }
-
-        game
     }
 
-    /// Plays the dealer's turn according to standard rules (hit until 17 or more).
+    /// Transitions the game from the lobby to active play.
+    fn start_game(&mut self) {
+        self.deck.shuffle();
+        // Deal two cards to each player and the dealer.
+        for _ in 0..2 {
+            for player in self.players.iter_mut() {
+                if let Some(card) = self.deck.deal_one() {
+                    player.hand.add_card(card);
+                }
+            }
+            if let Some(card) = self.deck.deal_one() {
+                self.dealer_hand.add_card(card);
+            }
+        }
+        self.phase = GamePhase::PlayerTurns;
+    }
+
+    /// Finds the next player who is still 'Playing' and advances the turn.
+    /// If no players are left, it triggers the dealer's turn.
+    fn advance_turn(&mut self) {
+        // Find the index of the next player who is still in the 'Playing' status.
+        if let Some(next_player_pos) = self.players.iter().position(|p| {
+            if let Some(current_pos) = self
+                .players
+                .iter()
+                .position(|p2| p2.user.id == self.players[self.current_player_index].user.id)
+            {
+                p.status == PlayerStatus::Playing
+                    && self
+                        .players
+                        .iter()
+                        .position(|p3| p3.user.id == p.user.id)
+                        .unwrap()
+                        > current_pos
+            } else {
+                false
+            }
+        }) {
+            self.current_player_index = next_player_pos;
+        } else {
+            self.play_dealer_turn();
+        }
+    }
+
+    /// Plays the dealer's turn according to standard rules.
     fn play_dealer_turn(&mut self) {
+        self.phase = GamePhase::DealerTurn;
         while self.dealer_hand.score() < 17 {
             if let Some(card) = self.deck.deal_one() {
                 self.dealer_hand.add_card(card);
@@ -118,27 +163,30 @@ impl BlackjackGame {
         self.phase = GamePhase::GameOver;
     }
 
-    /// Determines the final outcome of the game and returns a result string.
+    /// Determines the final outcome for each player and returns a result string.
     fn get_game_result(&self) -> String {
-        let player_score = self.player_hand.score();
         let dealer_score = self.dealer_hand.score();
-
-        if player_score > 21 {
-            return "You busted! **Dealer wins.**".to_string();
-        }
-        if dealer_score > 21 {
-            return "Dealer busted! **You win!**".to_string();
-        }
-        if player_score == 21 && self.player_hand.cards.len() == 2 {
-            return "**Blackjack! You win!**".to_string();
-        }
-        if player_score == dealer_score {
-            return "**It's a push!** (Tie)".to_string();
-        }
-        if player_score > dealer_score {
-            return "**You win!**".to_string();
-        }
-        "**Dealer wins.**".to_string()
+        self.players
+            .iter()
+            .map(|player| {
+                let player_score = player.hand.score();
+                let result = if player_score > 21 {
+                    "Busted!".to_string()
+                } else if dealer_score > 21 {
+                    "**Wins!** (Dealer Busted)".to_string()
+                } else if player_score == 21 && player.hand.cards.len() == 2 {
+                    "**Blackjack!**".to_string()
+                } else if player_score > dealer_score {
+                    "**Wins!**".to_string()
+                } else if player_score == dealer_score {
+                    "Push.".to_string()
+                } else {
+                    "Loses.".to_string()
+                };
+                format!("<@{}>: {}", player.user.id, result)
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 }
 
@@ -156,33 +204,98 @@ impl Game for BlackjackGame {
         _ctx: &Context,
         interaction: &mut ComponentInteraction,
     ) -> GameUpdate {
-        if self.phase != GamePhase::PlayerTurn {
-            return GameUpdate::NoOp;
-        }
-
+        let user = &interaction.user;
         let custom_id = interaction.data.custom_id.as_str();
-        match custom_id {
-            "bj_hit" => {
-                if let Some(card) = self.deck.deal_one() {
-                    self.player_hand.add_card(card);
+
+        match self.phase {
+            GamePhase::WaitingForPlayers => match custom_id {
+                "bj_join" => {
+                    if !self.players.iter().any(|p| p.user.id == user.id) {
+                        self.players.push(Player {
+                            user: Arc::new(user.clone()),
+                            hand: Hand::new(),
+                            status: PlayerStatus::Playing,
+                        });
+                        GameUpdate::ReRender
+                    } else {
+                        GameUpdate::NoOp
+                    } // Already joined
                 }
-                if self.player_hand.score() >= 21 {
-                    self.play_dealer_turn();
+                "bj_start" => {
+                    if user.id.get() == self.host_id {
+                        self.start_game();
+                        GameUpdate::ReRender
+                    } else {
+                        GameUpdate::NoOp
+                    } // Not the host
                 }
+                _ => GameUpdate::NoOp,
+            },
+            GamePhase::PlayerTurns => {
+                if user.id != self.players[self.current_player_index].user.id {
+                    return GameUpdate::NoOp;
+                } // Not their turn
+                match custom_id {
+                    "bj_hit" => {
+                        if let Some(card) = self.deck.deal_one() {
+                            self.players[self.current_player_index].hand.add_card(card);
+                        }
+                        if self.players[self.current_player_index].hand.score() >= 21 {
+                            self.players[self.current_player_index].status = PlayerStatus::Busted;
+                            self.advance_turn();
+                        }
+                    }
+                    "bj_stand" => {
+                        self.players[self.current_player_index].status = PlayerStatus::Stood;
+                        self.advance_turn();
+                    }
+                    _ => return GameUpdate::NoOp,
+                }
+                GameUpdate::ReRender
             }
-            "bj_stand" => {
-                self.play_dealer_turn();
-            }
-            _ => return GameUpdate::NoOp,
+            _ => GameUpdate::NoOp, // No interactions during dealer/game over phase
         }
-        GameUpdate::ReRender
     }
 
     fn render(&self) -> (CreateEmbed, Vec<CreateActionRow>) {
-        let mut embed = CreateEmbed::new().title("Blackjack");
+        match self.phase {
+            GamePhase::WaitingForPlayers => self.render_lobby(),
+            _ => self.render_table(),
+        }
+    }
+}
+
+// Helper functions for rendering different game phases.
+impl BlackjackGame {
+    fn render_lobby(&self) -> (CreateEmbed, Vec<CreateActionRow>) {
+        let players_list = self
+            .players
+            .iter()
+            .map(|p| format!("<@{}>", p.user.id))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let embed = CreateEmbed::new()
+            .title("Blackjack Lobby")
+            .description("Waiting for players to join...")
+            .field("Players", players_list, false)
+            .color(0xFFA500); // PENDING_COLOR
+
+        let buttons = vec![
+            CreateButton::new("bj_join")
+                .label("Join Game")
+                .style(ButtonStyle::Success),
+            CreateButton::new("bj_start")
+                .label("Start Game (Host Only)")
+                .style(ButtonStyle::Primary),
+        ];
+        (embed, vec![CreateActionRow::Buttons(buttons)])
+    }
+
+    fn render_table(&self) -> (CreateEmbed, Vec<CreateActionRow>) {
+        let mut embed = CreateEmbed::new().title("Blackjack Table");
         let mut components = Vec::new();
 
-        let dealer_display = if self.phase == GamePhase::PlayerTurn {
+        let dealer_display = if self.phase == GamePhase::PlayerTurns {
             format!(
                 "**Cards:** {}  **?**\n**Score:** `{}`",
                 self.dealer_hand.cards[0],
@@ -191,18 +304,38 @@ impl Game for BlackjackGame {
         } else {
             self.dealer_hand.display()
         };
+        embed = embed.field("Dealer's Hand", dealer_display, false);
 
-        embed = embed.field("Dealer's Hand", dealer_display, false).field(
-            "Your Hand",
-            self.player_hand.display(),
-            false,
-        );
+        for (i, player) in self.players.iter().enumerate() {
+            let turn_indicator =
+                if self.phase == GamePhase::PlayerTurns && i == self.current_player_index {
+                    "▶️ "
+                } else {
+                    ""
+                };
+            let status_indicator = match player.status {
+                PlayerStatus::Stood => " (Stood)",
+                PlayerStatus::Busted => " (Busted)",
+                _ => "",
+            };
+            embed = embed.field(
+                format!(
+                    "{}{}'s Hand{}",
+                    turn_indicator, player.user.name, status_indicator
+                ),
+                player.hand.display(),
+                true,
+            );
+        }
 
         if self.phase == GamePhase::GameOver {
             embed = embed.description(self.get_game_result()).color(0x00FF00);
         } else {
             embed = embed
-                .description("It's your turn. Hit or Stand?")
+                .description(format!(
+                    "It's <@{}>'s turn.",
+                    self.players[self.current_player_index].user.id
+                ))
                 .color(0x5865F2);
             let buttons = vec![
                 CreateButton::new("bj_hit")
@@ -214,7 +347,6 @@ impl Game for BlackjackGame {
             ];
             components.push(CreateActionRow::Buttons(buttons));
         }
-
         (embed, components)
     }
 }
