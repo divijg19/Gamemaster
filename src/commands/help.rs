@@ -2,8 +2,8 @@
 //!
 //! Features:
 //! - A categorized main menu for easy browsing.
-//! - An interactive dropdown menu for slash command users to get details in-place.
-//! - Dynamic slash command option registration based on the `COMMANDS` array.
+//! - An interactive dropdown menu for both slash and prefix commands.
+//! - Dynamic slash command option registration.
 //! - A detailed view for specific commands.
 
 use crate::AppState;
@@ -169,6 +169,7 @@ async fn create_help_embed(ctx: &Context, command_name_opt: Option<&str>) -> Cre
             }
         }
         None => {
+            // (✓) The description is now universal and mentions the dropdown for all users.
             embed = embed.title("Help Menu")
                  .description(format!("Here are my available commands. For more details, use `{}help <command>` or select an option from the dropdown below.", prefix));
             let categories = [
@@ -220,15 +221,12 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
 }
 
 pub async fn handle_interaction(ctx: &Context, interaction: &mut ComponentInteraction) {
-    // (✓) CORRECTED: The `StringSelect` variant is a struct, so we must destructure it
-    // with `{ values }` to bind its `values` field to a new variable.
     let selected_command =
         if let ComponentInteractionDataKind::StringSelect { values } = &interaction.data.kind {
             &values[0]
         } else {
             return;
         };
-
     let embed = create_help_embed(ctx, Some(selected_command)).await;
     if let Err(e) = interaction.defer(&ctx.http).await {
         println!(
@@ -236,17 +234,23 @@ pub async fn handle_interaction(ctx: &Context, interaction: &mut ComponentIntera
             e
         );
     }
-
     let builder = EditMessage::new().embed(embed).components(vec![]);
     if let Err(e) = interaction.message.edit(&ctx.http, builder).await {
         println!("[HELP CMD] Error editing message for dropdown: {:?}", e);
     }
 }
 
+/// Entry point for the `!help` prefix command.
 pub async fn run_prefix(ctx: &Context, msg: &Message, args: Vec<&str>) {
     let command_name = args.first().map(|s| s.as_ref());
     let embed = create_help_embed(ctx, command_name).await;
-    let builder = CreateMessage::new().embed(embed).reference_message(msg);
+    let mut builder = CreateMessage::new().embed(embed).reference_message(msg);
+
+    // (✓) CORRECTED: Add the interactive dropdown to the prefix command's main menu.
+    if command_name.is_none() {
+        builder = builder.components(vec![create_command_select_menu()]);
+    }
+
     if let Err(e) = msg.channel_id.send_message(&ctx.http, builder).await {
         println!("[HELP CMD] Failed to send prefix response: {:?}", e);
     }
