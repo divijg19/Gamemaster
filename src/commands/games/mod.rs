@@ -12,4 +12,7 @@ pub mod engine;
 // 2. Publicly re-export the most important components from the engine.
 //    This allows other parts of the code to write `use crate::commands::games::Game;`
 //    instead of the more verbose `use crate::commands::games::engine::Game;`.
-pub use engine::{Game, GameManager, GameUpdate};
+//    The `unused_imports` warning from clippy on this line is expected and can be ignored,
+//    as the purpose of this file is to export these items for external use.
+#[allow(unused_imports)]
+pub use engine::{Game, GameManager, GamePayout, GameUpdate};

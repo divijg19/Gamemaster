@@ -254,12 +254,11 @@ fn parse_bet_from_args(args: &[&str]) -> Option<i64> {
         }
 
         // If it's not a format flag, try to parse it as a number
-        if let Ok(num) = arg.parse::<i64>() {
-            if num > 0 {
+        if let Ok(num) = arg.parse::<i64>()
+            && num > 0 {
                 // If successful, it's a candidate for the bet
                 last_potential_bet = Some(num);
             }
-        }
 
         i += 1;
     }

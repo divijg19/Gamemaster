@@ -2,7 +2,8 @@
 //! adhering to the generic `Game` trait.
 
 use super::state::{GameState, Move, RoundOutcome};
-use crate::commands::games::engine::{Game, GameUpdate};
+// (✓) MODIFIED: Import GamePayout and the unified GameUpdate enum.
+use crate::commands::games::engine::{Game, GamePayout, GameUpdate};
 use serenity::async_trait;
 use serenity::builder::{
     CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter, CreateInteractionResponse,
@@ -27,8 +28,8 @@ impl Game for RpsGame {
         self
     }
 
-    /// (✓) MODIFIED: Removed the global defer. Each handler is now responsible
-    /// for acknowledging its own interaction, preventing the "thinking" spam.
+    /// Each handler is now responsible for acknowledging its own interaction,
+    /// preventing the "thinking" spam.
     async fn handle_interaction(
         &mut self,
         ctx: &Context,
@@ -56,8 +57,7 @@ impl Game for RpsGame {
 }
 
 impl RpsGame {
-    /// (✓) ADDED: Sends a direct, ephemeral response to an interaction.
-    /// This is used for user errors (e.g., clicking the wrong button).
+    /// Sends a direct, ephemeral response to an interaction for user errors.
     async fn send_ephemeral_response(
         &self,
         ctx: &Context,
@@ -95,7 +95,6 @@ impl RpsGame {
             return GameUpdate::NoOp;
         }
 
-        // (✓) FIXED: Acknowledge the interaction silently before re-rendering.
         interaction.defer(&ctx.http).await.ok();
         self.state.accepted = true;
         GameUpdate::ReRender
@@ -127,13 +126,24 @@ impl RpsGame {
             return GameUpdate::NoOp;
         }
 
-        // (✓) FIXED: Acknowledge the interaction silently before ending the game.
         interaction.defer(&ctx.http).await.ok();
+
+        // (✓) MODIFIED: Return the unified GameOver struct with a payouts vector.
         GameUpdate::GameOver {
             message: format!("{} declined the challenge.", self.state.player2.name),
-            winner: Some(self.state.player1.id),
-            loser: Some(self.state.player2.id),
-            bet: self.state.bet,
+            payouts: vec![
+                // On decline, the bet is simply returned. P1 "wins" the bet back, P2 "loses" nothing they already lost.
+                // This structure ensures the challenger's balance remains unchanged if the bet was pre-deducted.
+                // If not, a payout of 0 for both would be fine too. This is safer.
+                GamePayout {
+                    user_id: self.state.player1.id,
+                    amount: self.state.bet,
+                },
+                GamePayout {
+                    user_id: self.state.player2.id,
+                    amount: -self.state.bet,
+                },
+            ],
         }
     }
 
@@ -159,16 +169,14 @@ impl RpsGame {
         };
 
         let is_player1 = interaction.user.id == self.state.player1.id;
-        let already_moved = (is_player1 && self.state.p1_move.is_some())
-            || (!is_player1 && self.state.p2_move.is_some());
-
-        if already_moved {
+        if (is_player1 && self.state.p1_move.is_some())
+            || (!is_player1 && self.state.p2_move.is_some())
+        {
             self.send_ephemeral_response(ctx, interaction, "You have already locked in your move.")
                 .await;
             return GameUpdate::NoOp;
         }
 
-        // (✓) FIXED: Acknowledge the interaction silently.
         interaction.defer(&ctx.http).await.ok();
 
         if is_player1 {
@@ -182,16 +190,25 @@ impl RpsGame {
         }
 
         if self.state.is_over() {
-            let (winner, loser) = if self.state.scores.p1 > self.state.scores.p2 {
+            // (✓) MODIFIED: Return the unified GameOver struct with a payouts vector.
+            let (winner_id, loser_id) = if self.state.scores.p1 > self.state.scores.p2 {
                 (self.state.player1.id, self.state.player2.id)
             } else {
                 (self.state.player2.id, self.state.player1.id)
             };
+
             GameUpdate::GameOver {
                 message: "The winner has been decided!".to_string(),
-                winner: Some(winner),
-                loser: Some(loser),
-                bet: self.state.bet,
+                payouts: vec![
+                    GamePayout {
+                        user_id: winner_id,
+                        amount: self.state.bet,
+                    },
+                    GamePayout {
+                        user_id: loser_id,
+                        amount: -self.state.bet,
+                    },
+                ],
             }
         } else {
             GameUpdate::ReRender
@@ -199,7 +216,6 @@ impl RpsGame {
     }
 
     // --- Rendering Functions ---
-    // (No changes needed below this line)
 
     pub fn render_timeout_message(state: &GameState) -> (CreateEmbed, Vec<CreateActionRow>) {
         let mut embed = CreateEmbed::new()

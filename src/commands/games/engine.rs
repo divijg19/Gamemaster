@@ -11,13 +11,21 @@ use sqlx::PgPool;
 use std::any::Any;
 use std::collections::HashMap;
 
+/// (✓) ADDED: Represents a single player's win or loss.
+/// This is flexible enough for both 1v1 and multiplayer games.
+#[derive(Debug, Clone)]
+pub struct GamePayout {
+    pub user_id: UserId,
+    pub amount: i64, // Positive for win, negative for loss, zero for push/tie.
+}
+
+/// (✓) MODIFIED: The GameOver variant is now unified to handle all game types.
+/// It contains a list of payouts, making it suitable for everything from RPS to multi-hand Blackjack.
 pub enum GameUpdate {
     ReRender,
     GameOver {
         message: String,
-        winner: Option<UserId>,
-        loser: Option<UserId>,
-        bet: i64,
+        payouts: Vec<GamePayout>,
     },
     NoOp,
 }
@@ -73,70 +81,53 @@ impl GameManager {
                         println!("[GAME MANAGER] Error editing game message: {:?}", e);
                     }
                 }
-                GameUpdate::GameOver {
-                    message,
-                    winner,
-                    loser,
-                    bet,
-                } => {
+                // (✓) MODIFIED: This single arm now handles game over for RPS, Blackjack, etc.
+                GameUpdate::GameOver { message, payouts } => {
                     println!("[GAME MANAGER] Game over: {}", message);
 
-                    // (✓) FINAL FIX: Reverted to a two-query transaction.
-                    // This is the most robust way to handle this when the macro fails on complex queries.
-                    // The logic is simple for the macro to verify, and atomicity is guaranteed by the transaction.
-                    if bet > 0
-                        && let (Some(winner_id), Some(loser_id)) = (winner, loser)
-                    {
-                        let loser_db_id = loser_id.get() as i64;
-                        let winner_db_id = winner_id.get() as i64;
-
+                    // (✓) OPTIMAL: All database updates are performed in a single, atomic transaction.
+                    if !payouts.is_empty() {
                         let mut tx = match db.begin().await {
                             Ok(tx) => tx,
                             Err(e) => {
                                 println!("[DB] Failed to begin transaction: {:?}", e);
+                                // Don't return yet, still need to update the message.
                                 return;
                             }
                         };
 
-                        // Query 1: Subtract from loser
-                        if let Err(e) = sqlx::query!(
-                            "UPDATE profiles SET balance = balance - $1 WHERE user_id = $2",
-                            bet,
-                            loser_db_id
-                        )
-                        .execute(&mut *tx)
-                        .await
-                        {
-                            println!("[DB] Failed to subtract balance for loser: {:?}", e);
-                            tx.rollback().await.ok(); // Attempt to roll back
-                            return;
+                        for payout in &payouts {
+                            // Skip users who broke even to avoid unnecessary DB calls.
+                            if payout.amount == 0 {
+                                continue;
+                            }
+
+                            if let Err(e) = sqlx::query!(
+                                "UPDATE profiles SET balance = balance + $1 WHERE user_id = $2",
+                                payout.amount,
+                                payout.user_id.get() as i64
+                            )
+                            .execute(&mut *tx)
+                            .await
+                            {
+                                println!(
+                                    "[DB] Failed to process payout for {}: {:?}. Rolling back.",
+                                    payout.user_id, e
+                                );
+                                tx.rollback().await.ok();
+                                // Don't return, as we must update the Discord message.
+                                return;
+                            }
                         }
 
-                        // Query 2: Add to winner
-                        if let Err(e) = sqlx::query!(
-                            "UPDATE profiles SET balance = balance + $1 WHERE user_id = $2",
-                            bet,
-                            winner_db_id
-                        )
-                        .execute(&mut *tx)
-                        .await
-                        {
-                            println!("[DB] Failed to add balance for winner: {:?}", e);
-                            tx.rollback().await.ok(); // Attempt to roll back
-                            return;
-                        }
-
-                        // If both queries succeeded, commit the transaction.
                         if let Err(e) = tx.commit().await {
                             println!("[DB] Failed to commit transaction: {:?}", e);
                         } else {
-                            println!(
-                                "[DB] Transferred {} from {} to {}",
-                                bet, loser_id, winner_id
-                            );
+                            println!("[DB] Successfully processed {} payouts.", payouts.len());
                         }
                     }
 
+                    // Render the final game state and remove all buttons.
                     let (embed, _) = game.render();
                     let builder = EditMessage::new().embed(embed).components(vec![]);
                     if let Err(e) = interaction.message.edit(&ctx.http, builder).await {

@@ -11,4 +11,4 @@ pub mod run;
 // 2. Publicly re-export the `run` functions.
 // This allows the handler to call `commands::blackjack::run_slash(...)`
 // without needing to know about the internal file structure.
-pub use run::{run_prefix, run_slash};
+pub use run::{register, run_prefix, run_slash};

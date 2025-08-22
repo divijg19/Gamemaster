@@ -76,7 +76,6 @@ impl EventHandler for Handler {
             Interaction::Component(component) => {
                 let command_family = component.data.custom_id.split('_').next().unwrap_or("");
                 if command_family == "rps" || command_family == "bj" {
-                    // (✓) FIXED: Use `app_state.db` instead of `app_state.db_pool`
                     let db = app_state.db.clone();
                     let mut game_manager = app_state.game_manager.write().await;
                     game_manager.on_interaction(&ctx, component, &db).await;
@@ -160,10 +159,12 @@ impl EventHandler for Handler {
                     .add_string_choice("Mining", "mining")
                     .add_string_choice("Coding", "coding"),
                 ),
-            CreateCommand::new("blackjack")
-                .description("Play a game of Blackjack against the house."),
+            // (✓) MODIFIED: The old, simple blackjack command has been removed from here.
         ];
 
+        // (✓) MODIFIED: The new, detailed blackjack command is now registered from its module.
+        // This fixes the `dead_code` warning and makes the command available on Discord.
+        commands_to_register.push(commands::blackjack::register());
         commands_to_register.push(commands::rps::register());
         commands_to_register.push(commands::help::register());
 
