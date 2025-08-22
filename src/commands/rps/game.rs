@@ -201,7 +201,6 @@ impl RpsGame {
 
     // --- Rendering Functions ---
 
-    /// (✓) MODIFIED: Renders a timeout message with improved status indicators.
     pub fn render_timeout_message(state: &GameState) -> (CreateEmbed, Vec<CreateActionRow>) {
         let mut embed = CreateEmbed::new()
             .title(format!("Rock Paper Scissors | {}", state.format))
@@ -307,7 +306,7 @@ impl RpsGame {
             .footer(CreateEmbedFooter::new(footer_text));
 
         let components = if self.state.is_over() {
-            vec![] // No buttons when game is over
+            vec![]
         } else {
             vec![CreateActionRow::Buttons(vec![
                 CreateButton::new("rps_move_rock")
@@ -328,7 +327,6 @@ impl RpsGame {
         (embed, components)
     }
 
-    /// (✓) MODIFIED: Returns the correct status emoji for winner/loser.
     fn get_player_statuses(&self) -> (String, String) {
         if self.state.is_over() {
             if self.state.scores.p1 > self.state.scores.p2 {
@@ -377,6 +375,7 @@ impl RpsGame {
         }
     }
 
+    /// (✓) MODIFIED: Provides a better "processing" indicator in the footer.
     fn get_footer_text(&self) -> String {
         if self.state.is_over() {
             let winner = if self.state.scores.p1 > self.state.scores.p2 {
@@ -397,7 +396,8 @@ impl RpsGame {
                 (None, None) => "Waiting for both players...".to_string(),
                 (Some(_), None) => format!("Waiting for {}...", self.state.player2.name),
                 (None, Some(_)) => format!("Waiting for {}...", self.state.player1.name),
-                (Some(_), Some(_)) => "Processing round...".to_string(),
+                // This is the new "thinking" indicator when the bot is processing the result.
+                (Some(_), Some(_)) => "Processing round... 💭".to_string(),
             }
         }
     }
