@@ -211,7 +211,7 @@ impl RpsGame {
                 "\u{200B}",
                 true,
             )
-            .field(state.player2.name.clone(), "Status: 🔗 Timed Out", true)
+            .field(state.player2.name.clone(), "Status: ⛓️‍💥 Timed Out", true)
             .field("\u{200B}", "The challenge was not accepted in time.", false);
 
         if state.bet > 0 {
@@ -330,9 +330,9 @@ impl RpsGame {
     fn get_player_statuses(&self) -> (String, String) {
         if self.state.is_over() {
             if self.state.scores.p1 > self.state.scores.p2 {
-                ("👑".to_string(), "🔗".to_string())
+                ("👑".to_string(), "⛓️‍💥".to_string())
             } else {
-                ("🔗".to_string(), "👑".to_string())
+                ("⛓️‍💥".to_string(), "👑".to_string())
             }
         } else {
             let p1 = if self.state.p1_move.is_some() {

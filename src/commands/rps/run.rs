@@ -11,7 +11,7 @@ use serenity::model::application::{
     CommandDataOption, CommandDataOptionValue, CommandInteraction, CommandOptionType,
 };
 use serenity::model::channel::Message;
-use serenity::model::user::User; // (✓) MODIFIED: UserId is no longer needed directly
+use serenity::model::user::User;
 use serenity::prelude::*;
 use std::sync::Arc;
 use std::time::Duration;
@@ -150,7 +150,6 @@ fn spawn_timeout_handler(
         tokio::time::sleep(Duration::from_secs(30)).await;
         let mut manager = game_manager.write().await;
 
-        // (✓) FIXED: Collapsed the nested `if` statements into one.
         if let Some(game_box) = manager.get_game_mut(&game_msg.id)
             && let Some(rps_game) = game_box.as_any().downcast_ref::<RpsGame>()
             && !rps_game.state.accepted
@@ -175,7 +174,6 @@ async fn send_ephemeral_error(ctx: &Context, command: &CommandInteraction, conte
 
 // --- Argument & Option Parsing Helpers ---
 
-// (✓) FIXED: This function is now much more concise.
 fn get_opponent_from_options(command: &CommandInteraction) -> Result<User, String> {
     for opt in &command.data.options {
         if opt.name == "opponent"
@@ -218,7 +216,6 @@ fn get_bet_from_options(options: &[CommandDataOption]) -> Option<i64> {
     })
 }
 
-// (✓) FIXED: This function is now more concise.
 fn parse_duel_format_from_args(args: &[&str]) -> Option<DuelFormat> {
     let mut args_iter = args.iter();
     while let Some(arg) = args_iter.next() {
@@ -239,10 +236,35 @@ fn parse_duel_format_from_args(args: &[&str]) -> Option<DuelFormat> {
     None
 }
 
+/// (✓) FIXED: This function now correctly ignores numbers that are part of format flags.
 fn parse_bet_from_args(args: &[&str]) -> Option<i64> {
-    args.iter()
-        .filter_map(|s| s.parse::<i64>().ok())
-        .find(|&num| num > 0)
+    let mut last_potential_bet: Option<i64> = None;
+    let mut i = 0;
+
+    while i < args.len() {
+        let arg = args[i];
+
+        // Check if the current argument is a format flag
+        let is_format_flag = arg == "-b" || arg == "--bestof" || arg == "-r" || arg == "--raceto";
+
+        if is_format_flag {
+            // If it is, skip this argument and the next one (which is its value)
+            i += 2;
+            continue;
+        }
+
+        // If it's not a format flag, try to parse it as a number
+        if let Ok(num) = arg.parse::<i64>() {
+            if num > 0 {
+                // If successful, it's a candidate for the bet
+                last_potential_bet = Some(num);
+            }
+        }
+
+        i += 1;
+    }
+
+    last_potential_bet
 }
 
 fn parse_single_duel_format(s: &str) -> Option<DuelFormat> {
