@@ -26,6 +26,13 @@ pub enum DuelFormat {
     RaceTo(u32),
 }
 
+/// The default game format is a single duel (Best of 1).
+impl Default for DuelFormat {
+    fn default() -> Self {
+        DuelFormat::BestOf(1)
+    }
+}
+
 impl fmt::Display for DuelFormat {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -35,7 +42,7 @@ impl fmt::Display for DuelFormat {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Scores {
     pub p1: u32,
     pub p2: u32,
@@ -65,12 +72,10 @@ pub struct GameState {
     pub scores: Scores,
     pub round: u32,
     pub history: Vec<RoundRecord>,
-    #[allow(dead_code)]
-    pub bet: i64, // (✓) The bet amount for the game.
+    pub bet: i64,
 }
 
 impl GameState {
-    // (✓) The `new` function now accepts a bet.
     pub fn new(player1: Arc<User>, player2: Arc<User>, format: DuelFormat, bet: i64) -> Self {
         Self {
             player1,
@@ -79,7 +84,7 @@ impl GameState {
             p2_move: None,
             accepted: false,
             format,
-            scores: Scores { p1: 0, p2: 0 },
+            scores: Scores::default(),
             round: 1,
             history: Vec::new(),
             bet,

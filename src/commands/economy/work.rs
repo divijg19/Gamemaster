@@ -125,10 +125,11 @@ async fn perform_work(
         }
 
         if let Some(rare) = &chosen_job.rare_reward
-            && rng.random_bool(rare.chance) {
-                rewards.rare_finds = 1;
-                reward_lines.push(format!("🌟 **RARE DROP!** You found a **{}**!", rare.name));
-            }
+            && rng.random_bool(rare.chance)
+        {
+            rewards.rare_finds = 1;
+            reward_lines.push(format!("🌟 **RARE DROP!** You found a **{}**!", rare.name));
+        }
         (rewards, reward_lines)
     };
 

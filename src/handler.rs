@@ -1,5 +1,5 @@
 use crate::{AppState, commands};
-use serenity::async_trait; // (✓) CORRECTED: Re-added the essential `async_trait` macro.
+use serenity::async_trait;
 use serenity::builder::{CreateCommand, CreateCommandOption};
 use serenity::client::Context;
 use serenity::model::application::{CommandOptionType, Interaction};
@@ -38,7 +38,6 @@ pub struct Handler {
     pub allowed_guild_id: GuildId,
 }
 
-// (✓) CORRECTED: The `async_trait` macro is REQUIRED for the `EventHandler` trait to be satisfied.
 #[async_trait]
 impl EventHandler for Handler {
     async fn interaction_create(&self, ctx: Context, mut interaction: Interaction) {
@@ -54,7 +53,6 @@ impl EventHandler for Handler {
         match &mut interaction {
             Interaction::Command(command) => {
                 println!("[HANDLER] Received slash command: {}", command.data.name);
-
                 match command.data.name.as_str() {
                     "ping" => commands::ping::run_slash(&ctx, command).await,
                     "prefix" => commands::prefix::run_slash(&ctx, command).await,
@@ -62,6 +60,10 @@ impl EventHandler for Handler {
                     "work" => commands::economy::work::run_slash(&ctx, command).await,
                     "help" => commands::help::run_slash(&ctx, command).await,
                     "blackjack" => commands::blackjack::run_slash(&ctx, command).await,
+                    "rps" => {
+                        commands::rps::run_slash(&ctx, command, app_state.game_manager.clone())
+                            .await
+                    }
                     _ => {
                         let response = serenity::builder::CreateInteractionResponseMessage::new()
                             .content("Command not implemented yet.");
@@ -74,8 +76,10 @@ impl EventHandler for Handler {
             Interaction::Component(component) => {
                 let command_family = component.data.custom_id.split('_').next().unwrap_or("");
                 if command_family == "rps" || command_family == "bj" {
+                    // (✓) FIXED: Use `app_state.db` instead of `app_state.db_pool`
+                    let db = app_state.db.clone();
                     let mut game_manager = app_state.game_manager.write().await;
-                    game_manager.on_interaction(&ctx, component).await;
+                    game_manager.on_interaction(&ctx, component, &db).await;
                 } else if command_family == "help" {
                     commands::help::handle_interaction(&ctx, component).await;
                 }
@@ -103,7 +107,6 @@ impl EventHandler for Handler {
             return;
         }
 
-        // (✓) CORRECTED: The invalid `...` syntax is replaced with the correct `..` syntax for an exclusive range.
         let command_body = &msg.content[prefix_string.len()..];
         let mut args = command_body.split_whitespace();
         let command_str = match args.next() {
@@ -161,6 +164,7 @@ impl EventHandler for Handler {
                 .description("Play a game of Blackjack against the house."),
         ];
 
+        commands_to_register.push(commands::rps::register());
         commands_to_register.push(commands::help::register());
 
         if let Err(e) = self

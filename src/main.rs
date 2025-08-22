@@ -1,4 +1,4 @@
-use crate::commands::games::GameManager; // (✓) Add this import for our new game engine
+use crate::commands::games::engine::GameManager;
 use crate::handler::Handler;
 use crate::model::{AppState, ShardManagerContainer};
 use serenity::model::gateway::GatewayIntents;
@@ -8,6 +8,7 @@ use shuttle_runtime::SecretStore;
 use shuttle_serenity::ShuttleSerenity;
 use sqlx::PgPool;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 // These are our application modules
 mod commands;
@@ -40,11 +41,11 @@ async fn serenity(
         .expect("SERVER_ID must be a valid number.");
     let allowed_guild_id = GuildId::new(server_id);
 
-    // (✓) CORRECTED: The AppState is now initialized with our new GameManager.
+    // (✓) FIXED: Use the correct field name `db` as defined in your AppState struct.
     let app_state = Arc::new(AppState {
-        game_manager: Arc::new(tokio::sync::RwLock::new(GameManager::new())),
+        game_manager: Arc::new(RwLock::new(GameManager::new())),
         db: pool,
-        prefix: Arc::new(tokio::sync::RwLock::new("$".to_string())),
+        prefix: Arc::new(RwLock::new("$".to_string())),
     });
 
     // Set gateway intents.

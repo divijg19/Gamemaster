@@ -5,74 +5,65 @@
 use serenity::async_trait;
 use serenity::builder::{CreateActionRow, CreateEmbed, EditMessage};
 use serenity::model::application::ComponentInteraction;
-use serenity::model::id::MessageId;
+use serenity::model::id::{MessageId, UserId};
 use serenity::prelude::Context;
+use sqlx::PgPool;
 use std::any::Any;
 use std::collections::HashMap;
 
-/// Represents the outcome of a player's interaction with a game.
-/// This enum is returned by `handle_interaction` to tell the `GameManager` what to do next.
 pub enum GameUpdate {
-    /// The game state has changed and the message needs to be re-rendered.
     ReRender,
-    /// The game is over and should be removed from the active games list.
-    GameOver(String),
-    /// No change occurred that requires a view update (e.g., an invalid action).
+    GameOver {
+        message: String,
+        winner: Option<UserId>,
+        loser: Option<UserId>,
+        bet: i64,
+    },
     NoOp,
 }
 
-/// The core `Game` trait. Every game you create (Blackjack, Poker, RPS, etc.) must implement this.
-/// This allows the `GameManager` to handle any game in a generic, uniform way.
 #[async_trait]
 pub trait Game: Send + Sync {
-    /// Allows for safe, dynamic downcasting from a `Box<dyn Game>` to a concrete game type.
-    /// This is essential for game-specific logic, like timeouts.
     fn as_any(&self) -> &dyn Any;
     #[allow(dead_code)]
     fn as_any_mut(&mut self) -> &mut dyn Any;
-
-    /// Handles a component interaction (e.g., a button press) from a player.
     async fn handle_interaction(
         &mut self,
         ctx: &Context,
         interaction: &mut ComponentInteraction,
     ) -> GameUpdate;
-
-    /// Renders the current state of the game into its component parts for display.
     fn render(&self) -> (CreateEmbed, Vec<CreateActionRow>);
 }
 
-/// The GameManager is the central state machine responsible for all active game instances.
 pub struct GameManager {
     active_games: HashMap<MessageId, Box<dyn Game>>,
 }
 
 impl GameManager {
-    /// Creates a new, empty GameManager.
     pub fn new() -> Self {
         Self {
             active_games: HashMap::new(),
         }
     }
 
-    /// Adds a new game instance to the manager, associated with its Discord message ID.
     pub fn start_game(&mut self, message_id: MessageId, game: Box<dyn Game>) {
         self.active_games.insert(message_id, game);
     }
 
-    /// Gets a mutable reference to an active game, if one exists for the given message ID.
     pub fn get_game_mut(&mut self, message_id: &MessageId) -> Option<&mut Box<dyn Game>> {
         self.active_games.get_mut(message_id)
     }
 
-    /// Removes a game from the manager, ending its lifecycle.
     pub fn remove_game(&mut self, message_id: &MessageId) {
         self.active_games.remove(message_id);
     }
 
-    /// The main event router for all in-game interactions.
-    /// It finds the correct game instance and delegates the interaction handling to it.
-    pub async fn on_interaction(&mut self, ctx: &Context, interaction: &mut ComponentInteraction) {
+    pub async fn on_interaction(
+        &mut self,
+        ctx: &Context,
+        interaction: &mut ComponentInteraction,
+        db: &PgPool,
+    ) {
         if let Some(game) = self.get_game_mut(&interaction.message.id) {
             match game.handle_interaction(ctx, interaction).await {
                 GameUpdate::ReRender => {
@@ -82,10 +73,76 @@ impl GameManager {
                         println!("[GAME MANAGER] Error editing game message: {:?}", e);
                     }
                 }
-                GameUpdate::GameOver(final_message) => {
+                GameUpdate::GameOver {
+                    message,
+                    winner,
+                    loser,
+                    bet,
+                } => {
+                    println!("[GAME MANAGER] Game over: {}", message);
+
+                    // (✓) FINAL FIX: Reverted to a two-query transaction.
+                    // This is the most robust way to handle this when the macro fails on complex queries.
+                    // The logic is simple for the macro to verify, and atomicity is guaranteed by the transaction.
+                    if bet > 0
+                        && let (Some(winner_id), Some(loser_id)) = (winner, loser)
+                    {
+                        let loser_db_id = loser_id.get() as i64;
+                        let winner_db_id = winner_id.get() as i64;
+
+                        let mut tx = match db.begin().await {
+                            Ok(tx) => tx,
+                            Err(e) => {
+                                println!("[DB] Failed to begin transaction: {:?}", e);
+                                return;
+                            }
+                        };
+
+                        // Query 1: Subtract from loser
+                        if let Err(e) = sqlx::query!(
+                            "UPDATE profiles SET balance = balance - $1 WHERE user_id = $2",
+                            bet,
+                            loser_db_id
+                        )
+                        .execute(&mut *tx)
+                        .await
+                        {
+                            println!("[DB] Failed to subtract balance for loser: {:?}", e);
+                            tx.rollback().await.ok(); // Attempt to roll back
+                            return;
+                        }
+
+                        // Query 2: Add to winner
+                        if let Err(e) = sqlx::query!(
+                            "UPDATE profiles SET balance = balance + $1 WHERE user_id = $2",
+                            bet,
+                            winner_db_id
+                        )
+                        .execute(&mut *tx)
+                        .await
+                        {
+                            println!("[DB] Failed to add balance for winner: {:?}", e);
+                            tx.rollback().await.ok(); // Attempt to roll back
+                            return;
+                        }
+
+                        // If both queries succeeded, commit the transaction.
+                        if let Err(e) = tx.commit().await {
+                            println!("[DB] Failed to commit transaction: {:?}", e);
+                        } else {
+                            println!(
+                                "[DB] Transferred {} from {} to {}",
+                                bet, loser_id, winner_id
+                            );
+                        }
+                    }
+
+                    let (embed, _) = game.render();
+                    let builder = EditMessage::new().embed(embed).components(vec![]);
+                    if let Err(e) = interaction.message.edit(&ctx.http, builder).await {
+                        println!("[GAME MANAGER] Error editing final message: {:?}", e);
+                    }
                     self.remove_game(&interaction.message.id);
-                    println!("[GAME MANAGER] Game over: {}", final_message);
-                    // In the future, you could edit the message one last time here to show the final result.
                 }
                 GameUpdate::NoOp => {}
             }

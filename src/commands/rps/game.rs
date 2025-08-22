@@ -2,13 +2,16 @@
 //! adhering to the generic `Game` trait.
 
 use super::state::{GameState, Move, RoundOutcome};
-use crate::commands::games::{Game, GameUpdate};
+use crate::commands::games::engine::{Game, GameUpdate}; // Adjusted path for clarity
 use serenity::async_trait;
-use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter};
+use serenity::builder::{
+    CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter, CreateInteractionResponse,
+    CreateInteractionResponseFollowup, CreateInteractionResponseMessage,
+};
 use serenity::model::application::{ButtonStyle, ComponentInteraction};
 use serenity::model::id::UserId;
 use serenity::prelude::Context;
-use std::any::Any; // (✓) ADDED: Import `Any` for downcasting.
+use std::any::Any;
 
 /// This struct holds the state of an active RPS game and implements the `Game` trait.
 pub struct RpsGame {
@@ -17,8 +20,6 @@ pub struct RpsGame {
 
 #[async_trait]
 impl Game for RpsGame {
-    // (✓) ADDED: Implement the required methods for downcasting.
-    // This allows the timeout logic to safely identify this game type.
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -29,67 +30,26 @@ impl Game for RpsGame {
     /// Handles all button presses for an RPS game.
     async fn handle_interaction(
         &mut self,
-        _ctx: &Context,
+        ctx: &Context,
         interaction: &mut ComponentInteraction,
     ) -> GameUpdate {
+        if let Err(e) = interaction
+            .create_response(
+                &ctx.http,
+                CreateInteractionResponse::Defer(CreateInteractionResponseMessage::new()),
+            )
+            .await
+        {
+            println!("[RPS] Error deferring interaction: {:?}", e);
+        }
+
         let custom_id_parts: Vec<&str> = interaction.data.custom_id.split('_').collect();
         let action = custom_id_parts.get(1).unwrap_or(&"");
 
         match *action {
-            "accept" => {
-                let p2_id: UserId = custom_id_parts
-                    .get(3)
-                    .unwrap_or(&"")
-                    .parse()
-                    .unwrap_or(0)
-                    .into();
-                if interaction.user.id != p2_id {
-                    return GameUpdate::NoOp;
-                }
-                self.state.accepted = true;
-                GameUpdate::ReRender
-            }
-            "decline" => {
-                let p2_id: UserId = custom_id_parts
-                    .get(3)
-                    .unwrap_or(&"")
-                    .parse()
-                    .unwrap_or(0)
-                    .into();
-                if interaction.user.id != p2_id {
-                    return GameUpdate::NoOp;
-                }
-                GameUpdate::GameOver("Game was declined by the opponent.".to_string())
-            }
-            "move" => {
-                if interaction.user.id != self.state.player1.id
-                    && interaction.user.id != self.state.player2.id
-                {
-                    return GameUpdate::NoOp;
-                }
-                let player_move = match *custom_id_parts.get(2).unwrap_or(&"") {
-                    "rock" => Move::Rock,
-                    "paper" => Move::Paper,
-                    "scissors" => Move::Scissors,
-                    _ => return GameUpdate::NoOp,
-                };
-
-                if interaction.user.id == self.state.player1.id {
-                    self.state.p1_move = Some(player_move);
-                } else {
-                    self.state.p2_move = Some(player_move);
-                }
-
-                if self.state.p1_move.is_some() && self.state.p2_move.is_some() {
-                    self.state.process_round();
-                }
-
-                if self.state.is_over() {
-                    GameUpdate::GameOver("The winner has been decided!".to_string())
-                } else {
-                    GameUpdate::ReRender
-                }
-            }
+            "accept" => self.handle_accept(ctx, interaction).await,
+            "decline" => self.handle_decline(ctx, interaction).await,
+            "move" => self.handle_move(ctx, interaction).await,
             _ => GameUpdate::NoOp,
         }
     }
@@ -97,18 +57,153 @@ impl Game for RpsGame {
     /// Renders the current state of the game into an embed and action rows.
     fn render(&self) -> (CreateEmbed, Vec<CreateActionRow>) {
         if !self.state.accepted {
-            return self.render_challenge();
+            self.render_challenge()
+        } else {
+            self.render_active_game()
         }
-        self.render_active_game()
     }
 }
 
 impl RpsGame {
-    // (✓) ADDED: A public function to create the specific timeout embed.
+    /// Sends a private message to the user who interacted.
+    async fn send_ephemeral_followup(
+        &self,
+        ctx: &Context,
+        interaction: &ComponentInteraction,
+        content: &str,
+    ) {
+        let builder = CreateInteractionResponseFollowup::new()
+            .content(content)
+            .ephemeral(true);
+        if let Err(e) = interaction.create_followup(&ctx.http, builder).await {
+            println!("[RPS] Error sending ephemeral followup: {:?}", e);
+        }
+    }
+
+    /// Handles the "accept" button press.
+    async fn handle_accept(
+        &mut self,
+        ctx: &Context,
+        interaction: &ComponentInteraction,
+    ) -> GameUpdate {
+        let p2_id: UserId = interaction
+            .data
+            .custom_id
+            .split('_')
+            .nth(3)
+            .unwrap_or("0")
+            .parse()
+            .unwrap_or(0)
+            .into();
+
+        if interaction.user.id != p2_id {
+            self.send_ephemeral_followup(ctx, interaction, "This is not your challenge to accept.")
+                .await;
+            return GameUpdate::NoOp;
+        }
+
+        self.state.accepted = true;
+        GameUpdate::ReRender
+    }
+
+    /// Handles the "decline" button press.
+    async fn handle_decline(
+        &mut self,
+        _ctx: &Context,
+        interaction: &ComponentInteraction,
+    ) -> GameUpdate {
+        let p2_id: UserId = interaction
+            .data
+            .custom_id
+            .split('_')
+            .nth(3)
+            .unwrap_or("0")
+            .parse()
+            .unwrap_or(0)
+            .into();
+
+        if interaction.user.id != p2_id {
+            // No need for a followup here since we can just ignore it.
+            return GameUpdate::NoOp;
+        }
+
+        GameUpdate::GameOver {
+            message: format!("{} declined the challenge.", self.state.player2.name),
+            winner: Some(self.state.player1.id),
+            loser: Some(self.state.player2.id),
+            bet: self.state.bet,
+        }
+    }
+
+    /// Handles a player's move.
+    async fn handle_move(
+        &mut self,
+        ctx: &Context,
+        interaction: &ComponentInteraction,
+    ) -> GameUpdate {
+        if interaction.user.id != self.state.player1.id
+            && interaction.user.id != self.state.player2.id
+        {
+            self.send_ephemeral_followup(ctx, interaction, "You are not a player in this game.")
+                .await;
+            return GameUpdate::NoOp;
+        }
+
+        let player_move = match interaction.data.custom_id.split('_').nth(2) {
+            Some("rock") => Move::Rock,
+            Some("paper") => Move::Paper,
+            Some("scissors") => Move::Scissors,
+            _ => return GameUpdate::NoOp,
+        };
+
+        let is_player1 = interaction.user.id == self.state.player1.id;
+
+        if (is_player1 && self.state.p1_move.is_some())
+            || (!is_player1 && self.state.p2_move.is_some())
+        {
+            self.send_ephemeral_followup(
+                ctx,
+                interaction,
+                "You have already locked in your move for this round.",
+            )
+            .await;
+            return GameUpdate::NoOp;
+        }
+
+        if is_player1 {
+            self.state.p1_move = Some(player_move);
+        } else {
+            self.state.p2_move = Some(player_move);
+        }
+
+        if self.state.p1_move.is_some() && self.state.p2_move.is_some() {
+            self.state.process_round();
+        }
+
+        if self.state.is_over() {
+            let (winner, loser) = if self.state.scores.p1 > self.state.scores.p2 {
+                (Some(self.state.player1.id), Some(self.state.player2.id))
+            } else {
+                (Some(self.state.player2.id), Some(self.state.player1.id))
+            };
+
+            GameUpdate::GameOver {
+                message: "The winner has been decided!".to_string(),
+                winner,
+                loser,
+                bet: self.state.bet,
+            }
+        } else {
+            GameUpdate::ReRender
+        }
+    }
+
+    // --- Rendering Functions ---
+
     pub fn render_timeout_message(state: &GameState) -> (CreateEmbed, Vec<CreateActionRow>) {
-        let embed = CreateEmbed::new()
+        let mut embed = CreateEmbed::new()
             .title(format!("Rock Paper Scissors | {}", state.format))
-            .color(0xFF0000) // ERROR_COLOR
+            .color(0xFF0000) // Red
             .field(state.player1.name.clone(), "Status: —", true)
             .field(
                 format!("`{}` vs `{}`", state.scores.p1, state.scores.p2),
@@ -117,6 +212,11 @@ impl RpsGame {
             )
             .field(state.player2.name.clone(), "Status: Did not respond", true)
             .field("\u{200B}", "The challenge was not accepted in time.", false);
+
+        // (✓) FIXED: Reassign the embed after calling .field() to avoid move error.
+        if state.bet > 0 {
+            embed = embed.field("Bet Amount", format!("💰 {}", state.bet), false);
+        }
 
         let disabled_buttons = vec![
             CreateButton::new("disabled_accept")
@@ -132,19 +232,27 @@ impl RpsGame {
         (embed, vec![CreateActionRow::Buttons(disabled_buttons)])
     }
 
-    /// Renders the initial challenge screen with "Accept" and "Decline" buttons.
     fn render_challenge(&self) -> (CreateEmbed, Vec<CreateActionRow>) {
-        let embed = CreateEmbed::new()
+        let mut embed = CreateEmbed::new()
             .title(format!("Rock Paper Scissors | {}", self.state.format))
-            .color(0xFFA500) // PENDING_COLOR
+            .color(0xFFA500) // Orange
             .field(self.state.player1.name.clone(), "Status: 🕰️ Waiting", true)
             .field("`0` vs `0`", "\u{200B}", true)
             .field(self.state.player2.name.clone(), "Status: 🕰️ Waiting", true)
-            .field("\u{200B}", "A challenge has been issued!", false)
             .footer(CreateEmbedFooter::new(format!(
                 "{}, you have 30 seconds to respond.",
                 self.state.player2.name
             )));
+
+        if self.state.bet > 0 {
+            embed = embed.field(
+                "\u{200B}",
+                format!("A challenge has been issued for **💰 {}**!", self.state.bet),
+                false,
+            );
+        } else {
+            embed = embed.field("\u{200B}", "A challenge has been issued!", false);
+        }
 
         let buttons = vec![
             CreateButton::new(format!(
@@ -164,11 +272,16 @@ impl RpsGame {
         (embed, vec![CreateActionRow::Buttons(buttons)])
     }
 
-    /// Renders the main game screen with player stats, game log, and move buttons.
     fn render_active_game(&self) -> (CreateEmbed, Vec<CreateActionRow>) {
         let (p1_status, p2_status) = self.get_player_statuses();
         let log_content = self.get_log_content();
         let footer_text = self.get_footer_text();
+
+        let bet_display = if self.state.bet > 0 {
+            format!("💰 **{}**", self.state.bet)
+        } else {
+            "\u{200B}".to_string()
+        };
 
         let embed = CreateEmbed::new()
             .title(format!("Rock Paper Scissors | {}", self.state.format))
@@ -176,7 +289,7 @@ impl RpsGame {
                 0x00FF00
             } else {
                 0x5865F2
-            })
+            }) // Green or Blurple
             .field(
                 self.state.player1.name.clone(),
                 format!("Status: {}", p1_status),
@@ -184,7 +297,7 @@ impl RpsGame {
             )
             .field(
                 format!("`{}` vs `{}`", self.state.scores.p1, self.state.scores.p2),
-                "\u{200B}",
+                bet_display,
                 true,
             )
             .field(
@@ -198,7 +311,7 @@ impl RpsGame {
         let components = if self.state.is_over() {
             vec![]
         } else {
-            let buttons = vec![
+            vec![CreateActionRow::Buttons(vec![
                 CreateButton::new("rps_move_rock")
                     .label("Rock")
                     .emoji('✊')
@@ -211,8 +324,7 @@ impl RpsGame {
                     .label("Scissors")
                     .emoji('✌')
                     .style(ButtonStyle::Secondary),
-            ];
-            vec![CreateActionRow::Buttons(buttons)]
+            ])]
         };
 
         (embed, components)
@@ -269,7 +381,14 @@ impl RpsGame {
             } else {
                 &self.state.player2
             };
-            format!("{} is the winner!", winner.name)
+            if self.state.bet > 0 {
+                format!(
+                    "{} is the winner and gets 💰 {}!",
+                    winner.name, self.state.bet
+                )
+            } else {
+                format!("{} is the winner!", winner.name)
+            }
         } else {
             match (self.state.p1_move, self.state.p2_move) {
                 (None, None) => "Waiting for both players...".to_string(),
