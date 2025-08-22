@@ -39,6 +39,7 @@ struct Hand {
     bet: i64,
     status: HandStatus,
 }
+
 impl Hand {
     fn new(bet: i64) -> Self {
         Self {
@@ -175,7 +176,6 @@ impl BlackjackGame {
         } else {
             start_h + 1
         };
-
         for h_idx in initial_h_idx..self.players[start_p].hands.len() {
             if self.players[start_p].hands[h_idx].status == HandStatus::Playing {
                 self.current_hand_index = h_idx;
@@ -259,7 +259,6 @@ impl BlackjackGame {
                             (format!("**Blackjack!** Wins 💰{}", winnings), winnings)
                         }
                     }
-                    // (✓) FIXED: Combined identical `if` blocks for player win conditions.
                     _ if dealer_busted || hand.score() > dealer_score => {
                         (format!("Wins 💰{}", hand.bet), hand.bet)
                     }
@@ -335,12 +334,14 @@ impl Game for BlackjackGame {
         }
     }
 
-    fn render(&self) -> (CreateEmbed, Vec<CreateActionRow>) {
-        if self.phase == GamePhase::WaitingForPlayers {
+    fn render(&self) -> (String, CreateEmbed, Vec<CreateActionRow>) {
+        let content = "**Blackjack Table**".to_string();
+        let (embed, components) = if self.phase == GamePhase::WaitingForPlayers {
             self.render_lobby()
         } else {
             self.render_table()
-        }
+        };
+        (content, embed, components)
     }
 }
 
@@ -349,7 +350,7 @@ impl BlackjackGame {
     async fn handle_lobby(
         &mut self,
         ctx: &Context,
-        interaction: &ComponentInteraction,
+        interaction: &mut ComponentInteraction,
     ) -> GameUpdate {
         match interaction.data.custom_id.as_str() {
             "bj_join" => {
@@ -390,7 +391,7 @@ impl BlackjackGame {
     async fn handle_insurance(
         &mut self,
         ctx: &Context,
-        interaction: &ComponentInteraction,
+        interaction: &mut ComponentInteraction,
     ) -> GameUpdate {
         let player = match self
             .players
@@ -500,7 +501,7 @@ impl BlackjackGame {
                 let player = &mut self.players[self.current_player_index];
                 if player.hands[self.current_hand_index].can_split() {
                     let hand = &mut player.hands[self.current_hand_index];
-                    let split_card = hand.cards.pop().unwrap(); // Safe due to can_split check
+                    let split_card = hand.cards.pop().unwrap();
                     let mut new_hand = Hand::new(self.base_bet);
                     new_hand.add_card(split_card);
 

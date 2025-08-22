@@ -2,7 +2,6 @@
 //! adhering to the generic `Game` trait.
 
 use super::state::{GameState, Move, RoundOutcome};
-// (✓) MODIFIED: Import GamePayout and the unified GameUpdate enum.
 use crate::commands::games::engine::{Game, GamePayout, GameUpdate};
 use serenity::async_trait;
 use serenity::builder::{
@@ -46,8 +45,8 @@ impl Game for RpsGame {
         }
     }
 
-    /// Renders the current state of the game into an embed and action rows.
-    fn render(&self) -> (CreateEmbed, Vec<CreateActionRow>) {
+    /// (✓) MODIFIED: Implements the new render signature from the Game trait.
+    fn render(&self) -> (String, CreateEmbed, Vec<CreateActionRow>) {
         if !self.state.accepted {
             self.render_challenge()
         } else {
@@ -88,7 +87,6 @@ impl RpsGame {
             .parse()
             .unwrap_or(0)
             .into();
-
         if interaction.user.id != p2_id {
             self.send_ephemeral_response(ctx, interaction, "This is not your challenge to accept.")
                 .await;
@@ -115,7 +113,6 @@ impl RpsGame {
             .parse()
             .unwrap_or(0)
             .into();
-
         if interaction.user.id != p2_id {
             self.send_ephemeral_response(
                 ctx,
@@ -128,20 +125,18 @@ impl RpsGame {
 
         interaction.defer(&ctx.http).await.ok();
 
-        // (✓) MODIFIED: Return the unified GameOver struct with a payouts vector.
+        // (✓) MODIFIED: On decline, the bet is a net-zero transaction.
+        // If the bet was pre-deducted, this will correctly refund both players.
         GameUpdate::GameOver {
             message: format!("{} declined the challenge.", self.state.player2.name),
             payouts: vec![
-                // On decline, the bet is simply returned. P1 "wins" the bet back, P2 "loses" nothing they already lost.
-                // This structure ensures the challenger's balance remains unchanged if the bet was pre-deducted.
-                // If not, a payout of 0 for both would be fine too. This is safer.
                 GamePayout {
                     user_id: self.state.player1.id,
-                    amount: self.state.bet,
+                    amount: 0,
                 },
                 GamePayout {
                     user_id: self.state.player2.id,
-                    amount: -self.state.bet,
+                    amount: 0,
                 },
             ],
         }
@@ -160,14 +155,12 @@ impl RpsGame {
                 .await;
             return GameUpdate::NoOp;
         }
-
         let player_move = match interaction.data.custom_id.split('_').nth(2) {
             Some("rock") => Move::Rock,
             Some("paper") => Move::Paper,
             Some("scissors") => Move::Scissors,
             _ => return GameUpdate::NoOp,
         };
-
         let is_player1 = interaction.user.id == self.state.player1.id;
         if (is_player1 && self.state.p1_move.is_some())
             || (!is_player1 && self.state.p2_move.is_some())
@@ -178,25 +171,21 @@ impl RpsGame {
         }
 
         interaction.defer(&ctx.http).await.ok();
-
         if is_player1 {
             self.state.p1_move = Some(player_move);
         } else {
             self.state.p2_move = Some(player_move);
         }
-
         if self.state.p1_move.is_some() && self.state.p2_move.is_some() {
             self.state.process_round();
         }
 
         if self.state.is_over() {
-            // (✓) MODIFIED: Return the unified GameOver struct with a payouts vector.
             let (winner_id, loser_id) = if self.state.scores.p1 > self.state.scores.p2 {
                 (self.state.player1.id, self.state.player2.id)
             } else {
                 (self.state.player2.id, self.state.player1.id)
             };
-
             GameUpdate::GameOver {
                 message: "The winner has been decided!".to_string(),
                 payouts: vec![
@@ -217,10 +206,17 @@ impl RpsGame {
 
     // --- Rendering Functions ---
 
-    pub fn render_timeout_message(state: &GameState) -> (CreateEmbed, Vec<CreateActionRow>) {
+    /// (✓) MODIFIED: Now returns a content string for the final timeout message.
+    pub fn render_timeout_message(
+        state: &GameState,
+    ) -> (String, CreateEmbed, Vec<CreateActionRow>) {
+        let content = format!(
+            "<@{}> vs <@{}> - Timed Out",
+            state.player1.id, state.player2.id
+        );
         let mut embed = CreateEmbed::new()
             .title(format!("Rock Paper Scissors | {}", state.format))
-            .color(0xFF0000) // Red
+            .color(0xFF0000)
             .field(state.player1.name.clone(), "Status: 👑", true)
             .field(
                 format!("`{}` vs `{}`", state.scores.p1, state.scores.p2),
@@ -229,11 +225,9 @@ impl RpsGame {
             )
             .field(state.player2.name.clone(), "Status: ⛓️‍💥 Timed Out", true)
             .field("\u{200B}", "The challenge was not accepted in time.", false);
-
         if state.bet > 0 {
             embed = embed.field("Bet Amount (Returned)", format!("💰 {}", state.bet), false);
         }
-
         let disabled_buttons = vec![
             CreateButton::new("rps_disabled_accept")
                 .label("Accept")
@@ -244,14 +238,22 @@ impl RpsGame {
                 .style(ButtonStyle::Danger)
                 .disabled(true),
         ];
-
-        (embed, vec![CreateActionRow::Buttons(disabled_buttons)])
+        (
+            content,
+            embed,
+            vec![CreateActionRow::Buttons(disabled_buttons)],
+        )
     }
 
-    fn render_challenge(&self) -> (CreateEmbed, Vec<CreateActionRow>) {
+    /// (✓) MODIFIED: Now returns a content string for the challenge message.
+    fn render_challenge(&self) -> (String, CreateEmbed, Vec<CreateActionRow>) {
+        let content = format!(
+            "<@{}> vs <@{}>",
+            self.state.player1.id, self.state.player2.id
+        );
         let mut embed = CreateEmbed::new()
             .title(format!("Rock Paper Scissors | {}", self.state.format))
-            .color(0xFFA500) // Orange
+            .color(0xFFA500)
             .field(self.state.player1.name.clone(), "Status: 🕰️ Waiting", true)
             .field("`0` vs `0`", "\u{200B}", true)
             .field(self.state.player2.name.clone(), "Status: 🕰️ Waiting", true)
@@ -259,14 +261,12 @@ impl RpsGame {
                 "{}, you have 30 seconds to respond.",
                 self.state.player2.name
             )));
-
         let challenge_text = if self.state.bet > 0 {
             format!("A challenge has been issued for **💰 {}**!", self.state.bet)
         } else {
             "A challenge has been issued!".to_string()
         };
         embed = embed.field("\u{200B}", challenge_text, false);
-
         let buttons = vec![
             CreateButton::new(format!(
                 "rps_accept_{}_{}",
@@ -281,28 +281,30 @@ impl RpsGame {
             .label("Decline")
             .style(ButtonStyle::Danger),
         ];
-
-        (embed, vec![CreateActionRow::Buttons(buttons)])
+        (content, embed, vec![CreateActionRow::Buttons(buttons)])
     }
 
-    fn render_active_game(&self) -> (CreateEmbed, Vec<CreateActionRow>) {
+    /// (✓) MODIFIED: Now returns a dynamic content string with the current round.
+    fn render_active_game(&self) -> (String, CreateEmbed, Vec<CreateActionRow>) {
+        let content = format!(
+            "`[ROUND {}]` <@{}> vs <@{}>",
+            self.state.round, self.state.player1.id, self.state.player2.id
+        );
         let (p1_status, p2_status) = self.get_player_statuses();
         let log_content = self.get_log_content();
         let footer_text = self.get_footer_text();
-
         let bet_display = if self.state.bet > 0 {
             format!("💰 **{}**", self.state.bet)
         } else {
             "\u{200B}".to_string()
         };
-
         let embed = CreateEmbed::new()
             .title(format!("Rock Paper Scissors | {}", self.state.format))
             .color(if self.state.is_over() {
                 0x00FF00
             } else {
                 0x5865F2
-            }) // Green or Blurple
+            })
             .field(
                 self.state.player1.name.clone(),
                 format!("Status: {}", p1_status),
@@ -320,7 +322,6 @@ impl RpsGame {
             )
             .field("\u{200B}", log_content, false)
             .footer(CreateEmbedFooter::new(footer_text));
-
         let components = if self.state.is_over() {
             vec![]
         } else {
@@ -339,8 +340,7 @@ impl RpsGame {
                     .style(ButtonStyle::Secondary),
             ])]
         };
-
-        (embed, components)
+        (content, embed, components)
     }
 
     fn get_player_statuses(&self) -> (String, String) {

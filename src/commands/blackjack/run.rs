@@ -3,7 +3,6 @@
 use super::game::BlackjackGame;
 use crate::AppState;
 use crate::commands::games::engine::{Game, GameManager};
-// (✓) MODIFIED: Removed unused `CreateEmbed` import for cleanliness.
 use serenity::builder::{
     CreateCommand, CreateCommandOption, CreateInteractionResponse,
     CreateInteractionResponseMessage, CreateMessage, EditMessage,
@@ -40,14 +39,12 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
             .clone()
     };
 
-    // Defer the response immediately to prevent "interaction failed" errors.
     let response = CreateInteractionResponse::Defer(CreateInteractionResponseMessage::new());
     if let Err(e) = interaction.create_response(&ctx.http, response).await {
         println!("[BJ] Failed to defer slash command response: {:?}", e);
         return;
     }
 
-    // Safely get the required 'bet' option.
     let bet = interaction
         .data
         .options
@@ -59,9 +56,8 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
                 None
             }
         })
-        .unwrap_or(0); // Should always exist due to `required(true)`.
+        .unwrap_or(0);
 
-    // This check is a fallback; Discord's `min_int_value` should prevent this.
     if bet <= 0 {
         let builder = serenity::builder::EditInteractionResponse::new()
             .content("You must provide a valid bet greater than 0.");
@@ -71,12 +67,13 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
 
     // TODO: Add database logic here to check if the host can afford the bet.
 
-    // Create and render the initial game lobby.
     let blackjack_game = BlackjackGame::new(Arc::new(interaction.user.clone()), bet);
-    let (embed, components) = blackjack_game.render();
+    // (✓) MODIFIED: Unpack the new content string from the render function.
+    let (content, embed, components) = blackjack_game.render();
 
-    // Edit the original "thinking..." response to show the lobby.
+    // (✓) MODIFIED: Apply the content string to the initial message builder.
     let builder = serenity::builder::EditInteractionResponse::new()
+        .content(content)
         .embed(embed)
         .components(components);
 
@@ -113,8 +110,12 @@ pub async fn run_prefix(ctx: &Context, msg: &Message, args: Vec<&str>) {
     // TODO: Add database logic here to check if the host can afford the bet.
 
     let blackjack_game = BlackjackGame::new(Arc::new(msg.author.clone()), bet);
-    let (embed, components) = blackjack_game.render();
+    // (✓) MODIFIED: Unpack the new content string.
+    let (content, embed, components) = blackjack_game.render();
+
+    // (✓) MODIFIED: Apply the content string.
     let builder = CreateMessage::new()
+        .content(content)
         .embed(embed)
         .components(components)
         .reference_message(msg);
@@ -138,16 +139,19 @@ fn spawn_lobby_timeout_handler(
         tokio::time::sleep(Duration::from_secs(120)).await;
         let mut manager = game_manager.write().await;
 
-        if let Some(game_box) = manager.get_game_mut(&game_msg.id) {
-            // Downcast to the specific BlackjackGame type to access its state.
-            if let Some(bj_game) = game_box.as_any().downcast_ref::<BlackjackGame>() {
-                // Only remove the game if it's still in the lobby phase.
-                if bj_game.is_in_lobby() {
+        if let Some(game_box) = manager.get_game_mut(&game_msg.id)
+            && let Some(bj_game) = game_box.as_any().downcast_ref::<BlackjackGame>()
+                && bj_game.is_in_lobby() {
                     let embed = serenity::builder::CreateEmbed::new()
                         .title("Blackjack Lobby Expired")
                         .description("The game was not started by the host in time.")
                         .color(0xFF0000); // Red
-                    let builder = EditMessage::new().embed(embed).components(vec![]);
+
+                    // (✓) MODIFIED: Add a content string for the timeout message for consistency.
+                    let builder = EditMessage::new()
+                        .content("**Blackjack Lobby Expired**")
+                        .embed(embed)
+                        .components(vec![]);
 
                     game_msg.edit(&ctx.http, builder).await.ok();
                     manager.remove_game(&game_msg.id);
@@ -156,7 +160,5 @@ fn spawn_lobby_timeout_handler(
                         game_msg.id
                     );
                 }
-            }
-        }
     });
 }

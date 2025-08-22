@@ -80,8 +80,11 @@ pub async fn run_slash(
     );
     let rps_game = RpsGame { state: game_state };
 
-    let (embed, components) = rps_game.render();
+    // (✓) MODIFIED: Unpack the new content string from the render function.
+    let (content, embed, components) = rps_game.render();
+    // (✓) MODIFIED: Apply the content string to the initial message builder.
     let builder = EditInteractionResponse::new()
+        .content(content)
         .embed(embed)
         .components(components);
 
@@ -125,8 +128,11 @@ pub async fn run(
     );
     let rps_game = RpsGame { state: game_state };
 
-    let (embed, components) = rps_game.render();
+    // (✓) MODIFIED: Unpack the new content string from the render function.
+    let (content, embed, components) = rps_game.render();
+    // (✓) MODIFIED: Apply the content string to the initial message builder.
     let builder = CreateMessage::new()
+        .content(content)
         .embed(embed)
         .components(components)
         .reference_message(msg);
@@ -154,8 +160,13 @@ fn spawn_timeout_handler(
             && let Some(rps_game) = game_box.as_any().downcast_ref::<RpsGame>()
             && !rps_game.state.accepted
         {
-            let (embed, components) = RpsGame::render_timeout_message(&rps_game.state);
-            let builder = EditMessage::new().embed(embed).components(components);
+            // (✓) MODIFIED: Unpack the content string for the timeout message.
+            let (content, embed, components) = RpsGame::render_timeout_message(&rps_game.state);
+            // (✓) MODIFIED: Apply the content string when editing the message.
+            let builder = EditMessage::new()
+                .content(content)
+                .embed(embed)
+                .components(components);
             if let Err(e) = game_msg.edit(&ctx.http, builder).await {
                 println!("[RPS] Error editing timeout message: {:?}", e);
             }
@@ -236,33 +247,23 @@ fn parse_duel_format_from_args(args: &[&str]) -> Option<DuelFormat> {
     None
 }
 
-/// (✓) FIXED: This function now correctly ignores numbers that are part of format flags.
 fn parse_bet_from_args(args: &[&str]) -> Option<i64> {
     let mut last_potential_bet: Option<i64> = None;
     let mut i = 0;
-
     while i < args.len() {
         let arg = args[i];
-
-        // Check if the current argument is a format flag
         let is_format_flag = arg == "-b" || arg == "--bestof" || arg == "-r" || arg == "--raceto";
-
         if is_format_flag {
-            // If it is, skip this argument and the next one (which is its value)
             i += 2;
             continue;
         }
-
-        // If it's not a format flag, try to parse it as a number
         if let Ok(num) = arg.parse::<i64>()
-            && num > 0 {
-                // If successful, it's a candidate for the bet
-                last_potential_bet = Some(num);
-            }
-
+            && num > 0
+        {
+            last_potential_bet = Some(num);
+        }
         i += 1;
     }
-
     last_potential_bet
 }
 
@@ -272,12 +273,10 @@ fn parse_single_duel_format(s: &str) -> Option<DuelFormat> {
     if parts.len() != 2 {
         return None;
     }
-
     let num = parts[1].parse::<u32>().ok()?;
     if num == 0 {
         return None;
     }
-
     match parts[0] {
         "bestof" => Some(DuelFormat::BestOf(num)),
         "raceto" => Some(DuelFormat::RaceTo(num)),

@@ -11,16 +11,14 @@ use sqlx::PgPool;
 use std::any::Any;
 use std::collections::HashMap;
 
-/// (✓) ADDED: Represents a single player's win or loss.
-/// This is flexible enough for both 1v1 and multiplayer games.
+/// Represents a single player's win or loss.
 #[derive(Debug, Clone)]
 pub struct GamePayout {
     pub user_id: UserId,
     pub amount: i64, // Positive for win, negative for loss, zero for push/tie.
 }
 
-/// (✓) MODIFIED: The GameOver variant is now unified to handle all game types.
-/// It contains a list of payouts, making it suitable for everything from RPS to multi-hand Blackjack.
+/// The unified event enum for all game outcomes.
 pub enum GameUpdate {
     ReRender,
     GameOver {
@@ -40,7 +38,10 @@ pub trait Game: Send + Sync {
         ctx: &Context,
         interaction: &mut ComponentInteraction,
     ) -> GameUpdate;
-    fn render(&self) -> (CreateEmbed, Vec<CreateActionRow>);
+
+    /// (✓) MODIFIED: The render function now returns the message content string
+    /// in addition to the embed and components.
+    fn render(&self) -> (String, CreateEmbed, Vec<CreateActionRow>);
 }
 
 pub struct GameManager {
@@ -75,33 +76,33 @@ impl GameManager {
         if let Some(game) = self.get_game_mut(&interaction.message.id) {
             match game.handle_interaction(ctx, interaction).await {
                 GameUpdate::ReRender => {
-                    let (embed, components) = game.render();
-                    let builder = EditMessage::new().embed(embed).components(components);
+                    // (✓) MODIFIED: Unpack the new content string from render().
+                    let (content, embed, components) = game.render();
+                    // (✓) MODIFIED: Apply the new content to the message builder.
+                    let builder = EditMessage::new()
+                        .content(content)
+                        .embed(embed)
+                        .components(components);
                     if let Err(e) = interaction.message.edit(&ctx.http, builder).await {
                         println!("[GAME MANAGER] Error editing game message: {:?}", e);
                     }
                 }
-                // (✓) MODIFIED: This single arm now handles game over for RPS, Blackjack, etc.
                 GameUpdate::GameOver { message, payouts } => {
                     println!("[GAME MANAGER] Game over: {}", message);
 
-                    // (✓) OPTIMAL: All database updates are performed in a single, atomic transaction.
                     if !payouts.is_empty() {
                         let mut tx = match db.begin().await {
                             Ok(tx) => tx,
                             Err(e) => {
                                 println!("[DB] Failed to begin transaction: {:?}", e);
-                                // Don't return yet, still need to update the message.
-                                return;
+                                return; // Early return on DB failure before message edit.
                             }
                         };
 
                         for payout in &payouts {
-                            // Skip users who broke even to avoid unnecessary DB calls.
                             if payout.amount == 0 {
                                 continue;
                             }
-
                             if let Err(e) = sqlx::query!(
                                 "UPDATE profiles SET balance = balance + $1 WHERE user_id = $2",
                                 payout.amount,
@@ -115,7 +116,6 @@ impl GameManager {
                                     payout.user_id, e
                                 );
                                 tx.rollback().await.ok();
-                                // Don't return, as we must update the Discord message.
                                 return;
                             }
                         }
@@ -127,9 +127,12 @@ impl GameManager {
                         }
                     }
 
-                    // Render the final game state and remove all buttons.
-                    let (embed, _) = game.render();
-                    let builder = EditMessage::new().embed(embed).components(vec![]);
+                    // (✓) MODIFIED: Render the final game state, including the content string.
+                    let (content, embed, _) = game.render();
+                    let builder = EditMessage::new()
+                        .content(content)
+                        .embed(embed)
+                        .components(vec![]); // Remove all buttons
                     if let Err(e) = interaction.message.edit(&ctx.http, builder).await {
                         println!("[GAME MANAGER] Error editing final message: {:?}", e);
                     }
