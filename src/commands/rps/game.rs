@@ -2,7 +2,7 @@
 //! adhering to the generic `Game` trait.
 
 use super::state::{GameState, Move, RoundOutcome};
-use crate::commands::games::engine::{Game, GameUpdate}; // Adjusted path for clarity
+use crate::commands::games::engine::{Game, GameUpdate};
 use serenity::async_trait;
 use serenity::builder::{
     CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter, CreateInteractionResponse,
@@ -33,6 +33,7 @@ impl Game for RpsGame {
         ctx: &Context,
         interaction: &mut ComponentInteraction,
     ) -> GameUpdate {
+        // Defer immediately to give us time to process.
         if let Err(e) = interaction
             .create_response(
                 &ctx.http,
@@ -109,7 +110,7 @@ impl RpsGame {
     /// Handles the "decline" button press.
     async fn handle_decline(
         &mut self,
-        _ctx: &Context,
+        ctx: &Context,
         interaction: &ComponentInteraction,
     ) -> GameUpdate {
         let p2_id: UserId = interaction
@@ -123,7 +124,12 @@ impl RpsGame {
             .into();
 
         if interaction.user.id != p2_id {
-            // No need for a followup here since we can just ignore it.
+            self.send_ephemeral_followup(
+                ctx,
+                interaction,
+                "This is not your challenge to decline.",
+            )
+            .await;
             return GameUpdate::NoOp;
         }
 
@@ -157,16 +163,12 @@ impl RpsGame {
         };
 
         let is_player1 = interaction.user.id == self.state.player1.id;
+        let already_moved = (is_player1 && self.state.p1_move.is_some())
+            || (!is_player1 && self.state.p2_move.is_some());
 
-        if (is_player1 && self.state.p1_move.is_some())
-            || (!is_player1 && self.state.p2_move.is_some())
-        {
-            self.send_ephemeral_followup(
-                ctx,
-                interaction,
-                "You have already locked in your move for this round.",
-            )
-            .await;
+        if already_moved {
+            self.send_ephemeral_followup(ctx, interaction, "You have already locked in your move.")
+                .await;
             return GameUpdate::NoOp;
         }
 
@@ -182,15 +184,14 @@ impl RpsGame {
 
         if self.state.is_over() {
             let (winner, loser) = if self.state.scores.p1 > self.state.scores.p2 {
-                (Some(self.state.player1.id), Some(self.state.player2.id))
+                (self.state.player1.id, self.state.player2.id)
             } else {
-                (Some(self.state.player2.id), Some(self.state.player1.id))
+                (self.state.player2.id, self.state.player1.id)
             };
-
             GameUpdate::GameOver {
                 message: "The winner has been decided!".to_string(),
-                winner,
-                loser,
+                winner: Some(winner),
+                loser: Some(loser),
                 bet: self.state.bet,
             }
         } else {
@@ -200,30 +201,30 @@ impl RpsGame {
 
     // --- Rendering Functions ---
 
+    /// (✓) MODIFIED: Renders a timeout message with improved status indicators.
     pub fn render_timeout_message(state: &GameState) -> (CreateEmbed, Vec<CreateActionRow>) {
         let mut embed = CreateEmbed::new()
             .title(format!("Rock Paper Scissors | {}", state.format))
             .color(0xFF0000) // Red
-            .field(state.player1.name.clone(), "Status: —", true)
+            .field(state.player1.name.clone(), "Status: 👑", true)
             .field(
                 format!("`{}` vs `{}`", state.scores.p1, state.scores.p2),
                 "\u{200B}",
                 true,
             )
-            .field(state.player2.name.clone(), "Status: Did not respond", true)
+            .field(state.player2.name.clone(), "Status: 🔗 Timed Out", true)
             .field("\u{200B}", "The challenge was not accepted in time.", false);
 
-        // (✓) FIXED: Reassign the embed after calling .field() to avoid move error.
         if state.bet > 0 {
-            embed = embed.field("Bet Amount", format!("💰 {}", state.bet), false);
+            embed = embed.field("Bet Amount (Returned)", format!("💰 {}", state.bet), false);
         }
 
         let disabled_buttons = vec![
-            CreateButton::new("disabled_accept")
+            CreateButton::new("rps_disabled_accept")
                 .label("Accept")
                 .style(ButtonStyle::Success)
                 .disabled(true),
-            CreateButton::new("disabled_decline")
+            CreateButton::new("rps_disabled_decline")
                 .label("Decline")
                 .style(ButtonStyle::Danger)
                 .disabled(true),
@@ -244,15 +245,12 @@ impl RpsGame {
                 self.state.player2.name
             )));
 
-        if self.state.bet > 0 {
-            embed = embed.field(
-                "\u{200B}",
-                format!("A challenge has been issued for **💰 {}**!", self.state.bet),
-                false,
-            );
+        let challenge_text = if self.state.bet > 0 {
+            format!("A challenge has been issued for **💰 {}**!", self.state.bet)
         } else {
-            embed = embed.field("\u{200B}", "A challenge has been issued!", false);
-        }
+            "A challenge has been issued!".to_string()
+        };
+        embed = embed.field("\u{200B}", challenge_text, false);
 
         let buttons = vec![
             CreateButton::new(format!(
@@ -309,7 +307,7 @@ impl RpsGame {
             .footer(CreateEmbedFooter::new(footer_text));
 
         let components = if self.state.is_over() {
-            vec![]
+            vec![] // No buttons when game is over
         } else {
             vec![CreateActionRow::Buttons(vec![
                 CreateButton::new("rps_move_rock")
@@ -330,9 +328,14 @@ impl RpsGame {
         (embed, components)
     }
 
+    /// (✓) MODIFIED: Returns the correct status emoji for winner/loser.
     fn get_player_statuses(&self) -> (String, String) {
         if self.state.is_over() {
-            ("Game Over".to_string(), "Game Over".to_string())
+            if self.state.scores.p1 > self.state.scores.p2 {
+                ("👑".to_string(), "🔗".to_string())
+            } else {
+                ("🔗".to_string(), "👑".to_string())
+            }
         } else {
             let p1 = if self.state.p1_move.is_some() {
                 "✅ Move Locked"
