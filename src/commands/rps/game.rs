@@ -6,7 +6,7 @@ use crate::commands::games::engine::{Game, GameUpdate};
 use serenity::async_trait;
 use serenity::builder::{
     CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter, CreateInteractionResponse,
-    CreateInteractionResponseFollowup, CreateInteractionResponseMessage,
+    CreateInteractionResponseMessage,
 };
 use serenity::model::application::{ButtonStyle, ComponentInteraction};
 use serenity::model::id::UserId;
@@ -27,23 +27,13 @@ impl Game for RpsGame {
         self
     }
 
-    /// Handles all button presses for an RPS game.
+    /// (✓) MODIFIED: Removed the global defer. Each handler is now responsible
+    /// for acknowledging its own interaction, preventing the "thinking" spam.
     async fn handle_interaction(
         &mut self,
         ctx: &Context,
         interaction: &mut ComponentInteraction,
     ) -> GameUpdate {
-        // Defer immediately to give us time to process.
-        if let Err(e) = interaction
-            .create_response(
-                &ctx.http,
-                CreateInteractionResponse::Defer(CreateInteractionResponseMessage::new()),
-            )
-            .await
-        {
-            println!("[RPS] Error deferring interaction: {:?}", e);
-        }
-
         let custom_id_parts: Vec<&str> = interaction.data.custom_id.split('_').collect();
         let action = custom_id_parts.get(1).unwrap_or(&"");
 
@@ -66,18 +56,20 @@ impl Game for RpsGame {
 }
 
 impl RpsGame {
-    /// Sends a private message to the user who interacted.
-    async fn send_ephemeral_followup(
+    /// (✓) ADDED: Sends a direct, ephemeral response to an interaction.
+    /// This is used for user errors (e.g., clicking the wrong button).
+    async fn send_ephemeral_response(
         &self,
         ctx: &Context,
         interaction: &ComponentInteraction,
         content: &str,
     ) {
-        let builder = CreateInteractionResponseFollowup::new()
+        let response = CreateInteractionResponseMessage::new()
             .content(content)
             .ephemeral(true);
-        if let Err(e) = interaction.create_followup(&ctx.http, builder).await {
-            println!("[RPS] Error sending ephemeral followup: {:?}", e);
+        let builder = CreateInteractionResponse::Message(response);
+        if let Err(e) = interaction.create_response(&ctx.http, builder).await {
+            println!("[RPS] Error sending ephemeral response: {:?}", e);
         }
     }
 
@@ -98,11 +90,13 @@ impl RpsGame {
             .into();
 
         if interaction.user.id != p2_id {
-            self.send_ephemeral_followup(ctx, interaction, "This is not your challenge to accept.")
+            self.send_ephemeral_response(ctx, interaction, "This is not your challenge to accept.")
                 .await;
             return GameUpdate::NoOp;
         }
 
+        // (✓) FIXED: Acknowledge the interaction silently before re-rendering.
+        interaction.defer(&ctx.http).await.ok();
         self.state.accepted = true;
         GameUpdate::ReRender
     }
@@ -124,7 +118,7 @@ impl RpsGame {
             .into();
 
         if interaction.user.id != p2_id {
-            self.send_ephemeral_followup(
+            self.send_ephemeral_response(
                 ctx,
                 interaction,
                 "This is not your challenge to decline.",
@@ -133,6 +127,8 @@ impl RpsGame {
             return GameUpdate::NoOp;
         }
 
+        // (✓) FIXED: Acknowledge the interaction silently before ending the game.
+        interaction.defer(&ctx.http).await.ok();
         GameUpdate::GameOver {
             message: format!("{} declined the challenge.", self.state.player2.name),
             winner: Some(self.state.player1.id),
@@ -150,7 +146,7 @@ impl RpsGame {
         if interaction.user.id != self.state.player1.id
             && interaction.user.id != self.state.player2.id
         {
-            self.send_ephemeral_followup(ctx, interaction, "You are not a player in this game.")
+            self.send_ephemeral_response(ctx, interaction, "You are not a player in this game.")
                 .await;
             return GameUpdate::NoOp;
         }
@@ -167,10 +163,13 @@ impl RpsGame {
             || (!is_player1 && self.state.p2_move.is_some());
 
         if already_moved {
-            self.send_ephemeral_followup(ctx, interaction, "You have already locked in your move.")
+            self.send_ephemeral_response(ctx, interaction, "You have already locked in your move.")
                 .await;
             return GameUpdate::NoOp;
         }
+
+        // (✓) FIXED: Acknowledge the interaction silently.
+        interaction.defer(&ctx.http).await.ok();
 
         if is_player1 {
             self.state.p1_move = Some(player_move);
@@ -200,6 +199,7 @@ impl RpsGame {
     }
 
     // --- Rendering Functions ---
+    // (No changes needed below this line)
 
     pub fn render_timeout_message(state: &GameState) -> (CreateEmbed, Vec<CreateActionRow>) {
         let mut embed = CreateEmbed::new()
@@ -375,7 +375,6 @@ impl RpsGame {
         }
     }
 
-    /// (✓) MODIFIED: Provides a better "processing" indicator in the footer.
     fn get_footer_text(&self) -> String {
         if self.state.is_over() {
             let winner = if self.state.scores.p1 > self.state.scores.p2 {
@@ -396,7 +395,6 @@ impl RpsGame {
                 (None, None) => "Waiting for both players...".to_string(),
                 (Some(_), None) => format!("Waiting for {}...", self.state.player2.name),
                 (None, Some(_)) => format!("Waiting for {}...", self.state.player1.name),
-                // This is the new "thinking" indicator when the bot is processing the result.
                 (Some(_), Some(_)) => "Processing round... 💭".to_string(),
             }
         }
