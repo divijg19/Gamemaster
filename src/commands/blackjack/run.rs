@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 
-/// Registers the `/blackjack` slash command with a mandatory bet.
+/// Registers the `/blackjack` slash command with an optional bet.
 pub fn register() -> CreateCommand {
     CreateCommand::new("blackjack")
         .description("Start a multiplayer game of Blackjack.")
@@ -22,9 +22,9 @@ pub fn register() -> CreateCommand {
             CreateCommandOption::new(
                 CommandOptionType::Integer,
                 "bet",
-                "The amount each player will bet.",
+                "Optional: The minimum bet for the table. Leave blank for a friendly game.",
             )
-            .required(true)
+            .required(false)
             .min_int_value(1),
         )
 }
@@ -40,11 +40,16 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
     };
 
     let response = CreateInteractionResponse::Defer(CreateInteractionResponseMessage::new());
-    if let Err(e) = interaction.create_response(&ctx.http, response).await {
-        println!("[BJ] Failed to defer slash command response: {:?}", e);
+    if interaction
+        .create_response(&ctx.http, response)
+        .await
+        .is_err()
+    {
+        println!("[BJ] Failed to defer slash command response.");
         return;
     }
 
+    // Bet is optional and defaults to 0 for a friendly game.
     let bet = interaction
         .data
         .options
@@ -58,20 +63,9 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
         })
         .unwrap_or(0);
 
-    if bet <= 0 {
-        let builder = serenity::builder::EditInteractionResponse::new()
-            .content("You must provide a valid bet greater than 0.");
-        interaction.edit_response(&ctx.http, builder).await.ok();
-        return;
-    }
-
-    // TODO: Add database logic here to check if the host can afford the bet.
-
     let blackjack_game = BlackjackGame::new(Arc::new(interaction.user.clone()), bet);
-    // (✓) MODIFIED: Unpack the new content string from the render function.
     let (content, embed, components) = blackjack_game.render();
 
-    // (✓) MODIFIED: Apply the content string to the initial message builder.
     let builder = serenity::builder::EditInteractionResponse::new()
         .content(content)
         .embed(embed)
@@ -96,24 +90,15 @@ pub async fn run_prefix(ctx: &Context, msg: &Message, args: Vec<&str>) {
             .clone()
     };
 
+    // Bet is optional for prefix commands as well.
     let bet = args
         .iter()
         .find_map(|arg| arg.parse::<i64>().ok())
         .unwrap_or(0);
-    if bet <= 0 {
-        msg.reply(ctx, "You must specify a valid bet amount.")
-            .await
-            .ok();
-        return;
-    }
-
-    // TODO: Add database logic here to check if the host can afford the bet.
 
     let blackjack_game = BlackjackGame::new(Arc::new(msg.author.clone()), bet);
-    // (✓) MODIFIED: Unpack the new content string.
     let (content, embed, components) = blackjack_game.render();
 
-    // (✓) MODIFIED: Apply the content string.
     let builder = CreateMessage::new()
         .content(content)
         .embed(embed)
@@ -147,7 +132,6 @@ fn spawn_lobby_timeout_handler(
                         .description("The game was not started by the host in time.")
                         .color(0xFF0000); // Red
 
-                    // (✓) MODIFIED: Add a content string for the timeout message for consistency.
                     let builder = EditMessage::new()
                         .content("**Blackjack Lobby Expired**")
                         .embed(embed)
