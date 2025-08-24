@@ -26,7 +26,6 @@ pub enum DuelFormat {
     RaceTo(u32),
 }
 
-/// The default game format is a single duel (Best of 1).
 impl Default for DuelFormat {
     fn default() -> Self {
         DuelFormat::BestOf(1)
@@ -68,6 +67,7 @@ pub struct GameState {
     pub p1_move: Option<Move>,
     pub p2_move: Option<Move>,
     pub accepted: bool,
+    pub declined: bool, // (✓) ADDED: Flag to track if the challenge was declined.
     pub format: DuelFormat,
     pub scores: Scores,
     pub round: u32,
@@ -83,6 +83,7 @@ impl GameState {
             p1_move: None,
             p2_move: None,
             accepted: false,
+            declined: false, // (✓) ADDED: Initialize as false.
             format,
             scores: Scores::default(),
             round: 1,

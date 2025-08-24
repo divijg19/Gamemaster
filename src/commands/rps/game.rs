@@ -45,9 +45,11 @@ impl Game for RpsGame {
         }
     }
 
-    /// (✓) MODIFIED: Implements the new render signature from the Game trait.
+    /// (✓) MODIFIED: Checks for the declined state first to show the final message.
     fn render(&self) -> (String, CreateEmbed, Vec<CreateActionRow>) {
-        if !self.state.accepted {
+        if self.state.declined {
+            self.render_declined()
+        } else if !self.state.accepted {
             self.render_challenge()
         } else {
             self.render_active_game()
@@ -102,7 +104,7 @@ impl RpsGame {
     async fn handle_decline(
         &mut self,
         ctx: &Context,
-        interaction: &ComponentInteraction,
+        interaction: &mut ComponentInteraction,
     ) -> GameUpdate {
         let p2_id: UserId = interaction
             .data
@@ -125,11 +127,14 @@ impl RpsGame {
 
         interaction.defer(&ctx.http).await.ok();
 
-        // (✓) MODIFIED: On decline, the bet is a net-zero transaction.
-        // If the bet was pre-deducted, this will correctly refund both players.
+        // (✓) FIXED: Set the declined flag to true before ending the game.
+        // This ensures the correct final message is rendered.
+        self.state.declined = true;
+
         GameUpdate::GameOver {
             message: format!("{} declined the challenge.", self.state.player2.name),
             payouts: vec![
+                // A declined game is a net-zero transaction. No money changes hands.
                 GamePayout {
                     user_id: self.state.player1.id,
                     amount: 0,
@@ -146,7 +151,7 @@ impl RpsGame {
     async fn handle_move(
         &mut self,
         ctx: &Context,
-        interaction: &ComponentInteraction,
+        interaction: &mut ComponentInteraction,
     ) -> GameUpdate {
         if interaction.user.id != self.state.player1.id
             && interaction.user.id != self.state.player2.id
@@ -206,7 +211,23 @@ impl RpsGame {
 
     // --- Rendering Functions ---
 
-    /// (✓) MODIFIED: Now returns a content string for the final timeout message.
+    /// (✓) ADDED: New render function for the final "Declined" state.
+    fn render_declined(&self) -> (String, CreateEmbed, Vec<CreateActionRow>) {
+        let content = format!(
+            "<@{}> vs <@{}> - Challenge Declined",
+            self.state.player1.id, self.state.player2.id
+        );
+        let embed = CreateEmbed::new()
+            .title(format!("Rock Paper Scissors | {}", self.state.format))
+            .color(0xFF0000) // Red
+            .description(format!(
+                "**<@{}> declined the challenge.**",
+                self.state.player2.id
+            ));
+
+        (content, embed, vec![])
+    }
+
     pub fn render_timeout_message(
         state: &GameState,
     ) -> (String, CreateEmbed, Vec<CreateActionRow>) {
@@ -245,7 +266,6 @@ impl RpsGame {
         )
     }
 
-    /// (✓) MODIFIED: Now returns a content string for the challenge message.
     fn render_challenge(&self) -> (String, CreateEmbed, Vec<CreateActionRow>) {
         let content = format!(
             "<@{}> vs <@{}>",
@@ -284,7 +304,6 @@ impl RpsGame {
         (content, embed, vec![CreateActionRow::Buttons(buttons)])
     }
 
-    /// (✓) MODIFIED: Now returns a dynamic content string with the current round.
     fn render_active_game(&self) -> (String, CreateEmbed, Vec<CreateActionRow>) {
         let content = format!(
             "`[ROUND {}]` <@{}> vs <@{}>",
