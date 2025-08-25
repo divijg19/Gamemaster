@@ -11,7 +11,7 @@ use serenity::builder::{
 use serenity::model::application::{ButtonStyle, ComponentInteraction};
 use serenity::model::id::UserId;
 use serenity::prelude::Context;
-use sqlx::PgPool; // (✓) ADDED: Import PgPool to match the updated Game trait.
+use sqlx::PgPool;
 use std::any::Any;
 
 /// This struct holds the state of an active RPS game and implements the `Game` trait.
@@ -28,7 +28,7 @@ impl Game for RpsGame {
         self
     }
 
-    /// (✓) MODIFIED: Signature updated to match the new Game trait. The `_db` parameter is ignored.
+    /// Signature updated to match the new Game trait. The `_db` parameter is ignored.
     async fn handle_interaction(
         &mut self,
         ctx: &Context,
@@ -127,7 +127,6 @@ impl RpsGame {
         }
 
         interaction.defer(&ctx.http).await.ok();
-
         self.state.declined = true;
 
         GameUpdate::GameOver {
@@ -209,6 +208,43 @@ impl RpsGame {
 
     // --- Rendering Functions ---
 
+    /// (✓) ADDED: A new helper function to build the dynamic header content.
+    fn render_header_content(&self) -> String {
+        let p1_id = self.state.player1.id;
+        let p2_id = self.state.player2.id;
+
+        if self.state.is_over() {
+            let (winner_id, loser_id) = if self.state.scores.p1 > self.state.scores.p2 {
+                (p1_id, p2_id)
+            } else {
+                (p2_id, p1_id)
+            };
+            // Format the final result with the loser struck through.
+            format!(
+                "`[ROUND {}]` <@{}> vs ~~<@{}>~~",
+                self.state.round - 1, // Show the final round number
+                winner_id,
+                loser_id
+            )
+        } else {
+            // Dynamically format based on whether each player has made a move.
+            let p1_mention = if self.state.p1_move.is_some() {
+                format!("~~<@{}>~~", p1_id)
+            } else {
+                format!("<@{}>", p1_id)
+            };
+            let p2_mention = if self.state.p2_move.is_some() {
+                format!("~~<@{}>~~", p2_id)
+            } else {
+                format!("<@{}>", p2_id)
+            };
+            format!(
+                "`[ROUND {}]` {} vs {}",
+                self.state.round, p1_mention, p2_mention
+            )
+        }
+    }
+
     fn render_declined(&self) -> (String, CreateEmbed, Vec<CreateActionRow>) {
         let content = format!(
             "<@{}> vs <@{}> - Challenge Declined",
@@ -216,12 +252,11 @@ impl RpsGame {
         );
         let embed = CreateEmbed::new()
             .title(format!("Rock Paper Scissors | {}", self.state.format))
-            .color(0xFF0000) // Red
+            .color(0xFF0000)
             .description(format!(
                 "**<@{}> declined the challenge.**",
                 self.state.player2.id
             ));
-
         (content, embed, vec![])
     }
 
@@ -229,7 +264,7 @@ impl RpsGame {
         state: &GameState,
     ) -> (String, CreateEmbed, Vec<CreateActionRow>) {
         let content = format!(
-            "<@{}> vs <@{}> - Timed Out",
+            "<@{}> vs ~~<@{}>~~ - Timed Out",
             state.player1.id, state.player2.id
         );
         let mut embed = CreateEmbed::new()
@@ -302,10 +337,8 @@ impl RpsGame {
     }
 
     fn render_active_game(&self) -> (String, CreateEmbed, Vec<CreateActionRow>) {
-        let content = format!(
-            "[ROUND {}] <@{}> vs <@{}>",
-            self.state.round, self.state.player1.id, self.state.player2.id
-        );
+        // (✓) MODIFIED: Call the new helper function to get the dynamic content string.
+        let content = self.render_header_content();
         let (p1_status, p2_status) = self.get_player_statuses();
         let log_content = self.get_log_content();
         let footer_text = self.get_footer_text();
