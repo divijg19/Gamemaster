@@ -1,6 +1,5 @@
 //! This module contains the `run` functions for the Blackjack command.
 
-// (✓) MODIFIED: Import the game's main struct from the new `state` module.
 use super::state::BlackjackGame;
 use crate::AppState;
 use crate::commands::games::engine::{Game, GameManager};
@@ -125,25 +124,27 @@ fn spawn_lobby_timeout_handler(
         tokio::time::sleep(Duration::from_secs(120)).await;
         let mut manager = game_manager.write().await;
 
+        // (✓) FIXED: Collapsed the nested `if` statements into a single, more readable block.
         if let Some(game_box) = manager.get_game_mut(&game_msg.id)
             && let Some(bj_game) = game_box.as_any().downcast_ref::<BlackjackGame>()
-                && bj_game.is_in_lobby() {
-                    let embed = serenity::builder::CreateEmbed::new()
-                        .title("Blackjack Lobby Expired")
-                        .description("The game was not started by the host in time.")
-                        .color(0xFF0000); // Red
+            && bj_game.is_in_lobby()
+        {
+            let embed = serenity::builder::CreateEmbed::new()
+                .title("Blackjack Lobby Expired")
+                .description("The game was not started by the host in time.")
+                .color(0xFF0000); // Red
 
-                    let builder = EditMessage::new()
-                        .content("**Blackjack Lobby Expired**")
-                        .embed(embed)
-                        .components(vec![]);
+            let builder = EditMessage::new()
+                .content("**Blackjack Lobby Expired**")
+                .embed(embed)
+                .components(vec![]);
 
-                    game_msg.edit(&ctx.http, builder).await.ok();
-                    manager.remove_game(&game_msg.id);
-                    println!(
-                        "[BJ] Lobby for game {} timed out and was removed.",
-                        game_msg.id
-                    );
-                }
+            game_msg.edit(&ctx.http, builder).await.ok();
+            manager.remove_game(&game_msg.id);
+            println!(
+                "[BJ] Lobby for game {} timed out and was removed.",
+                game_msg.id
+            );
+        }
     });
 }

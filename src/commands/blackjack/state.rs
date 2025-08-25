@@ -33,7 +33,6 @@ pub struct Hand {
     pub status: HandStatus,
 }
 
-// (✓) FIXED: The implementation for Hand now lives with the struct definition.
 impl Hand {
     pub fn new(bet: i64) -> Self {
         Self {
@@ -93,6 +92,7 @@ pub struct Player {
     pub insurance: i64,
     pub current_bet: i64,
     pub insurance_decision_made: bool,
+    pub has_passed_turn: bool, // (✓) ADDED: To track if a player has passed their turn.
 }
 
 pub struct BlackjackGame {
@@ -103,6 +103,7 @@ pub struct BlackjackGame {
     pub phase: GamePhase,
     pub min_bet: i64,
     pub pot: i64,
+    pub round: u32, // (✓) ADDED: To track the round number.
     pub ready_players: HashSet<UserId>,
     pub current_player_index: usize,
     pub current_hand_index: usize,

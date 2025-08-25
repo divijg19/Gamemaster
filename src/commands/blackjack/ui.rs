@@ -27,12 +27,15 @@ impl BlackjackGame {
             .title("♦️ Blackjack Lobby ♥️")
             .description(desc)
             .field("Players Joined", players_list, false)
-            .color(0xFFA500)
+            .color(0x71368A) // (✓) MODIFIED: Purple color for lobby
             .footer(CreateEmbedFooter::new("Lobby expires in 2 minutes."));
         let buttons = vec![
             CreateButton::new("bj_join")
                 .label("Join")
                 .style(ButtonStyle::Success),
+            CreateButton::new("bj_cancel")
+                .label("Cancel (Host)")
+                .style(ButtonStyle::Danger),
             CreateButton::new("bj_start")
                 .label("Start Game (Host)")
                 .style(ButtonStyle::Primary),
@@ -61,9 +64,9 @@ impl BlackjackGame {
             .title("♦️ Place Your Bets ♠️")
             .description(format!("Minimum Bet: **💰{}**", self.min_bet))
             .field("Betting Status", betting_status, false)
-            .color(0x5865F2)
+            .color(0xFFA500) // (✓) MODIFIED: Orange color for betting
             .footer(CreateEmbedFooter::new(
-                "The round will begin once all players confirm their bets.",
+                "Round starts when all players confirm. | Timer: 60s",
             ));
         let buttons1 = vec![
             CreateButton::new("bj_bet_10")
@@ -96,14 +99,26 @@ impl BlackjackGame {
         )
     }
 
+    // (✓) REFACTORED: render_table is now the main entry point for post-lobby UI.
     pub(super) fn render_table(&self) -> (CreateEmbed, Vec<CreateActionRow>) {
+        if self.phase == GamePhase::GameOver {
+            self.render_game_over()
+        } else {
+            self.render_game_in_progress()
+        }
+    }
+
+    // (✓) ADDED: A dedicated renderer for the main game table UI.
+    fn render_game_in_progress(&self) -> (CreateEmbed, Vec<CreateActionRow>) {
         let title = match self.phase {
             GamePhase::Insurance => "♦️ Blackjack - Insurance ♦️",
-            GamePhase::PlayerTurns => "♥️ Blackjack - In Progress ♣️",
-            GamePhase::GameOver | GamePhase::DealerTurn => "♠️ Blackjack - Final Results ♦️",
-            _ => "♦️ Blackjack Table ♣️",
+            _ => "♥️ Blackjack - In Progress ♣️",
         };
-        let mut embed = CreateEmbed::new().title(title);
+        let color = match self.phase {
+            GamePhase::Insurance => 0x5865F2, // Blue
+            _ => 0x5865F2,                    // Blue
+        };
+        let mut embed = CreateEmbed::new().title(title).color(color);
         let mut components = Vec::new();
 
         let dealer_display =
@@ -126,7 +141,7 @@ impl BlackjackGame {
             };
         embed = embed.field(
             format!(
-                "👑 Dealer's Hand (`{}`)",
+                "🤵 Dealer's Hand (`{}`)",
                 if self.phase == GamePhase::PlayerTurns || self.phase == GamePhase::Insurance {
                     self.dealer_hand.cards[0].rank.value().0
                 } else {
@@ -190,22 +205,9 @@ impl BlackjackGame {
             );
         }
 
-        if self.phase == GamePhase::GameOver {
-            let (results_str, _) = self.calculate_payouts();
-            embed = embed
-                .description(format!("**--- Final Results ---**\n\n{}", results_str))
-                .color(0x00FF00);
-            if self.min_bet > 0 {
-                components.push(CreateActionRow::Buttons(vec![
-                    CreateButton::new("bj_next_round")
-                        .label("Next Round (Host)")
-                        .style(ButtonStyle::Primary),
-                ]));
-            }
-        } else if self.phase == GamePhase::Insurance {
-            embed = embed
-                .description("The dealer is showing an Ace. **Place your insurance bets!**")
-                .color(0x5865F2);
+        if self.phase == GamePhase::Insurance {
+            embed =
+                embed.description("The dealer is showing an Ace. **Place your insurance bets!**");
             components.push(CreateActionRow::Buttons(vec![
                 CreateButton::new("bj_insure_yes")
                     .label("Insure (0.5x bet)")
@@ -220,9 +222,8 @@ impl BlackjackGame {
                 "It's <@{}>'s turn. You have 60 seconds to act.",
                 self.players[self.current_player_index].user.id
             );
-            embed = embed
-                .footer(CreateEmbedFooter::new(footer_text))
-                .color(0x5865F2);
+            embed = embed.footer(CreateEmbedFooter::new(footer_text));
+
             let mut buttons = vec![
                 CreateButton::new("bj_hit")
                     .label("Hit")
@@ -230,7 +231,11 @@ impl BlackjackGame {
                 CreateButton::new("bj_stand")
                     .label("Stand")
                     .style(ButtonStyle::Danger),
+                CreateButton::new("bj_pass")
+                    .label("Pass")
+                    .style(ButtonStyle::Secondary), // (✓) ADDED: Pass button
             ];
+
             let current_hand =
                 &self.players[self.current_player_index].hands[self.current_hand_index];
             if current_hand.can_double_down() {
@@ -254,9 +259,30 @@ impl BlackjackGame {
                         .style(ButtonStyle::Secondary),
                 );
             }
+
             components.push(CreateActionRow::Buttons(buttons));
         }
 
+        (embed, components)
+    }
+
+    fn render_game_over(&self) -> (CreateEmbed, Vec<CreateActionRow>) {
+        let mut embed = CreateEmbed::new()
+            .title("♠️ Blackjack - Final Results ♦️")
+            .color(0x00FF00); // Green
+        let mut components = Vec::new();
+        let (results_str, _) = self.calculate_payouts();
+        embed = embed.description(format!("**--- Round Over ---**\n\n{}", results_str));
+        if self.min_bet > 0 {
+            components.push(CreateActionRow::Buttons(vec![
+                CreateButton::new("bj_next_round")
+                    .label("Next Round (Host)")
+                    .style(ButtonStyle::Primary),
+            ]));
+            embed = embed.footer(CreateEmbedFooter::new(
+                "The host has 60 seconds to start the next round.",
+            ));
+        }
         (embed, components)
     }
 }

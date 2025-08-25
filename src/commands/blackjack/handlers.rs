@@ -2,29 +2,28 @@
 
 use super::state::{BlackjackGame, GamePhase, Hand, HandStatus, Player};
 use crate::commands::games::card::Rank;
-use crate::commands::games::engine::GameUpdate; // (✓) FIXED: GameUpdate is from the engine module
+use crate::commands::games::engine::GameUpdate;
 use serenity::builder::{CreateInteractionResponse, CreateInteractionResponseMessage};
 use serenity::model::application::ComponentInteraction;
 use serenity::prelude::Context;
 use sqlx::PgPool;
 use std::sync::Arc;
 
-// (✓) FIXED: This function is now more robust. It handles users not in the DB
-// and also correctly handles the non-optional `balance` field.
+// A robust helper to get a user's balance from the database.
 async fn get_balance(db: &PgPool, user_id: serenity::model::id::UserId) -> i64 {
     match sqlx::query!(
         "SELECT balance FROM profiles WHERE user_id = $1",
         user_id.get() as i64
     )
-    .fetch_optional(db) // Use `fetch_optional` to gracefully handle users not in the DB.
+    .fetch_optional(db)
     .await
     {
-        Ok(Some(record)) => record.balance, // The balance field is NOT NULL, so it's a direct i64.
-        _ => 0,                             // If no user or DB error, assume 0 balance.
+        Ok(Some(record)) => record.balance,
+        _ => 0,
     }
 }
 
-// Moved here from game.rs to solve potential borrow checker errors.
+// A utility to send silent, ephemeral error messages.
 async fn send_ephemeral_response(ctx: &Context, interaction: &ComponentInteraction, content: &str) {
     let builder = CreateInteractionResponseMessage::new()
         .content(content)
@@ -42,6 +41,15 @@ impl BlackjackGame {
     ) -> GameUpdate {
         match interaction.data.custom_id.as_str() {
             "bj_join" => {
+                if self.players.len() >= 5 {
+                    send_ephemeral_response(
+                        ctx,
+                        interaction,
+                        "Sorry, this Blackjack table is full.",
+                    )
+                    .await;
+                    return GameUpdate::NoOp;
+                }
                 if !self
                     .players
                     .iter()
@@ -68,6 +76,7 @@ impl BlackjackGame {
                         insurance: 0,
                         current_bet: self.min_bet,
                         insurance_decision_made: false,
+                        has_passed_turn: false,
                     });
                     interaction.defer(&ctx.http).await.ok();
                     GameUpdate::ReRender
@@ -82,7 +91,22 @@ impl BlackjackGame {
                     interaction.defer(&ctx.http).await.ok();
                     GameUpdate::ReRender
                 } else {
-                    send_ephemeral_response(ctx, interaction, "Only the host can start.").await;
+                    send_ephemeral_response(ctx, interaction, "Only the host can start the game.")
+                        .await;
+                    GameUpdate::NoOp
+                }
+            }
+            "bj_cancel" => {
+                if interaction.user.id.get() == self.host_id {
+                    interaction.defer(&ctx.http).await.ok();
+                    self.phase = GamePhase::GameOver;
+                    GameUpdate::GameOver {
+                        message: "Game cancelled by host.".to_string(),
+                        payouts: vec![],
+                    }
+                } else {
+                    send_ephemeral_response(ctx, interaction, "Only the host can cancel the game.")
+                        .await;
                     GameUpdate::NoOp
                 }
             }
@@ -235,11 +259,10 @@ impl BlackjackGame {
         interaction.defer(&ctx.http).await.ok();
 
         let balance = get_balance(db, interaction.user.id).await;
-        let player = &mut self.players[self.current_player_index];
-        let total_bet_so_far: i64 = player.hands.iter().map(|h| h.bet).sum();
 
         match interaction.data.custom_id.as_str() {
             "bj_hit" => {
+                let player = &mut self.players[self.current_player_index];
                 let hand = &mut player.hands[self.current_hand_index];
                 if let Some(card) = self.deck.deal_one() {
                     hand.add_card(card);
@@ -254,10 +277,20 @@ impl BlackjackGame {
                 }
             }
             "bj_stand" => {
+                let player = &mut self.players[self.current_player_index];
                 player.hands[self.current_hand_index].status = HandStatus::Stood;
+                // (✓) FIXED: The pass flag belongs to the Player, not the Hand.
+                player.has_passed_turn = false;
+                self.advance_turn();
+            }
+            "bj_pass" => {
+                // (✓) FIXED: The pass flag belongs to the Player, not the Hand.
+                self.players[self.current_player_index].has_passed_turn = true;
                 self.advance_turn();
             }
             "bj_double" => {
+                let player = &mut self.players[self.current_player_index];
+                let total_bet_so_far: i64 = player.hands.iter().map(|h| h.bet).sum();
                 let hand = &mut player.hands[self.current_hand_index];
                 if hand.can_double_down() {
                     if balance < total_bet_so_far + hand.bet {
@@ -283,6 +316,8 @@ impl BlackjackGame {
                 }
             }
             "bj_split" => {
+                let player = &mut self.players[self.current_player_index];
+                let total_bet_so_far: i64 = player.hands.iter().map(|h| h.bet).sum();
                 if player.hands[self.current_hand_index].can_split() {
                     if balance < total_bet_so_far + self.min_bet {
                         send_ephemeral_response(
@@ -316,8 +351,10 @@ impl BlackjackGame {
                         }
                         player.hands.insert(self.current_hand_index + 1, new_hand);
                         if player.hands[self.current_hand_index].status == HandStatus::Stood
-                            // (✓) FIXED: Use `is_some_and` for a cleaner check.
-                            && player.hands.get(self.current_hand_index + 1).is_some_and(|h| h.status == HandStatus::Stood)
+                            && player
+                                .hands
+                                .get(self.current_hand_index + 1)
+                                .is_some_and(|h| h.status == HandStatus::Stood)
                         {
                             self.advance_turn();
                         }
@@ -325,7 +362,8 @@ impl BlackjackGame {
                 }
             }
             "bj_surrender" => {
-                let hand = &mut player.hands[self.current_hand_index];
+                let hand =
+                    &mut self.players[self.current_player_index].hands[self.current_hand_index];
                 if hand.can_surrender() {
                     hand.status = HandStatus::Surrendered;
                     self.advance_turn();
