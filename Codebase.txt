@@ -1,5 +1,5 @@
 .github/workflows/deploy.yml
-.sqlx/query-81792bcb774a0e2759de0d91434d15f59abac2f973f2fe1de4f7a55397ec13bb.json
+.sqlx/query-c4cbb88351d07303050b350b49e86a2db93acc770224188986e5ab303902fef6.json
 .sqlx/query-d83dcfc5bbef4aebe044d839849d2540e1734eb929629fb15dd53e86ef178461.json
 Cargo.lock
 Cargo.toml
@@ -7,8 +7,11 @@ Codebase.txt
 migrations/20250818213840_create_profiles_table.sql
 migrations/20250819101459_add_inventory_to_profiles.sql
 src/commands/blackjack/game.rs
+src/commands/blackjack/handlers.rs
 src/commands/blackjack/mod.rs
 src/commands/blackjack/run.rs
+src/commands/blackjack/state.rs
+src/commands/blackjack/ui.rs
 src/commands/economy/mod.rs
 src/commands/economy/profile.rs
 src/commands/economy/work.rs
