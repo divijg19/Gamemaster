@@ -1,6 +1,7 @@
 //! This module contains the `run` functions for the Blackjack command.
 
-use super::game::BlackjackGame;
+// (✓) MODIFIED: Import the game's main struct from the new `state` module.
+use super::state::BlackjackGame;
 use crate::AppState;
 use crate::commands::games::engine::{Game, GameManager};
 use serenity::builder::{

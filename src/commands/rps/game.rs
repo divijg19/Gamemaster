@@ -11,6 +11,7 @@ use serenity::builder::{
 use serenity::model::application::{ButtonStyle, ComponentInteraction};
 use serenity::model::id::UserId;
 use serenity::prelude::Context;
+use sqlx::PgPool; // (✓) ADDED: Import PgPool to match the updated Game trait.
 use std::any::Any;
 
 /// This struct holds the state of an active RPS game and implements the `Game` trait.
@@ -27,12 +28,12 @@ impl Game for RpsGame {
         self
     }
 
-    /// Each handler is now responsible for acknowledging its own interaction,
-    /// preventing the "thinking" spam.
+    /// (✓) MODIFIED: Signature updated to match the new Game trait. The `_db` parameter is ignored.
     async fn handle_interaction(
         &mut self,
         ctx: &Context,
         interaction: &mut ComponentInteraction,
+        _db: &PgPool,
     ) -> GameUpdate {
         let custom_id_parts: Vec<&str> = interaction.data.custom_id.split('_').collect();
         let action = custom_id_parts.get(1).unwrap_or(&"");
@@ -45,7 +46,7 @@ impl Game for RpsGame {
         }
     }
 
-    /// (✓) MODIFIED: Checks for the declined state first to show the final message.
+    /// Checks for the declined state first to show the final message.
     fn render(&self) -> (String, CreateEmbed, Vec<CreateActionRow>) {
         if self.state.declined {
             self.render_declined()
@@ -127,14 +128,11 @@ impl RpsGame {
 
         interaction.defer(&ctx.http).await.ok();
 
-        // (✓) FIXED: Set the declined flag to true before ending the game.
-        // This ensures the correct final message is rendered.
         self.state.declined = true;
 
         GameUpdate::GameOver {
             message: format!("{} declined the challenge.", self.state.player2.name),
             payouts: vec![
-                // A declined game is a net-zero transaction. No money changes hands.
                 GamePayout {
                     user_id: self.state.player1.id,
                     amount: 0,
@@ -211,7 +209,6 @@ impl RpsGame {
 
     // --- Rendering Functions ---
 
-    /// (✓) ADDED: New render function for the final "Declined" state.
     fn render_declined(&self) -> (String, CreateEmbed, Vec<CreateActionRow>) {
         let content = format!(
             "<@{}> vs <@{}> - Challenge Declined",
@@ -306,7 +303,7 @@ impl RpsGame {
 
     fn render_active_game(&self) -> (String, CreateEmbed, Vec<CreateActionRow>) {
         let content = format!(
-            "`[ROUND {}]` <@{}> vs <@{}>",
+            "[ROUND {}] <@{}> vs <@{}>",
             self.state.round, self.state.player1.id, self.state.player2.id
         );
         let (p1_status, p2_status) = self.get_player_statuses();

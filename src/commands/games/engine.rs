@@ -33,14 +33,15 @@ pub trait Game: Send + Sync {
     fn as_any(&self) -> &dyn Any;
     #[allow(dead_code)]
     fn as_any_mut(&mut self) -> &mut dyn Any;
+
+    /// (✓) MODIFIED: The handler now receives the database pool for real-time checks.
     async fn handle_interaction(
         &mut self,
         ctx: &Context,
         interaction: &mut ComponentInteraction,
+        db: &PgPool,
     ) -> GameUpdate;
 
-    /// (✓) MODIFIED: The render function now returns the message content string
-    /// in addition to the embed and components.
     fn render(&self) -> (String, CreateEmbed, Vec<CreateActionRow>);
 }
 
@@ -74,11 +75,10 @@ impl GameManager {
         db: &PgPool,
     ) {
         if let Some(game) = self.get_game_mut(&interaction.message.id) {
-            match game.handle_interaction(ctx, interaction).await {
+            // (✓) MODIFIED: Pass the database pool down to the game's handler.
+            match game.handle_interaction(ctx, interaction, db).await {
                 GameUpdate::ReRender => {
-                    // (✓) MODIFIED: Unpack the new content string from render().
                     let (content, embed, components) = game.render();
-                    // (✓) MODIFIED: Apply the new content to the message builder.
                     let builder = EditMessage::new()
                         .content(content)
                         .embed(embed)
@@ -95,7 +95,7 @@ impl GameManager {
                             Ok(tx) => tx,
                             Err(e) => {
                                 println!("[DB] Failed to begin transaction: {:?}", e);
-                                return; // Early return on DB failure before message edit.
+                                return;
                             }
                         };
 
@@ -127,12 +127,11 @@ impl GameManager {
                         }
                     }
 
-                    // (✓) MODIFIED: Render the final game state, including the content string.
                     let (content, embed, _) = game.render();
                     let builder = EditMessage::new()
                         .content(content)
                         .embed(embed)
-                        .components(vec![]); // Remove all buttons
+                        .components(vec![]);
                     if let Err(e) = interaction.message.edit(&ctx.http, builder).await {
                         println!("[GAME MANAGER] Error editing final message: {:?}", e);
                     }

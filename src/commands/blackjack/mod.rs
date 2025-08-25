@@ -1,14 +1,12 @@
 //! This module contains the complete, self-contained implementation for the Blackjack game.
-//!
-//! It declares the sub-modules for the core game logic (`game`) and the command
-//! entry points (`run`), and then publicly re-exports the `run` functions for
-//! use by the central command handler.
 
-// 1. Declare the sub-modules that make up the Blackjack command.
+// (✓) MODIFIED: Declare all the new sub-modules.
+// The code for the game is now split across these files based on responsibility.
 pub mod game;
+pub mod handlers;
 pub mod run;
+pub mod state;
+pub mod ui;
 
-// 2. Publicly re-export the `run` functions.
-// This allows the handler to call `commands::blackjack::run_slash(...)`
-// without needing to know about the internal file structure.
+// Publicly re-export the functions needed by the central command handler.
 pub use run::{register, run_prefix, run_slash};
