@@ -1,21 +1,20 @@
-use std::str::FromStr;
-use std::sync::Arc;
-
-use serenity::async_trait;
-use serenity::model::channel::Message;
-use serenity::model::gateway::Ready;
-use serenity::model::id::GuildId;
-use serenity::model::prelude::Interaction;
-use serenity::prelude::*;
-use tokio::sync::RwLock;
-
-// AppState is now brought into scope to be retrieved from the context.
 use crate::{AppState, commands};
+use serenity::async_trait;
+use serenity::builder::{CreateCommand, CreateCommandOption};
+use serenity::client::Context;
+use serenity::model::application::{CommandOptionType, Interaction};
+use serenity::model::{channel::Message, gateway::Ready, id::GuildId};
+use serenity::prelude::EventHandler;
+use std::str::FromStr;
 
 enum Command {
     Ping,
     Prefix,
     Rps,
+    Profile,
+    Work,
+    Help,
+    Blackjack,
     Unknown,
 }
 
@@ -26,6 +25,10 @@ impl FromStr for Command {
             "ping" => Ok(Command::Ping),
             "prefix" => Ok(Command::Prefix),
             "rps" => Ok(Command::Rps),
+            "profile" => Ok(Command::Profile),
+            "work" => Ok(Command::Work),
+            "help" => Ok(Command::Help),
+            "blackjack" | "bj" => Ok(Command::Blackjack),
             _ => Ok(Command::Unknown),
         }
     }
@@ -33,26 +36,54 @@ impl FromStr for Command {
 
 pub struct Handler {
     pub allowed_guild_id: GuildId,
-    pub prefix: Arc<RwLock<String>>,
 }
 
 #[async_trait]
 impl EventHandler for Handler {
     async fn interaction_create(&self, ctx: Context, mut interaction: Interaction) {
-        if let Interaction::Component(component) = &mut interaction {
-            // Get the application state from the context.
-            let app_state = {
-                let data = ctx.data.read().await;
-                data.get::<AppState>()
-                    .expect("Expected AppState in TypeMap.")
-                    .clone()
-            };
+        let app_state = {
+            ctx.data
+                .read()
+                .await
+                .get::<AppState>()
+                .expect("Expected AppState in TypeMap.")
+                .clone()
+        };
 
-            let command_family = component.data.custom_id.split('_').next().unwrap_or("");
-            if command_family == "rps" {
-                // Pass the active_games state down to the interaction handler.
-                commands::rps::handle_interaction(&ctx, component, &app_state.active_games).await;
+        match &mut interaction {
+            Interaction::Command(command) => {
+                println!("[HANDLER] Received slash command: {}", command.data.name);
+                match command.data.name.as_str() {
+                    "ping" => commands::ping::run_slash(&ctx, command).await,
+                    "prefix" => commands::prefix::run_slash(&ctx, command).await,
+                    "profile" => commands::economy::profile::run_slash(&ctx, command).await,
+                    "work" => commands::economy::work::run_slash(&ctx, command).await,
+                    "help" => commands::help::run_slash(&ctx, command).await,
+                    "blackjack" => commands::blackjack::run_slash(&ctx, command).await,
+                    "rps" => {
+                        commands::rps::run_slash(&ctx, command, app_state.game_manager.clone())
+                            .await
+                    }
+                    _ => {
+                        let response = serenity::builder::CreateInteractionResponseMessage::new()
+                            .content("Command not implemented yet.");
+                        let builder =
+                            serenity::builder::CreateInteractionResponse::Message(response);
+                        command.create_response(&ctx.http, builder).await.ok();
+                    }
+                }
             }
+            Interaction::Component(component) => {
+                let command_family = component.data.custom_id.split('_').next().unwrap_or("");
+                if command_family == "rps" || command_family == "bj" {
+                    let db = app_state.db.clone();
+                    let mut game_manager = app_state.game_manager.write().await;
+                    game_manager.on_interaction(&ctx, component, &db).await;
+                } else if command_family == "help" {
+                    commands::help::handle_interaction(&ctx, component).await;
+                }
+            }
+            _ => {}
         }
     }
 
@@ -61,7 +92,16 @@ impl EventHandler for Handler {
             return;
         }
 
-        let prefix_string = self.prefix.read().await.clone();
+        let app_state = {
+            ctx.data
+                .read()
+                .await
+                .get::<AppState>()
+                .expect("Expected AppState in TypeMap.")
+                .clone()
+        };
+        let prefix_string = app_state.prefix.read().await.clone();
+
         if !msg.content.starts_with(&prefix_string) {
             return;
         }
@@ -73,27 +113,68 @@ impl EventHandler for Handler {
             None => return,
         };
 
-        // Get the application state from the context. This will be needed for stateful commands.
-        let app_state = {
-            let data = ctx.data.read().await;
-            data.get::<AppState>()
-                .expect("Expected AppState in TypeMap.")
-                .clone()
-        };
-
         let command = Command::from_str(command_str).unwrap_or(Command::Unknown);
         let args_vec: Vec<&str> = args.collect();
 
         match command {
-            Command::Ping => commands::ping::run(&ctx, &msg).await,
-            Command::Prefix => commands::prefix::run(&ctx, &msg, &self.prefix, args_vec).await,
-            // Pass the active_games state down to the command handler.
-            Command::Rps => commands::rps::run(&ctx, &msg, args_vec, &app_state.active_games).await,
+            Command::Ping => commands::ping::run_prefix(&ctx, &msg).await,
+            Command::Prefix => commands::prefix::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Rps => {
+                commands::rps::run(&ctx, &msg, args_vec, app_state.game_manager.clone()).await
+            }
+            Command::Profile => commands::economy::profile::run_prefix(&ctx, &msg).await,
+            Command::Work => commands::economy::work::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Help => commands::help::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Blackjack => commands::blackjack::run_prefix(&ctx, &msg, args_vec).await,
             Command::Unknown => {}
         }
     }
 
-    async fn ready(&self, _: Context, ready: Ready) {
+    async fn ready(&self, ctx: Context, ready: Ready) {
         println!("{} is connected and ready!", ready.user.name);
+
+        let mut commands_to_register = vec![
+            CreateCommand::new("ping").description("A simple ping command"),
+            CreateCommand::new("prefix").description("Check the bot's current command prefix"),
+            CreateCommand::new("profile")
+                .description("View your or another user's economy profile")
+                .add_option(
+                    CreateCommandOption::new(
+                        CommandOptionType::User,
+                        "user",
+                        "The user whose profile you want to see",
+                    )
+                    .required(false),
+                ),
+            CreateCommand::new("work")
+                .description("Work to earn coins")
+                .add_option(
+                    CreateCommandOption::new(
+                        CommandOptionType::String,
+                        "job",
+                        "The type of job you want to do",
+                    )
+                    .required(true)
+                    .add_string_choice("Fishing", "fishing")
+                    .add_string_choice("Mining", "mining")
+                    .add_string_choice("Coding", "coding"),
+                ),
+            // (✓) MODIFIED: The old, simple blackjack command has been removed from here.
+        ];
+
+        // (✓) MODIFIED: The new, detailed blackjack command is now registered from its module.
+        // This fixes the `dead_code` warning and makes the command available on Discord.
+        commands_to_register.push(commands::blackjack::register());
+        commands_to_register.push(commands::rps::register());
+        commands_to_register.push(commands::help::register());
+
+        if let Err(e) = self
+            .allowed_guild_id
+            .set_commands(&ctx.http, commands_to_register)
+            .await
+        {
+            println!("[HANDLER] Error creating guild commands: {:?}", e);
+        }
+        println!("[HANDLER] Successfully registered guild commands.");
     }
 }

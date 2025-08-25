@@ -1,154 +1,285 @@
-use std::collections::HashMap;
+//! This module implements the `rps` command, supporting both prefix and slash commands.
+
+use super::game::RpsGame;
+use super::state::{DuelFormat, GameState};
+use crate::commands::games::engine::{Game, GameManager};
+use serenity::builder::{
+    CreateCommand, CreateCommandOption, CreateInteractionResponse,
+    CreateInteractionResponseMessage, CreateMessage, EditInteractionResponse, EditMessage,
+};
+use serenity::model::application::{
+    CommandDataOption, CommandDataOptionValue, CommandInteraction, CommandOptionType,
+};
+use serenity::model::channel::Message;
+use serenity::model::user::User;
+use serenity::prelude::*;
 use std::sync::Arc;
 use std::time::Duration;
-
-use serenity::builder::{
-    CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter, CreateMessage, EditMessage,
-};
-use serenity::model::application::ButtonStyle;
-use serenity::model::channel::Message;
-use serenity::model::id::MessageId;
-use serenity::prelude::*;
 use tokio::sync::RwLock;
 
-// Use `super` to access sibling modules like `state`.
-use super::state::{DuelFormat, GameState};
+/// Registers the `/rps` slash command with betting.
+pub fn register() -> CreateCommand {
+    CreateCommand::new("rps")
+        .description("Challenge a user to a game of Rock, Paper, Scissors.")
+        .add_option(
+            CreateCommandOption::new(
+                CommandOptionType::User,
+                "opponent",
+                "The user to challenge.",
+            )
+            .required(true),
+        )
+        .add_option(
+            CreateCommandOption::new(
+                CommandOptionType::String,
+                "format",
+                "Format: 'bestof <num>' or 'raceto <num>'. Defaults to a single duel.",
+            )
+            .required(false),
+        )
+        .add_option(
+            CreateCommandOption::new(CommandOptionType::Integer, "bet", "The amount to bet.")
+                .required(false)
+                .min_int_value(1),
+        )
+}
 
-/// Entry point for the `!rps` command. Creates the initial challenge.
-// The function signature is updated to accept the active_games state directly.
+/// Entry point for the `/rps` slash command.
+pub async fn run_slash(
+    ctx: &Context,
+    command: &CommandInteraction,
+    game_manager: Arc<RwLock<GameManager>>,
+) {
+    if let Err(e) = command
+        .create_response(
+            &ctx.http,
+            CreateInteractionResponse::Defer(CreateInteractionResponseMessage::new()),
+        )
+        .await
+    {
+        println!("[RPS] Failed to defer slash command: {:?}", e);
+        return;
+    }
+
+    let opponent = match get_opponent_from_options(command) {
+        Ok(user) => user,
+        Err(err_msg) => {
+            send_ephemeral_error(ctx, command, &err_msg).await;
+            return;
+        }
+    };
+
+    let duel_format = get_format_from_options(&command.data.options).unwrap_or_default();
+    let bet = get_bet_from_options(&command.data.options).unwrap_or(0);
+
+    let game_state = GameState::new(
+        Arc::new(command.user.clone()),
+        Arc::new(opponent),
+        duel_format,
+        bet,
+    );
+    let rps_game = RpsGame { state: game_state };
+
+    // (✓) MODIFIED: Unpack the new content string from the render function.
+    let (content, embed, components) = rps_game.render();
+    // (✓) MODIFIED: Apply the content string to the initial message builder.
+    let builder = EditInteractionResponse::new()
+        .content(content)
+        .embed(embed)
+        .components(components);
+
+    if let Ok(game_msg) = command.edit_response(&ctx.http, builder).await {
+        game_manager
+            .write()
+            .await
+            .start_game(game_msg.id, Box::new(rps_game));
+        spawn_timeout_handler(ctx.clone(), game_manager, game_msg);
+    }
+}
+
+/// Entry point for the `$rps` prefix command.
 pub async fn run(
     ctx: &Context,
     msg: &Message,
     args: Vec<&str>,
-    active_games: &Arc<RwLock<HashMap<MessageId, GameState>>>,
+    game_manager: Arc<RwLock<GameManager>>,
 ) {
     let opponent = match msg.mentions.first() {
-        Some(user) if user.id != msg.author.id => user,
+        Some(user) if user.id != msg.author.id && !user.bot => user.clone(),
         _ => {
-            let _ = msg
-                .reply(
-                    ctx,
-                    "You must mention another user! e.g., `!rps @user [-b|-r] [number]`",
-                )
-                .await;
+            msg.reply(
+                ctx,
+                "You must mention a valid opponent (not a bot or yourself).",
+            )
+            .await
+            .ok();
             return;
         }
     };
 
-    let mut duel_format = DuelFormat::BestOf(1);
-    let mut format_str = "Single Round".to_string();
-    let mut args_iter = args.iter();
+    let duel_format = parse_duel_format_from_args(&args).unwrap_or_default();
+    let bet = parse_bet_from_args(&args).unwrap_or(0);
 
-    while let Some(arg) = args_iter.next() {
-        match *arg {
-            "-b" | "--bestof" => {
-                if let Some(num_str) = args_iter.next()
-                    && let Ok(num) = num_str.parse::<u32>()
-                    && num > 0
-                {
-                    duel_format = DuelFormat::BestOf(num);
-                    format_str = format!("Best of {}", num);
-                }
-            }
-            "-r" | "--raceto" => {
-                if let Some(num_str) = args_iter.next()
-                    && let Ok(num) = num_str.parse::<u32>()
-                    && num > 0
-                {
-                    duel_format = DuelFormat::RaceTo(num);
-                    format_str = format!("Race to {}", num);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    let embed = CreateEmbed::new()
-        .title("Rock, Paper, Scissors!")
-        .description(format!(
-            "<@{}> has challenged <@{}>!",
-            msg.author.id, opponent.id
-        ))
-        .field("Format", &format_str, false)
-        .footer(CreateEmbedFooter::new(
-            "This challenge will expire in 30 seconds.",
-        ))
-        .color(0x5865F2);
-
-    let buttons = CreateActionRow::Buttons(vec![
-        CreateButton::new(format!("rps_accept_{}_{}", msg.author.id, opponent.id))
-            .label("Accept")
-            .style(ButtonStyle::Success),
-        CreateButton::new(format!("rps_decline_{}_{}", msg.author.id, opponent.id))
-            .label("Decline")
-            .style(ButtonStyle::Danger),
-    ]);
-
-    let builder = CreateMessage::new().embed(embed).components(vec![buttons]);
-    let game_msg = match msg.channel_id.send_message(&ctx.http, builder).await {
-        Ok(msg) => msg,
-        Err(e) => {
-            println!("Error sending game invite: {:?}", e);
-            return;
-        }
-    };
-
-    // We no longer need to fetch AppState; we use the `active_games` parameter.
-    let mut games = active_games.write().await;
-    games.insert(
-        game_msg.id,
-        GameState {
-            player1: Arc::new(msg.author.clone()),
-            player2: Arc::new(opponent.clone()),
-            p1_move: None,
-            p2_move: None,
-            accepted: false,
-            format: duel_format,
-            scores: (0, 0),
-            round: 1,
-        },
+    let game_state = GameState::new(
+        Arc::new(msg.author.clone()),
+        Arc::new(opponent),
+        duel_format,
+        bet,
     );
+    let rps_game = RpsGame { state: game_state };
 
-    // Drop the write lock before spawning the task.
-    drop(games);
+    // (✓) MODIFIED: Unpack the new content string from the render function.
+    let (content, embed, components) = rps_game.render();
+    // (✓) MODIFIED: Apply the content string to the initial message builder.
+    let builder = CreateMessage::new()
+        .content(content)
+        .embed(embed)
+        .components(components)
+        .reference_message(msg);
 
-    let ctx_clone = ctx.clone();
-    // Clone the Arc for the spawned task.
-    let games_clone = Arc::clone(active_games);
-    let game_msg_id = game_msg.id;
-    let channel_id = game_msg.channel_id;
+    if let Ok(game_msg) = msg.channel_id.send_message(&ctx.http, builder).await {
+        game_manager
+            .write()
+            .await
+            .start_game(game_msg.id, Box::new(rps_game));
+        spawn_timeout_handler(ctx.clone(), game_manager, game_msg);
+    }
+}
 
+/// Spawns a task to handle the 30-second challenge timeout.
+fn spawn_timeout_handler(
+    ctx: Context,
+    game_manager: Arc<RwLock<GameManager>>,
+    mut game_msg: Message,
+) {
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(30)).await;
-        let mut games = games_clone.write().await;
+        let mut manager = game_manager.write().await;
 
-        if let Some(game) = games.get(&game_msg_id)
-            && !game.accepted
+        if let Some(game_box) = manager.get_game_mut(&game_msg.id)
+            && let Some(rps_game) = game_box.as_any().downcast_ref::<RpsGame>()
+            && !rps_game.state.accepted
         {
-            games.remove(&game_msg_id);
-
-            let embed = CreateEmbed::new()
-                .title("Challenge Timed Out")
-                .description("The challenge was not accepted in time.")
-                .color(0xFF0000);
-
-            let disabled_buttons = CreateActionRow::Buttons(vec![
-                CreateButton::new("disabled_accept")
-                    .label("Accept")
-                    .style(ButtonStyle::Success)
-                    .disabled(true),
-                CreateButton::new("disabled_decline")
-                    .label("Decline")
-                    .style(ButtonStyle::Danger)
-                    .disabled(true),
-            ]);
-
-            if let Ok(mut message) = channel_id.message(&ctx_clone.http, game_msg_id).await {
-                let builder = EditMessage::new()
-                    .embed(embed)
-                    .components(vec![disabled_buttons]);
-                let _ = message.edit(&ctx_clone.http, builder).await;
+            // (✓) MODIFIED: Unpack the content string for the timeout message.
+            let (content, embed, components) = RpsGame::render_timeout_message(&rps_game.state);
+            // (✓) MODIFIED: Apply the content string when editing the message.
+            let builder = EditMessage::new()
+                .content(content)
+                .embed(embed)
+                .components(components);
+            if let Err(e) = game_msg.edit(&ctx.http, builder).await {
+                println!("[RPS] Error editing timeout message: {:?}", e);
             }
+            manager.remove_game(&game_msg.id);
         }
     });
+}
+
+/// Sends an ephemeral error message in response to a slash command.
+async fn send_ephemeral_error(ctx: &Context, command: &CommandInteraction, content: &str) {
+    let builder = EditInteractionResponse::new().content(content);
+    if let Err(e) = command.edit_response(&ctx.http, builder).await {
+        println!("[RPS] Error sending ephemeral error: {:?}", e);
+    }
+}
+
+// --- Argument & Option Parsing Helpers ---
+
+fn get_opponent_from_options(command: &CommandInteraction) -> Result<User, String> {
+    for opt in &command.data.options {
+        if opt.name == "opponent"
+            && let CommandDataOptionValue::User(user_id) = opt.value
+            && let Some(user) = command.data.resolved.users.get(&user_id)
+        {
+            if user.bot {
+                return Err("You cannot challenge a bot.".to_string());
+            }
+            if user.id == command.user.id {
+                return Err("You cannot challenge yourself.".to_string());
+            }
+            return Ok(user.clone());
+        }
+    }
+    Err("A valid opponent is required.".to_string())
+}
+
+fn get_format_from_options(options: &[CommandDataOption]) -> Option<DuelFormat> {
+    options.iter().find_map(|opt| {
+        if opt.name == "format"
+            && let CommandDataOptionValue::String(s) = &opt.value
+        {
+            parse_single_duel_format(s)
+        } else {
+            None
+        }
+    })
+}
+
+fn get_bet_from_options(options: &[CommandDataOption]) -> Option<i64> {
+    options.iter().find_map(|opt| {
+        if opt.name == "bet"
+            && let CommandDataOptionValue::Integer(val) = opt.value
+        {
+            Some(val)
+        } else {
+            None
+        }
+    })
+}
+
+fn parse_duel_format_from_args(args: &[&str]) -> Option<DuelFormat> {
+    let mut args_iter = args.iter();
+    while let Some(arg) = args_iter.next() {
+        let is_format_flag =
+            *arg == "-b" || *arg == "--bestof" || *arg == "-r" || *arg == "--raceto";
+        if is_format_flag
+            && let Some(num_str) = args_iter.next()
+            && let Ok(num) = num_str.parse::<u32>()
+            && num > 0
+        {
+            return match *arg {
+                "-b" | "--bestof" => Some(DuelFormat::BestOf(num)),
+                "-r" | "--raceto" => Some(DuelFormat::RaceTo(num)),
+                _ => None,
+            };
+        }
+    }
+    None
+}
+
+fn parse_bet_from_args(args: &[&str]) -> Option<i64> {
+    let mut last_potential_bet: Option<i64> = None;
+    let mut i = 0;
+    while i < args.len() {
+        let arg = args[i];
+        let is_format_flag = arg == "-b" || arg == "--bestof" || arg == "-r" || arg == "--raceto";
+        if is_format_flag {
+            i += 2;
+            continue;
+        }
+        if let Ok(num) = arg.parse::<i64>()
+            && num > 0
+        {
+            last_potential_bet = Some(num);
+        }
+        i += 1;
+    }
+    last_potential_bet
+}
+
+fn parse_single_duel_format(s: &str) -> Option<DuelFormat> {
+    let lowercased = s.to_lowercase();
+    let parts: Vec<&str> = lowercased.split_whitespace().collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    let num = parts[1].parse::<u32>().ok()?;
+    if num == 0 {
+        return None;
+    }
+    match parts[0] {
+        "bestof" => Some(DuelFormat::BestOf(num)),
+        "raceto" => Some(DuelFormat::RaceTo(num)),
+        _ => None,
+    }
 }

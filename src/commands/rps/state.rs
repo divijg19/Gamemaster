@@ -1,7 +1,8 @@
+use serenity::model::id::UserId;
 use serenity::model::user::User;
+use std::fmt;
 use std::sync::Arc;
 
-// Represents a player's move.
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Move {
     Rock,
@@ -10,24 +11,55 @@ pub enum Move {
 }
 
 impl Move {
-    // This implementation is correctly placed and uses the correct `self` convention.
     pub fn to_emoji(self) -> &'static str {
         match self {
-            Move::Rock => "✊",
+            Move::Rock => "🤜",
             Move::Paper => "✋",
             Move::Scissors => "✌️",
         }
     }
 }
 
-// Defines the win condition for the duel.
 #[derive(Clone, Copy, Debug)]
 pub enum DuelFormat {
     BestOf(u32),
     RaceTo(u32),
 }
 
-// Holds the complete state for an active duel.
+impl Default for DuelFormat {
+    fn default() -> Self {
+        DuelFormat::BestOf(1)
+    }
+}
+
+impl fmt::Display for DuelFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DuelFormat::BestOf(n) => write!(f, "Best of {}", n),
+            DuelFormat::RaceTo(n) => write!(f, "Race to {}", n),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Scores {
+    pub p1: u32,
+    pub p2: u32,
+}
+
+#[derive(Clone, Debug)]
+pub struct RoundRecord {
+    pub p1_move: Move,
+    pub p2_move: Move,
+    pub outcome: RoundOutcome,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum RoundOutcome {
+    Tie,
+    Winner(UserId),
+}
+
 #[derive(Clone)]
 pub struct GameState {
     pub player1: Arc<User>,
@@ -35,7 +67,66 @@ pub struct GameState {
     pub p1_move: Option<Move>,
     pub p2_move: Option<Move>,
     pub accepted: bool,
+    pub declined: bool, // (✓) ADDED: Flag to track if the challenge was declined.
     pub format: DuelFormat,
-    pub scores: (u32, u32), // (p1_score, p2_score)
+    pub scores: Scores,
     pub round: u32,
+    pub history: Vec<RoundRecord>,
+    pub bet: i64,
+}
+
+impl GameState {
+    pub fn new(player1: Arc<User>, player2: Arc<User>, format: DuelFormat, bet: i64) -> Self {
+        Self {
+            player1,
+            player2,
+            p1_move: None,
+            p2_move: None,
+            accepted: false,
+            declined: false, // (✓) ADDED: Initialize as false.
+            format,
+            scores: Scores::default(),
+            round: 1,
+            history: Vec::new(),
+            bet,
+        }
+    }
+
+    pub fn get_target_score(&self) -> u32 {
+        match self.format {
+            DuelFormat::BestOf(n) => (n / 2) + 1,
+            DuelFormat::RaceTo(n) => n,
+        }
+    }
+
+    pub fn is_over(&self) -> bool {
+        let target = self.get_target_score();
+        self.scores.p1 >= target || self.scores.p2 >= target
+    }
+
+    pub fn process_round(&mut self) {
+        if let (Some(p1m), Some(p2m)) = (self.p1_move, self.p2_move) {
+            let outcome = match (p1m, p2m) {
+                (u, b) if u == b => RoundOutcome::Tie,
+                (Move::Rock, Move::Scissors)
+                | (Move::Paper, Move::Rock)
+                | (Move::Scissors, Move::Paper) => {
+                    self.scores.p1 += 1;
+                    RoundOutcome::Winner(self.player1.id)
+                }
+                _ => {
+                    self.scores.p2 += 1;
+                    RoundOutcome::Winner(self.player2.id)
+                }
+            };
+            self.history.push(RoundRecord {
+                p1_move: p1m,
+                p2_move: p2m,
+                outcome,
+            });
+            self.p1_move = None;
+            self.p2_move = None;
+            self.round += 1;
+        }
+    }
 }

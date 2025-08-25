@@ -19,10 +19,25 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      # Step 2: This uses the official Shuttle action to deploy your project.
+      # (✓) NEW: This step caches your Rust dependencies and build artifacts.
+      # This will make your deployments MUCH faster after the first run.
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      # Step 3: This uses the official Shuttle action to deploy your project.
       - name: Deploy to Shuttle
         uses: shuttle-hq/deploy-action@v2
         with:
           # This securely accesses the API key you stored in GitHub Secrets.
           shuttle-api-key: ${{ secrets.SHUTTLE_API_KEY }}
-          project-id: 'proj_01K2SD9TX1KZKBK7JC08F0DJHD'
+          
+          # (✓) IMPROVEMENT: The project ID is now also managed as a secret for better consistency.
+          project-id: ${{ secrets.SHUTTLE_PROJECT_ID }}
