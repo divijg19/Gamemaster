@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH ins AS ( INSERT INTO profiles (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING )\n        SELECT \n            balance, last_work, work_streak, fishing_xp, fishing_level, \n            mining_xp, mining_level, coding_xp, coding_level\n        FROM profiles WHERE user_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "balance",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "last_work",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "work_streak",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "fishing_xp",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "fishing_level",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "mining_xp",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "mining_level",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "coding_xp",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "coding_level",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "fbf12f2348b7bbbb6575edef0ba8753a246ca83b2ff4ac263a7fffeaef6efed8"
+}

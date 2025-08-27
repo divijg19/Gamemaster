@@ -10,4 +10,4 @@ pub mod state;
 pub mod ui;
 
 // Publicly re-export the functions needed by the central command handler.
-pub use run::{register, run_slash};
+pub use run::{register, run_prefix, run_slash};

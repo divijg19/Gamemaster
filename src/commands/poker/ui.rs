@@ -1,7 +1,6 @@
 //! Handles all rendering and UI logic for the Poker game.
 
-use super::state::PokerGame;
-use super::state::{BlackjackGame, GamePhase, HandStatus}; // Note: Renamed in `game.rs` to PokerGame
+use super::state::{GamePhase, PlayerStatus, PokerGame};
 use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter};
 use serenity::model::application::ButtonStyle;
 
@@ -13,10 +12,17 @@ impl PokerGame {
             .map(|p| format!("<@{}>", p.user.id))
             .collect::<Vec<_>>()
             .join("\n");
-        let desc = format!(
-            "<@{}> has started a Five Card Poker table with an ante of **💰{}**!",
-            self.host_id, self.min_bet
-        );
+        let desc = if self.min_bet > 0 {
+            format!(
+                "<@{}> has started a Five Card Poker table with an ante of **💰{}**!",
+                self.host_id, self.min_bet
+            )
+        } else {
+            format!(
+                "<@{}> has started a friendly (no betting) game of Poker!",
+                self.host_id
+            )
+        };
 
         let embed = CreateEmbed::new()
             .title("♦️ Poker Lobby ♥️")
@@ -72,10 +78,11 @@ impl PokerGame {
     }
 
     pub(super) fn render_table(&self) -> (CreateEmbed, Vec<CreateActionRow>) {
+        // (✓) FIXED: Added `DealerTurn` to the match arms to make them exhaustive.
         let title = match self.phase {
             GamePhase::PlayerTurns => "♥️ Poker - Your Turn to Act ♣️",
             GamePhase::GameOver | GamePhase::DealerTurn => "♠️ Poker - Final Results ♦️",
-            _ => "♦️ Poker Table ♣️",
+            _ => "♦️ Poker Table ♣️", // Covers Ante and WaitingForPlayers (though unused here)
         };
         let color = match self.phase {
             GamePhase::PlayerTurns => 0x5865F2,                      // Blue
@@ -98,11 +105,16 @@ impl PokerGame {
             )
         };
 
-        let dealer_rank_str = if let Some(rank) = self.dealer_rank {
-            format!("({:?})", rank) // A simple Debug print for rank
-        } else {
-            "".to_string()
-        };
+        let dealer_rank_str =
+            if self.phase == GamePhase::GameOver || self.phase == GamePhase::DealerTurn {
+                if let Some(rank) = self.dealer_rank {
+                    format!("({:?})", rank)
+                } else {
+                    "".to_string()
+                }
+            } else {
+                "".to_string()
+            };
 
         embed = embed.field(
             format!("🤵 Dealer's Hand {}", dealer_rank_str),
@@ -129,7 +141,22 @@ impl PokerGame {
 
             let status_text = match player.status {
                 PlayerStatus::Folded => "**Folded**".to_string(),
-                _ => format!("**Rank:** `{:?}`", player.hand_rank.unwrap()),
+                _ => {
+                    let rank_str = if let Some(rank) = player.hand_rank {
+                        format!("`{:?}`", rank)
+                    } else {
+                        "".to_string()
+                    };
+                    let bet_str = if self.min_bet > 0 {
+                        format!(
+                            "\nAnte: `💰{}` | Play: `💰{}`",
+                            player.ante_bet, player.play_bet
+                        )
+                    } else {
+                        "".to_string()
+                    };
+                    format!("**Rank:** {} {}", rank_str, bet_str)
+                }
             };
 
             let field_value = format!("{}\n{}", hand_str, status_text);

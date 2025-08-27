@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT i.name, inv.quantity FROM inventories inv \n        JOIN items i ON inv.item_id = i.item_id \n        WHERE inv.user_id = $1 AND inv.item_id = $2 FOR UPDATE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "quantity",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "9eb738a2a8e3121ad11e76841876e7a3ade91084e258ef55d23c5c2d9d36e310"
+}

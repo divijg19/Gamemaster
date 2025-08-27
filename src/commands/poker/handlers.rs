@@ -1,8 +1,7 @@
 //! Handles all `ComponentInteraction` events for the Poker game.
 
-use super::state::{BlackjackGame, GamePhase, Player, PokerGame}; // Renamed
-use super::state::{GameUpdate, PlayerStatus};
-use crate::commands::games::engine::GamePayout;
+use super::state::{GamePhase, Player, PlayerStatus, PokerGame}; // (✓) FIXED: Imported PokerGame, not BlackjackGame.
+use crate::commands::games::engine::GameUpdate; // (✓) FIXED: GameUpdate is from the engine module.
 use serenity::builder::{CreateInteractionResponse, CreateInteractionResponseMessage};
 use serenity::model::application::ComponentInteraction;
 use serenity::prelude::Context;

@@ -4,7 +4,7 @@ use crate::commands::games::card::Card;
 use crate::commands::games::deck::Deck;
 use serenity::model::id::UserId;
 use serenity::model::user::User;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -13,6 +13,7 @@ pub enum GamePhase {
     WaitingForPlayers,
     Ante,
     PlayerTurns,
+    DealerTurn, // (✓) FIXED: Added the missing DealerTurn phase.
     GameOver,
 }
 
@@ -23,7 +24,6 @@ pub enum PlayerStatus {
     Folded,
 }
 
-// (✓) The heart of the poker logic. `Ord` allows us to directly compare hands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum HandRank {
     HighCard(u8),
@@ -56,6 +56,7 @@ pub struct PokerGame {
     pub phase: GamePhase,
     pub min_bet: i64, // The Ante
     pub pot: i64,
+    pub round: u32,
     pub ready_players: HashSet<UserId>,
     pub current_player_index: usize,
     pub last_action_time: Instant,

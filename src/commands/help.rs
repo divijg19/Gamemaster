@@ -52,7 +52,9 @@ struct CommandInfo {
     category: CommandCategory,
 }
 
+// (✓) MODIFIED: The command list is now complete with all implemented features.
 const COMMANDS: &[CommandInfo] = &[
+    // General Commands
     CommandInfo {
         name: "ping",
         description: "Checks the bot's latency.",
@@ -67,20 +69,57 @@ const COMMANDS: &[CommandInfo] = &[
         details: "Displays a list of all available commands or detailed information about a specific command.",
         category: CommandCategory::General,
     },
+    // Economy Commands
     CommandInfo {
         name: "profile",
         description: "Displays your or another user's profile.",
         usage: &["profile", "profile @user"],
-        details: "Shows your economic profile, including your coin balance and inventory of items gathered from working.",
+        details: "Shows your economic profile, including coin balance, work streak, job levels, and inventory.",
         category: CommandCategory::Economy,
     },
     CommandInfo {
         name: "work",
         description: "Work a job to earn coins and resources.",
         usage: &["work <job_name>"],
-        details: "Allows you to perform a job to earn rewards. Each job has a different cooldown and payout.\n**Available jobs:** `fishing`, `mining`, `coding`.",
+        details: "Allows you to perform a job to earn rewards and XP. Each job has a cooldown.\n**Available jobs:** `fishing`, `mining`, `coding`.",
         category: CommandCategory::Economy,
     },
+    CommandInfo {
+        name: "inventory",
+        description: "Check your item inventory.",
+        usage: &["inventory", "inv"],
+        details: "Displays a list of all the items you currently own, along with their quantities and rarity.",
+        category: CommandCategory::Economy,
+    },
+    CommandInfo {
+        name: "sell",
+        description: "Sell items from your inventory for coins.",
+        usage: &["sell <item> [quantity]"],
+        details: "Sell items you've collected to earn coins. If you don't specify a quantity, you'll sell all of that item.",
+        category: CommandCategory::Economy,
+    },
+    CommandInfo {
+        name: "shop",
+        description: "Buy items from the bot.",
+        usage: &["shop"],
+        details: "Opens an interactive shop menu where you can browse and purchase items using your coins.",
+        category: CommandCategory::Economy,
+    },
+    CommandInfo {
+        name: "give",
+        description: "Give an item to another user.",
+        usage: &["give @user <item> [quantity]"],
+        details: "Transfer an item from your inventory to another user. Note that not all items are tradeable.",
+        category: CommandCategory::Economy,
+    },
+    CommandInfo {
+        name: "open",
+        description: "Open an item to see what's inside.",
+        usage: &["open <item>"],
+        details: "Opens a container-type item, like a Large Geode, to reveal the contents within.",
+        category: CommandCategory::Economy,
+    },
+    // Game Commands
     CommandInfo {
         name: "rps",
         description: "Challenge a user to Rock, Paper, Scissors.",
@@ -91,10 +130,18 @@ const COMMANDS: &[CommandInfo] = &[
     CommandInfo {
         name: "blackjack",
         description: "Play a game of Blackjack against the house.",
-        usage: &["blackjack", "bj"],
-        details: "Starts a game of single-player Blackjack. Try to get as close to 21 as possible without going over.",
+        usage: &["blackjack <bet>", "bj <bet>"],
+        details: "Starts a game of single-player Blackjack. Try to get as close to 21 as possible without going over to win your bet.",
         category: CommandCategory::Games,
     },
+    CommandInfo {
+        name: "poker",
+        description: "Play Five Card Draw poker against the dealer.",
+        usage: &["poker <bet>"],
+        details: "Starts a game of Five Card Draw poker. Place your bet, draw your cards, and try to make a better hand than the dealer to win.",
+        category: CommandCategory::Games,
+    },
+    // Admin Commands
     CommandInfo {
         name: "prefix",
         description: "Views or (admin only) sets the prefix.",
@@ -143,7 +190,7 @@ async fn create_help_embed(ctx: &Context, command_name_opt: Option<&str>) -> Cre
             .expect("Expected AppState in TypeMap.");
         app_state.prefix.read().await.clone()
     };
-    let footer_text = format!("Current Prefix: {} (Default is $)", prefix);
+    let footer_text = format!("Current Prefix: {}", prefix);
     let mut embed = CreateEmbed::new()
         .footer(CreateEmbedFooter::new(footer_text))
         .color(0x5865F2);
@@ -169,7 +216,6 @@ async fn create_help_embed(ctx: &Context, command_name_opt: Option<&str>) -> Cre
             }
         }
         None => {
-            // (✓) The description is now universal and mentions the dropdown for all users.
             embed = embed.title("Help Menu")
                  .description(format!("Here are my available commands. For more details, use `{}help <command>` or select an option from the dropdown below.", prefix));
             let categories = [
@@ -240,13 +286,10 @@ pub async fn handle_interaction(ctx: &Context, interaction: &mut ComponentIntera
     }
 }
 
-/// Entry point for the `!help` prefix command.
 pub async fn run_prefix(ctx: &Context, msg: &Message, args: Vec<&str>) {
     let command_name = args.first().map(|s| s.as_ref());
     let embed = create_help_embed(ctx, command_name).await;
     let mut builder = CreateMessage::new().embed(embed).reference_message(msg);
-
-    // (✓) CORRECTED: Add the interactive dropdown to the prefix command's main menu.
     if command_name.is_none() {
         builder = builder.components(vec![create_command_select_menu()]);
     }

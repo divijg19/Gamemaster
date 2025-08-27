@@ -1,7 +1,6 @@
 //! This module contains a standard 52-card playing deck.
 
 use super::card::{Card, Rank, Suit};
-use rand::rng;
 use rand::seq::SliceRandom; // (✓) MODIFIED: Use the correct import for the thread-local RNG.
 
 pub struct Deck {
@@ -41,14 +40,26 @@ impl Deck {
 
     /// Shuffles the deck randomly.
     pub fn shuffle(&mut self) {
-        // (✓) MODIFIED: Use the modern and correct `thread_rng()` function.
-        self.cards.shuffle(&mut rng());
+        self.cards.shuffle(&mut rand::rng());
     }
 
     /// Deals one card from the top of the deck.
     /// Returns `None` if the deck is empty.
     pub fn deal_one(&mut self) -> Option<Card> {
         self.cards.pop()
+    }
+
+    /// Deals a specified number of cards from the top of the deck.
+    pub fn deal(&mut self, count: usize) -> Option<Vec<Card>> {
+        if self.cards_remaining() < count {
+            return None;
+        }
+        let mut hand = Vec::with_capacity(count);
+        for _ in 0..count {
+            // This unwrap is safe because we checked the length above.
+            hand.push(self.deal_one().unwrap());
+        }
+        Some(hand)
     }
 
     /// A public method to safely check the number of cards remaining.

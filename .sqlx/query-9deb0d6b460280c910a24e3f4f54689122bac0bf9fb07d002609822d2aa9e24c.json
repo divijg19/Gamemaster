@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT i.name, inv.quantity\n        FROM inventories inv\n        JOIN items i ON inv.item_id = i.item_id\n        WHERE inv.user_id = $1 AND inv.quantity > 0\n        ORDER BY i.name\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "quantity",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "9deb0d6b460280c910a24e3f4f54689122bac0bf9fb07d002609822d2aa9e24c"
+}

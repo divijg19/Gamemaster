@@ -13,8 +13,14 @@ enum Command {
     Rps,
     Profile,
     Work,
+    Inventory,
+    Sell,
+    Shop,
+    Give,
+    Open, // (✓) ADDED: The new open command for items like geodes.
     Help,
     Blackjack,
+    Poker,
     Unknown,
 }
 
@@ -25,10 +31,16 @@ impl FromStr for Command {
             "ping" => Ok(Command::Ping),
             "prefix" => Ok(Command::Prefix),
             "rps" => Ok(Command::Rps),
-            "profile" => Ok(Command::Profile),
+            "profile" | "p" => Ok(Command::Profile),
             "work" => Ok(Command::Work),
+            "inventory" | "inv" | "i" => Ok(Command::Inventory),
+            "sell" => Ok(Command::Sell),
+            "shop" => Ok(Command::Shop),
+            "give" | "gift" => Ok(Command::Give),
+            "open" => Ok(Command::Open), // (✓) ADDED: Route for the open command.
             "help" => Ok(Command::Help),
             "blackjack" | "bj" => Ok(Command::Blackjack),
+            "poker" => Ok(Command::Poker),
             _ => Ok(Command::Unknown),
         }
     }
@@ -56,10 +68,16 @@ impl EventHandler for Handler {
                 match command.data.name.as_str() {
                     "ping" => commands::ping::run_slash(&ctx, command).await,
                     "prefix" => commands::prefix::run_slash(&ctx, command).await,
-                    "profile" => commands::economy::profile::run_slash(&ctx, command).await,
-                    "work" => commands::economy::work::run_slash(&ctx, command).await,
+                    "profile" => commands::economy::profile_slash(&ctx, command).await,
+                    "work" => commands::economy::work_slash(&ctx, command).await,
+                    "inventory" => commands::economy::inventory_slash(&ctx, command).await,
+                    "sell" => commands::economy::sell_slash(&ctx, command).await,
+                    "shop" => commands::economy::shop_slash(&ctx, command).await,
+                    "give" => commands::economy::give_slash(&ctx, command).await,
+                    "open" => commands::open::run_slash(&ctx, command).await, // (✓) ADDED: Route for the slash open command.
                     "help" => commands::help::run_slash(&ctx, command).await,
                     "blackjack" => commands::blackjack::run_slash(&ctx, command).await,
+                    "poker" => commands::poker::run_slash(&ctx, command).await,
                     "rps" => {
                         commands::rps::run_slash(&ctx, command, app_state.game_manager.clone())
                             .await
@@ -75,7 +93,7 @@ impl EventHandler for Handler {
             }
             Interaction::Component(component) => {
                 let command_family = component.data.custom_id.split('_').next().unwrap_or("");
-                if command_family == "rps" || command_family == "bj" {
+                if ["rps", "bj", "poker", "shop"].contains(&command_family) {
                     let db = app_state.db.clone();
                     let mut game_manager = app_state.game_manager.write().await;
                     game_manager.on_interaction(&ctx, component, &db).await;
@@ -122,10 +140,16 @@ impl EventHandler for Handler {
             Command::Rps => {
                 commands::rps::run(&ctx, &msg, args_vec, app_state.game_manager.clone()).await
             }
-            Command::Profile => commands::economy::profile::run_prefix(&ctx, &msg).await,
-            Command::Work => commands::economy::work::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Profile => commands::economy::profile_prefix(&ctx, &msg, args_vec).await,
+            Command::Work => commands::economy::work_prefix(&ctx, &msg, args_vec).await,
+            Command::Inventory => commands::economy::inventory_prefix(&ctx, &msg, args_vec).await,
+            Command::Sell => commands::economy::sell_prefix(&ctx, &msg, args_vec).await,
+            Command::Shop => commands::economy::shop_prefix(&ctx, &msg, args_vec).await,
+            Command::Give => commands::economy::give_prefix(&ctx, &msg, args_vec).await,
+            Command::Open => commands::open::run_prefix(&ctx, &msg, args_vec).await, // (✓) ADDED: Route for the prefix open command.
             Command::Help => commands::help::run_prefix(&ctx, &msg, args_vec).await,
             Command::Blackjack => commands::blackjack::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Poker => commands::poker::run_prefix(&ctx, &msg, args_vec).await,
             Command::Unknown => {}
         }
     }
@@ -159,12 +183,15 @@ impl EventHandler for Handler {
                     .add_string_choice("Mining", "mining")
                     .add_string_choice("Coding", "coding"),
                 ),
-            // (✓) MODIFIED: The old, simple blackjack command has been removed from here.
         ];
 
-        // (✓) MODIFIED: The new, detailed blackjack command is now registered from its module.
-        // This fixes the `dead_code` warning and makes the command available on Discord.
+        commands_to_register.push(commands::economy::inventory::register());
+        commands_to_register.push(commands::economy::sell::register());
+        commands_to_register.push(commands::economy::shop::register());
+        commands_to_register.push(commands::economy::give::register());
+        commands_to_register.push(commands::open::register());
         commands_to_register.push(commands::blackjack::register());
+        commands_to_register.push(commands::poker::register());
         commands_to_register.push(commands::rps::register());
         commands_to_register.push(commands::help::register());
 
