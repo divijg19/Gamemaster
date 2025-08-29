@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT i.name, inv.quantity FROM inventories inv \n        JOIN items i ON inv.item_id = i.item_id \n        WHERE inv.user_id = $1 AND inv.item_id = $2 FOR UPDATE\n        ",
+  "query": "SELECT i.name, inv.quantity FROM inventories inv JOIN items i ON inv.item_id = i.item_id WHERE inv.user_id = $1 AND inv.item_id = $2 FOR UPDATE",
   "describe": {
     "columns": [
       {
@@ -25,5 +25,5 @@
       false
     ]
   },
-  "hash": "9eb738a2a8e3121ad11e76841876e7a3ade91084e258ef55d23c5c2d9d36e310"
+  "hash": "e553ab20e273866a5c41036642956279ac53bbc5d491727ddad35e4ae884217c"
 }

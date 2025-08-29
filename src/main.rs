@@ -15,6 +15,8 @@ mod commands;
 mod database;
 mod handler;
 mod model;
+// (✓) ADDED: Declare the new top-level module for core game logic.
+mod saga;
 
 #[shuttle_runtime::main]
 async fn serenity(
@@ -41,7 +43,6 @@ async fn serenity(
         .expect("SERVER_ID must be a valid number.");
     let allowed_guild_id = GuildId::new(server_id);
 
-    // (✓) FIXED: Use the correct field name `db` as defined in your AppState struct.
     let app_state = Arc::new(AppState {
         game_manager: Arc::new(RwLock::new(GameManager::new())),
         db: pool,

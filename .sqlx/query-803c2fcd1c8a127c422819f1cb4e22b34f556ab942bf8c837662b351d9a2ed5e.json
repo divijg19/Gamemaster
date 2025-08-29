@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM pets WHERE pet_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pet_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "base_attack",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "base_defense",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "base_health",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "803c2fcd1c8a127c422819f1cb4e22b34f556ab942bf8c837662b351d9a2ed5e"
+}

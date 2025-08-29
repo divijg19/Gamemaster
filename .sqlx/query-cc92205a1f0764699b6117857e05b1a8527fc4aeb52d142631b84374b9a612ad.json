@@ -1,0 +1,101 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pp.*, p.name FROM player_pets pp JOIN pets p ON pp.pet_id = p.pet_id WHERE pp.user_id = $1 AND pp.is_training = TRUE AND pp.training_ends_at <= $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "player_pet_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "pet_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "nickname",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "current_level",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "current_xp",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "current_attack",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "current_defense",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "current_health",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "is_in_party",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "is_training",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 11,
+        "name": "training_stat",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "training_ends_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "cc92205a1f0764699b6117857e05b1a8527fc4aeb52d142631b84374b9a612ad"
+}

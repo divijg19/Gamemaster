@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        WITH ins AS ( INSERT INTO profiles (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING )\n        SELECT \n            balance, last_work, work_streak, fishing_xp, fishing_level, \n            mining_xp, mining_level, coding_xp, coding_level\n        FROM profiles WHERE user_id = $1\n        ",
+  "query": "SELECT balance, last_work, work_streak, fishing_xp, fishing_level, mining_xp, mining_level, coding_xp, coding_level FROM profiles WHERE user_id = $1 FOR UPDATE",
   "describe": {
     "columns": [
       {
@@ -66,5 +66,5 @@
       false
     ]
   },
-  "hash": "fbf12f2348b7bbbb6575edef0ba8753a246ca83b2ff4ac263a7fffeaef6efed8"
+  "hash": "ffe4e352fb2224c11ba837a68fda1d73adebda1bfd2fb05c439f3e9062e92491"
 }

@@ -1,8 +1,8 @@
 //! Handles all UI and embed creation for the `/profile` command.
 
-// (✓) ADDED: Import the new core profile logic to calculate XP needed.
 use crate::commands::economy::core;
 use crate::database;
+use crate::database::profile::SagaProfile;
 use serenity::builder::CreateEmbed;
 use serenity::model::user::User;
 
@@ -10,6 +10,7 @@ pub fn create_profile_embed(
     user: &User,
     profile_result: Result<database::profile::Profile, sqlx::Error>,
     inventory_result: Result<Vec<database::profile::InventoryItem>, sqlx::Error>,
+    saga_result: Result<SagaProfile, sqlx::Error>,
 ) -> CreateEmbed {
     let mut embed = CreateEmbed::new()
         .title(format!("{}'s Profile", user.name))
@@ -26,6 +27,26 @@ pub fn create_profile_embed(
                     true,
                 );
 
+            if let Ok(saga) = saga_result {
+                embed = embed.field("\u{200B}", "\u{200B}", true); // Inline Spacer for alignment
+                embed = embed.field(
+                    "⚔️ Action Points",
+                    format!("`{}/{}`", saga.current_ap, saga.max_ap),
+                    true,
+                );
+                embed = embed.field(
+                    "⚡ Training Points",
+                    format!("`{}/{}`", saga.current_tp, saga.max_tp),
+                    true,
+                );
+                // (✓) ALIVE: The story_progress field is now displayed to the user.
+                embed = embed.field(
+                    "🗺️ Story Progress",
+                    format!("Chapter `{}`", saga.story_progress),
+                    true,
+                );
+            }
+
             let inventory_display = match inventory_result {
                 Ok(inventory) if inventory.is_empty() => "Nothing to see here!".to_string(),
                 Ok(inventory) => inventory
@@ -37,9 +58,7 @@ pub fn create_profile_embed(
             };
             embed = embed.field("🎒 Inventory", inventory_display, false);
 
-            // (✓) MODIFIED: Activated the job level display.
-            // This now shows the user's current level and XP progress for each job.
-            embed = embed.field("\u{200B}", "\u{200B}", false); // Spacer
+            embed = embed.field("\u{200B}", "\u{200B}", false); // Full-width spacer
 
             let fishing_xp_needed = core::profile::xp_for_level(profile.fishing_level);
             embed = embed.field(
