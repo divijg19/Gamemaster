@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE player_pets SET is_in_party = $1 WHERE player_pet_id = $2 AND user_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ef4a6d42dfd34b9467a863cd17b008c76878a85fcd44dd1d686509b3e0bd1211"
+}

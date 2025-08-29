@@ -1,11 +1,12 @@
 //! This module defines the shared data structures used throughout the application.
 //! These structs are used as `TypeMapKey`s to store shared state in Serenity's global context.
 
-// (✓) CORRECTED: Replaced RPS-specific imports with our new generic GameManager.
-use crate::commands::games::GameManager;
-use crate::database::init::DbPool;
+// (✓) CORRECTED: Use the full, correct path to the generic GameManager.
+use crate::commands::games::engine::GameManager;
+// (✓) CORRECTED: Use the concrete PgPool type directly.
 use serenity::gateway::ShardManager;
 use serenity::prelude::TypeMapKey;
+use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -25,7 +26,7 @@ pub struct AppState {
     /// This is the single point of entry for all game-related logic.
     pub game_manager: Arc<RwLock<GameManager>>,
     /// The connection pool for the PostgreSQL database.
-    pub db: DbPool,
+    pub db: PgPool,
     /// The current command prefix, which can be changed at runtime by administrators.
     pub prefix: Arc<RwLock<String>>,
 }

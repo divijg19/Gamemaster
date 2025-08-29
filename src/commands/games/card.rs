@@ -1,3 +1,5 @@
+//! Defines the core components of a playing card.
+
 use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -8,38 +10,34 @@ pub enum Suit {
     Spades,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// (✓) MODIFIED: Added `#[repr(u8)]` and explicit values. This allows us to treat ranks
+// as numbers, which is essential for comparing hands in Poker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(u8)]
 pub enum Rank {
-    Two,
-    Three,
-    Four,
-    Five,
-    Six,
-    Seven,
-    Eight,
-    Nine,
-    Ten,
-    Jack,
-    Queen,
-    King,
-    Ace,
+    Two = 2,
+    Three = 3,
+    Four = 4,
+    Five = 5,
+    Six = 6,
+    Seven = 7,
+    Eight = 8,
+    Nine = 9,
+    Ten = 10,
+    Jack = 11,
+    Queen = 12,
+    King = 13,
+    Ace = 14,
 }
 
-// (✓) ADDED: A method to get the Blackjack value(s) of a rank.
-// Ace is special, returning two possible values.
 impl Rank {
-    pub fn value(&self) -> (u8, Option<u8>) {
+    /// (✓) MODIFIED: Returns the primary Blackjack value and a simple boolean
+    /// indicating if the rank is an Ace, which is a more efficient design.
+    pub fn value(self) -> (u8, bool) {
         match self {
-            Rank::Two => (2, None),
-            Rank::Three => (3, None),
-            Rank::Four => (4, None),
-            Rank::Five => (5, None),
-            Rank::Six => (6, None),
-            Rank::Seven => (7, None),
-            Rank::Eight => (8, None),
-            Rank::Nine => (9, None),
-            Rank::Ten | Rank::Jack | Rank::Queen | Rank::King => (10, None),
-            Rank::Ace => (1, Some(11)), // Ace can be 1 or 11
+            Rank::Ace => (1, true),
+            Rank::King | Rank::Queen | Rank::Jack | Rank::Ten => (10, false),
+            _ => (self as u8, false),
         }
     }
 }
