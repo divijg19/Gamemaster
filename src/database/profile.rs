@@ -3,6 +3,7 @@
 
 use crate::commands::economy::core::item::Item;
 use crate::saga;
+use crate::saga::leveling::LevelUpResult;
 use serenity::model::id::UserId;
 use sqlx::types::chrono::{DateTime, Utc};
 use sqlx::{PgPool, Postgres, Transaction};
@@ -96,9 +97,6 @@ where
         user_id_i64
     ).fetch_one(executor).await
 }
-
-// (✓) REMOVED: This function is now redundant and has been removed to resolve the "unused function" warning.
-// `update_and_get_saga_profile` is the correct function to use everywhere.
 
 pub async fn update_and_get_saga_profile(
     pool: &PgPool,
@@ -363,4 +361,42 @@ pub async fn set_pet_party_status(
         tx.rollback().await?;
         Ok(false)
     }
+}
+
+pub async fn apply_battle_rewards(
+    pool: &PgPool,
+    user_id: UserId,
+    coins: i64,
+    loot: &[(Item, i64)],
+    pets_in_battle: &[PlayerPet],
+    xp_per_pet: i32,
+) -> Result<Vec<LevelUpResult>, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let mut level_up_results = Vec::new();
+    if coins > 0 {
+        add_balance(&mut tx, user_id, coins).await?;
+    }
+    for (item, quantity) in loot {
+        add_to_inventory(&mut tx, user_id, *item, *quantity).await?;
+    }
+    for pet in pets_in_battle {
+        let level_result = saga::leveling::handle_pet_leveling(pet, xp_per_pet);
+        if level_result.did_level_up {
+            sqlx::query!(
+                "UPDATE player_pets SET current_level = $1, current_xp = $2, current_attack = current_attack + $3, current_defense = current_defense + $4, current_health = current_health + $5 WHERE player_pet_id = $6",
+                level_result.new_level, level_result.new_xp, level_result.stat_gains.0, level_result.stat_gains.1, level_result.stat_gains.2, pet.player_pet_id
+            ).execute(&mut *tx).await?;
+        } else {
+            sqlx::query!(
+                "UPDATE player_pets SET current_xp = $1 WHERE player_pet_id = $2",
+                level_result.new_xp,
+                pet.player_pet_id
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+        level_up_results.push(level_result);
+    }
+    tx.commit().await?;
+    Ok(level_up_results)
 }
