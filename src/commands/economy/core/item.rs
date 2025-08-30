@@ -63,6 +63,8 @@ pub enum Item {
     LargeGeode = 5,
     AncientRelic = 6,
     XpBooster = 7,
+    SlimeGel = 8,
+    SlimeResearchData = 9,
 }
 
 impl Item {
@@ -145,6 +147,28 @@ impl Item {
                 buy_price: Some(2000),
                 sell_price: None,
             },
+            Item::SlimeGel => ItemProperties {
+                display_name: "Slime Gel",
+                description: "A sticky, gelatinous substance. Surprisingly useful in crafting.",
+                emoji: "🟢",
+                category: ItemCategory::Resource,
+                rarity: Rarity::Common,
+                is_sellable: true,
+                is_tradeable: true,
+                buy_price: None,
+                sell_price: Some(5),
+            },
+            Item::SlimeResearchData => ItemProperties {
+                display_name: "Slime Research Data",
+                description: "Combat notes that could be used to tame a slime.",
+                emoji: "🔬",
+                category: ItemCategory::Special,
+                rarity: Rarity::Uncommon,
+                is_sellable: false,
+                is_tradeable: false,
+                buy_price: None,
+                sell_price: None,
+            },
         }
     }
     pub fn get_all_purchasable() -> Vec<Item> {
@@ -173,6 +197,8 @@ impl FromStr for Item {
             "largegeode" | "geode" => Ok(Item::LargeGeode),
             "ancientrelic" | "relic" => Ok(Item::AncientRelic),
             "xpbooster" | "booster" => Ok(Item::XpBooster),
+            "slimegel" | "slime" => Ok(Item::SlimeGel),
+            "slimeresearchdata" | "slimedata" | "researchdata" => Ok(Item::SlimeResearchData),
             _ => Err(()),
         }
     }
@@ -192,6 +218,8 @@ impl fmt::Display for Item {
                 Item::LargeGeode => "largegeode",
                 Item::AncientRelic => "ancientrelic",
                 Item::XpBooster => "xpbooster",
+                Item::SlimeGel => "slimegel",
+                Item::SlimeResearchData => "slimeresearchdata",
             }
         )
     }

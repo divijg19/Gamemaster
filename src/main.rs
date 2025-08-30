@@ -14,8 +14,8 @@ use tokio::sync::RwLock;
 mod commands;
 mod database;
 mod handler;
+mod interactions;
 mod model;
-// (✓) ADDED: Declare the new top-level module for core game logic.
 mod saga;
 
 #[shuttle_runtime::main]
@@ -43,27 +43,30 @@ async fn serenity(
         .expect("SERVER_ID must be a valid number.");
     let allowed_guild_id = GuildId::new(server_id);
 
+    // Initialize the shared application state.
     let app_state = Arc::new(AppState {
         game_manager: Arc::new(RwLock::new(GameManager::new())),
         db: pool,
         prefix: Arc::new(RwLock::new("$".to_string())),
     });
 
-    // Set gateway intents.
+    // Set gateway intents required for the bot's functionality.
     let intents =
         GatewayIntents::GUILDS | GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
 
+    // Build the Serenity client.
     let client = Client::builder(&token, intents)
         .event_handler(Handler { allowed_guild_id })
         .await
         .expect("Error creating the Discord client.");
 
-    // Insert the shared state into the client's data TypeMap.
+    // Insert the shared state and shard manager into the client's data TypeMap.
     {
         let mut data = client.data.write().await;
         data.insert::<ShardManagerContainer>(client.shard_manager.clone());
         data.insert::<AppState>(app_state);
     }
 
+    // Return the client to the Shuttle runtime.
     Ok(client.into())
 }
