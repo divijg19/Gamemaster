@@ -1,9 +1,11 @@
 .github/workflows/deploy.yml
 .sqlx/query-01e72aed803aa8b74b403a25e02fdbdf1143f9b2c5bf814783d947c15b218d69.json
 .sqlx/query-078b720f5726270494dfc2680e92e7f9c9d58d37151318efebe99224f6e60f45.json
+.sqlx/query-1a6e061c31318cddce8c04d7c8a921456b0479d770783db1237a1dfe9ebe6e46.json
 .sqlx/query-1b7374c592a494b1548547cd25a78c1ff5adb60ff02476934a8f386e697a1e86.json
 .sqlx/query-2a2753569afce5af6d4aede63d25d96dd7502dbba912b8a2bd40247101ff82a6.json
 .sqlx/query-2fc02ef554c11bdc15f3a1121fd87037b7e9aa3a24f185ead0be5449e1dea887.json
+.sqlx/query-45da26538f626d1ae1266b139180e414c225b7e9b744b145535e0d5e70623c52.json
 .sqlx/query-481a9b61b83977d3a883a3a82b88ce5f037a7ef9338555a8a3ff6f3adc0c121d.json
 .sqlx/query-4c845fcd9007b594d697cef8875db8e9bc9d65c170e8548dd39413be8e3ab857.json
 .sqlx/query-52a536bf20d81c0d2146c5f70e2b01c8a66474d927b5d9439a4221019f00e940.json
@@ -12,7 +14,9 @@
 .sqlx/query-803c2fcd1c8a127c422819f1cb4e22b34f556ab942bf8c837662b351d9a2ed5e.json
 .sqlx/query-846987dc685ff8f7277d7b1512488e0d6d2fa343d4add98347c724c8248a9980.json
 .sqlx/query-88b90c769ea3748b03398c95f9185e4179ae81a029c1a05c6410ab7871534527.json
+.sqlx/query-90d2c48a4c99778c992e9326a917bda42eb3b0da27aa7b2d9028fa2d9ee79198.json
 .sqlx/query-b6592b6635e945cdc2f5e0e033bd291aef6efab32ede44c9eeb68bef1fed896e.json
+.sqlx/query-bcd34638368a0ad25f1429784ec47c26df1646d6e306fa8d0cb3f1c467442606.json
 .sqlx/query-be81f0d22f4d5f4254c0717c4a0c14ddd949f0b2a189e29bd5f26b571ddb90b8.json
 .sqlx/query-c2b4bbc7c6539c11bb1be5fc3c28cfeb543ffa663c8358b94b7874d48e6fad98.json
 .sqlx/query-c4cbb88351d07303050b350b49e86a2db93acc770224188986e5ab303902fef6.json
@@ -37,6 +41,7 @@ migrations/20250827235603_add_training_to_pets.sql
 migrations/20250828003809_populate_base_pets.sql
 migrations/20250829223430_add_wild_slime_enemy.sql
 migrations/20250829234847_add_battle_loot_items.sql
+migrations/20250830183054_create_world_map.sql
 src/commands/blackjack/game.rs
 src/commands/blackjack/handlers.rs
 src/commands/blackjack/mod.rs
@@ -98,8 +103,6 @@ src/commands/rps/game.rs
 src/commands/rps/mod.rs
 src/commands/rps/run.rs
 src/commands/rps/state.rs
-src/commands/saga/game.rs
-src/commands/saga/leveling.rs
 src/commands/saga/mod.rs
 src/commands/saga/run.rs
 src/commands/saga/tavern.rs
@@ -127,4 +130,5 @@ src/saga/battle/ui.rs
 src/saga/core.rs
 src/saga/leaderboard.rs
 src/saga/leveling.rs
+src/saga/map.rs
 src/saga/mod.rs

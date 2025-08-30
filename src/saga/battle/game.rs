@@ -4,6 +4,7 @@ use crate::commands::economy::core::item::Item;
 use crate::commands::games::engine::{Game, GameUpdate};
 use crate::database;
 use crate::saga::battle::{logic, state::*, ui};
+use rand::Rng;
 use serenity::async_trait;
 use serenity::builder::{CreateActionRow, CreateEmbed};
 use serenity::model::application::ComponentInteraction;
@@ -14,8 +15,8 @@ use std::time::Duration;
 
 pub struct BattleGame {
     pub session: BattleSession,
-    // (✓) FIXED: Added the missing `party_members` field to the struct definition.
     pub party_members: Vec<database::profile::PlayerPet>,
+    pub node_id: i32,
 }
 
 #[async_trait]
@@ -40,32 +41,65 @@ impl Game for BattleGame {
     ) -> GameUpdate {
         match interaction.data.custom_id.as_str() {
             "battle_attack" => {
-                // (✓) MODIFIED: Implemented full victory reward logic.
                 if logic::process_player_turn(&mut self.session) == BattleOutcome::PlayerVictory {
-                    // Define the rewards for winning this specific battle.
                     let coins = 50;
                     let xp_per_pet = 25;
-                    let loot = vec![(Item::SlimeGel, 1), (Item::SlimeResearchData, 1)];
 
-                    // Call the database function to apply all rewards atomically.
+                    // (✓) FIXED: Create a new scope for loot calculation.
+                    // This ensures the non-thread-safe `rng` variable is dropped before any `.await` calls.
+                    let actual_loot = {
+                        let potential_rewards =
+                            database::profile::get_rewards_for_node(db, self.node_id)
+                                .await
+                                .unwrap_or_default();
+                        let mut loot = Vec::new();
+                        // `rng` is created and used only within this block.
+                        let mut rng = rand::rng();
+                        for reward in potential_rewards {
+                            if rng.random_bool(reward.drop_chance as f64) {
+                                if let Some(item_enum) = Item::from_i32(reward.item_id) {
+                                    loot.push((item_enum, reward.quantity as i64));
+                                }
+                            }
+                        }
+                        loot // The calculated loot is returned from the block.
+                    }; // `rng` goes out of scope here, BEFORE the next .await.
+
+                    // Now it is safe to await the database call.
                     let results = database::profile::apply_battle_rewards(
                         db,
                         interaction.user.id,
                         coins,
-                        &loot,
+                        &actual_loot,
                         &self.party_members,
                         xp_per_pet,
                     )
                     .await
                     .unwrap_or_default();
 
-                    // Format a detailed victory message.
+                    database::profile::advance_story_progress(
+                        db,
+                        interaction.user.id,
+                        self.node_id,
+                    )
+                    .await
+                    .ok();
+
                     let mut victory_log = vec![
                         format!("🎉 **Victory!**"),
                         format!("💰 You earned **{}** coins.", coins),
-                        format!("🎁 You found **1 Slime Gel** and **1 Slime Research Data**!"),
-                        "\n--- **Party Members Gained XP** ---".to_string(),
                     ];
+
+                    if !actual_loot.is_empty() {
+                        let loot_str = actual_loot
+                            .iter()
+                            .map(|(item, qty)| format!("`{}` {}", qty, item.display_name()))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        victory_log.push(format!("🎁 You found: **{}**!", loot_str));
+                    }
+
+                    victory_log.push("\n--- **Party Members Gained XP** ---".to_string());
 
                     for (i, result) in results.iter().enumerate() {
                         let pet_name = self.party_members[i]

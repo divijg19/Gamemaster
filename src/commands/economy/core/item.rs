@@ -3,7 +3,6 @@
 use std::fmt;
 use std::str::FromStr;
 
-// (✓) MODIFIED: Added ordering traits to allow for comparing rarities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Rarity {
     Common,
@@ -22,7 +21,6 @@ impl Rarity {
         }
     }
 
-    /// (✓) ALIVE: This method will now be used by the inventory command.
     pub fn color(&self) -> u32 {
         match self {
             Rarity::Common => 0x95A5A6,
@@ -33,13 +31,13 @@ impl Rarity {
     }
 }
 
-// ... ItemCategory and ItemProperties structs are unchanged ...
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ItemCategory {
     Resource,
     Special,
     Consumable,
 }
+
 pub struct ItemProperties {
     pub display_name: &'static str,
     pub description: &'static str,
@@ -52,7 +50,6 @@ pub struct ItemProperties {
     pub sell_price: Option<i64>,
 }
 
-// ... Item enum and properties() impl are unchanged ...
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(i32)]
 pub enum Item {
@@ -171,9 +168,27 @@ impl Item {
             },
         }
     }
+
     pub fn get_all_purchasable() -> Vec<Item> {
         vec![Item::Fish, Item::Ore, Item::Gem, Item::XpBooster]
     }
+
+    // (✓) ADDED: A safe function to convert a database ID into an Item enum.
+    pub fn from_i32(id: i32) -> Option<Self> {
+        match id {
+            1 => Some(Item::Fish),
+            2 => Some(Item::Ore),
+            3 => Some(Item::Gem),
+            4 => Some(Item::GoldenFish),
+            5 => Some(Item::LargeGeode),
+            6 => Some(Item::AncientRelic),
+            7 => Some(Item::XpBooster),
+            8 => Some(Item::SlimeGel),
+            9 => Some(Item::SlimeResearchData),
+            _ => None,
+        }
+    }
+
     pub fn display_name(&self) -> &'static str {
         self.properties().display_name
     }
@@ -185,7 +200,6 @@ impl Item {
     }
 }
 
-// ... FromStr impl is unchanged ...
 impl FromStr for Item {
     type Err = ();
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -197,14 +211,13 @@ impl FromStr for Item {
             "largegeode" | "geode" => Ok(Item::LargeGeode),
             "ancientrelic" | "relic" => Ok(Item::AncientRelic),
             "xpbooster" | "booster" => Ok(Item::XpBooster),
-            "slimegel" | "slime" => Ok(Item::SlimeGel),
-            "slimeresearchdata" | "slimedata" | "researchdata" => Ok(Item::SlimeResearchData),
+            "slimegel" | "gel" => Ok(Item::SlimeGel),
+            "slimedata" | "data" => Ok(Item::SlimeResearchData),
             _ => Err(()),
         }
     }
 }
 
-// (✓) MODIFIED: Replaced `ToString` with the more idiomatic `Display` trait.
 impl fmt::Display for Item {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -219,7 +232,7 @@ impl fmt::Display for Item {
                 Item::AncientRelic => "ancientrelic",
                 Item::XpBooster => "xpbooster",
                 Item::SlimeGel => "slimegel",
-                Item::SlimeResearchData => "slimeresearchdata",
+                Item::SlimeResearchData => "slimedata",
             }
         )
     }

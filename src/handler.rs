@@ -1,4 +1,5 @@
-use crate::{AppState, commands, interactions}; // (✓) ADDED: The new top-level interactions module.
+// (✓) MODIFIED: Imports are now cleaner as logic has been moved to specialized handlers.
+use crate::{AppState, commands, interactions};
 use serenity::async_trait;
 use serenity::client::Context;
 use serenity::model::application::Interaction;
@@ -99,8 +100,8 @@ impl EventHandler for Handler {
             Interaction::Component(component) => {
                 let command_family = component.data.custom_id.split('_').next().unwrap_or("");
 
-                // (✓) REFACTORED: The handler is now a clean router that delegates all
-                // component interaction logic to specialized modules.
+                // (✓) FIXED: This is the fully refactored and modularized interaction router.
+                // It now calls the specialized handlers, which will make their code "live".
                 match command_family {
                     "rps" | "bj" | "poker" | "shop" | "battle" => {
                         interactions::game_handler::handle(&ctx, component, app_state).await;
@@ -149,6 +150,7 @@ impl EventHandler for Handler {
         };
         let command = Command::from_str(command_str).unwrap_or(Command::Unknown);
         let args_vec: Vec<&str> = args.collect();
+
         match command {
             Command::Ping => commands::ping::run_prefix(&ctx, &msg).await,
             Command::Prefix => commands::prefix::run_prefix(&ctx, &msg, args_vec).await,
@@ -179,7 +181,7 @@ impl EventHandler for Handler {
         use serenity::builder::{CreateCommand, CreateCommandOption};
         use serenity::model::application::CommandOptionType;
 
-        let commands_to_register = vec![
+        let mut commands_to_register = vec![
             CreateCommand::new("ping").description("Checks the bot's latency."),
             CreateCommand::new("prefix").description("Check the bot's current command prefix."),
             CreateCommand::new("profile")
@@ -205,6 +207,9 @@ impl EventHandler for Handler {
                     .add_string_choice("Mining", "mining")
                     .add_string_choice("Coding", "coding"),
                 ),
+        ];
+
+        commands_to_register.extend(vec![
             commands::economy::inventory::register(),
             commands::economy::sell::register(),
             commands::economy::shop::register(),
@@ -218,7 +223,7 @@ impl EventHandler for Handler {
             commands::poker::register(),
             commands::rps::register(),
             commands::help::register(),
-        ];
+        ]);
 
         if let Err(e) = self
             .allowed_guild_id

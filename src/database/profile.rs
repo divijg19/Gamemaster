@@ -68,6 +68,23 @@ pub struct PlayerPet {
     pub name: String,
 }
 
+#[allow(dead_code)]
+#[derive(sqlx::FromRow, Debug, Clone)]
+pub struct MapNode {
+    pub node_id: i32,
+    pub area_id: i32,
+    pub name: String,
+    pub description: Option<String>,
+    pub story_progress_required: i32,
+}
+
+#[derive(sqlx::FromRow, Debug, Clone)]
+pub struct NodeReward {
+    pub item_id: i32,
+    pub quantity: i32,
+    pub drop_chance: f32,
+}
+
 #[derive(Debug, Default)]
 pub struct WorkRewards {
     pub coins: i64,
@@ -382,10 +399,7 @@ pub async fn apply_battle_rewards(
     for pet in pets_in_battle {
         let level_result = saga::leveling::handle_pet_leveling(pet, xp_per_pet);
         if level_result.did_level_up {
-            sqlx::query!(
-                "UPDATE player_pets SET current_level = $1, current_xp = $2, current_attack = current_attack + $3, current_defense = current_defense + $4, current_health = current_health + $5 WHERE player_pet_id = $6",
-                level_result.new_level, level_result.new_xp, level_result.stat_gains.0, level_result.stat_gains.1, level_result.stat_gains.2, pet.player_pet_id
-            ).execute(&mut *tx).await?;
+            sqlx::query!("UPDATE player_pets SET current_level = $1, current_xp = $2, current_attack = current_attack + $3, current_defense = current_defense + $4, current_health = current_health + $5 WHERE player_pet_id = $6", level_result.new_level, level_result.new_xp, level_result.stat_gains.0, level_result.stat_gains.1, level_result.stat_gains.2, pet.player_pet_id).execute(&mut *tx).await?;
         } else {
             sqlx::query!(
                 "UPDATE player_pets SET current_xp = $1 WHERE player_pet_id = $2",
@@ -399,4 +413,50 @@ pub async fn apply_battle_rewards(
     }
     tx.commit().await?;
     Ok(level_up_results)
+}
+
+pub async fn get_map_nodes_by_ids(
+    pool: &PgPool,
+    node_ids: &[i32],
+) -> Result<Vec<MapNode>, sqlx::Error> {
+    sqlx::query_as!(
+        MapNode,
+        "SELECT * FROM map_nodes WHERE node_id = ANY($1)",
+        node_ids
+    )
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn get_enemies_for_node(pool: &PgPool, node_id: i32) -> Result<Vec<Pet>, sqlx::Error> {
+    sqlx::query_as!(
+        Pet,
+        "SELECT p.* FROM pets p JOIN node_enemies ne ON p.pet_id = ne.pet_id WHERE ne.node_id = $1",
+        node_id
+    )
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn get_rewards_for_node(
+    pool: &PgPool,
+    node_id: i32,
+) -> Result<Vec<NodeReward>, sqlx::Error> {
+    sqlx::query_as!(
+        NodeReward,
+        "SELECT item_id, quantity, drop_chance FROM node_rewards WHERE node_id = $1",
+        node_id
+    )
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn advance_story_progress(
+    pool: &PgPool,
+    user_id: UserId,
+    new_progress: i32,
+) -> Result<(), sqlx::Error> {
+    let user_id_i64 = user_id.get() as i64;
+    sqlx::query!("UPDATE player_saga_profile SET story_progress = $1 WHERE user_id = $2 AND story_progress < $1", new_progress, user_id_i64).execute(pool).await?;
+    Ok(())
 }
