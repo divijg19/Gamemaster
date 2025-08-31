@@ -1,6 +1,6 @@
 //! Contains the UI and logic for the Tavern.
 
-use crate::database::profile::Pet;
+use crate::database::models::Pet;
 use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed};
 use serenity::model::application::ButtonStyle;
 

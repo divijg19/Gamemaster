@@ -6,12 +6,7 @@ use serenity::model::application::ComponentInteraction;
 use serenity::prelude::Context;
 use std::sync::Arc;
 
-pub async fn handle(
-    // (✓) FIXED: Renamed `_ctx` to `ctx` so it can be used in the function.
-    ctx: &Context,
-    component: &mut ComponentInteraction,
-    app_state: Arc<AppState>,
-) {
+pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_state: Arc<AppState>) {
     let db = app_state.db.clone();
     component.defer_ephemeral(&ctx.http).await.ok();
 
@@ -30,13 +25,12 @@ pub async fn handle(
         };
     let pet_id = pet_id_str.parse::<i32>().unwrap();
 
-    // Call the database function to update the pet's party status.
-    let result =
-        database::profile::set_pet_party_status(&db, component.user.id, pet_id, is_adding).await;
+    // (✓) FIXED: Updated to the new database module path.
+    let result = database::set_pet_party_status(&db, component.user.id, pet_id, is_adding).await;
 
     // After any change, always re-fetch the full list of pets and re-render the UI.
-    // This ensures the menu is always in a correct, up-to-date state.
-    let pets = database::profile::get_player_pets(&db, component.user.id)
+    // (✓) FIXED: Updated to the new database module path.
+    let pets = database::get_player_pets(&db, component.user.id)
         .await
         .unwrap_or_default();
     let (embed, components) = commands::party::ui::create_party_view(&pets);

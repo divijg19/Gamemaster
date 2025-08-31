@@ -53,7 +53,7 @@ pub async fn give_item(
     };
 
     // Check if the giver has enough items to give.
-    match database::profile::get_inventory_item(&mut tx, giver.id, item).await {
+    match database::economy::get_inventory_item(&mut tx, giver.id, item).await {
         Ok(Some(item_in_inv)) if item_in_inv.quantity >= quantity => (),
         _ => {
             tx.rollback().await.ok();
@@ -69,10 +69,10 @@ pub async fn give_item(
     };
 
     // Perform the transaction.
-    if database::profile::add_to_inventory(&mut tx, giver.id, item, -quantity)
+    if database::economy::add_to_inventory(&mut tx, giver.id, item, -quantity)
         .await
         .is_err()
-        || database::profile::add_to_inventory(&mut tx, receiver.id, item, quantity)
+        || database::economy::add_to_inventory(&mut tx, receiver.id, item, quantity)
             .await
             .is_err()
     {

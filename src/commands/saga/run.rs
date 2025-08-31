@@ -26,7 +26,7 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
 
     // This function automatically updates AP/TP before fetching, ensuring the data is always current.
     let saga_profile =
-        match database::profile::update_and_get_saga_profile(&pool, interaction.user.id).await {
+        match database::saga::update_and_get_saga_profile(&pool, interaction.user.id).await {
             Ok(profile) => profile,
             Err(e) => {
                 println!("[SAGA CMD] Database error: {:?}", e);
@@ -53,17 +53,17 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
 pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
     let pool = { ctx.data.read().await.get::<AppState>().unwrap().db.clone() };
 
-    let saga_profile =
-        match database::profile::update_and_get_saga_profile(&pool, msg.author.id).await {
-            Ok(profile) => profile,
-            Err(e) => {
-                println!("[SAGA CMD] Database error: {:?}", e);
-                msg.reply(ctx, "Could not retrieve your game profile.")
-                    .await
-                    .ok();
-                return;
-            }
-        };
+    let saga_profile = match database::saga::update_and_get_saga_profile(&pool, msg.author.id).await
+    {
+        Ok(profile) => profile,
+        Err(e) => {
+            println!("[SAGA CMD] Database error: {:?}", e);
+            msg.reply(ctx, "Could not retrieve your game profile.")
+                .await
+                .ok();
+            return;
+        }
+    };
 
     let (embed, components) = create_saga_menu(&saga_profile);
     let builder = CreateMessage::new()

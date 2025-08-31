@@ -37,7 +37,7 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
     }
     .unwrap_or_else(|| interaction.user.clone());
 
-    let inventory = database::profile::get_inventory(&pool, user_to_fetch.id).await;
+    let inventory = database::economy::get_inventory(&pool, user_to_fetch.id).await;
 
     let embed = create_inventory_embed(&user_to_fetch, inventory);
     let builder = CreateInteractionResponseFollowup::new().embed(embed);
@@ -51,7 +51,7 @@ pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
     // Default to the message author if no one is mentioned.
     let user_to_fetch = msg.mentions.first().unwrap_or(&msg.author).clone();
 
-    let inventory = database::profile::get_inventory(&pool, user_to_fetch.id).await;
+    let inventory = database::economy::get_inventory(&pool, user_to_fetch.id).await;
 
     let embed = create_inventory_embed(&user_to_fetch, inventory);
     let builder = CreateMessage::new().embed(embed).reference_message(msg);

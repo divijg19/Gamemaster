@@ -1,6 +1,6 @@
 //! Contains the core "business logic" for the Gamemaster Saga.
 
-use crate::database::profile::SagaProfile;
+use crate::database::models::SagaProfile;
 use chrono::{Duration, Utc};
 
 // Constants for game balance.

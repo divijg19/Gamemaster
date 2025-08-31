@@ -8,7 +8,7 @@ use std::str::FromStr;
 
 pub fn create_inventory_embed(
     user: &User,
-    inventory_result: Result<Vec<database::profile::InventoryItem>, sqlx::Error>,
+    inventory_result: Result<Vec<database::models::InventoryItem>, sqlx::Error>,
 ) -> CreateEmbed {
     let mut embed = CreateEmbed::new()
         .title(format!("{}'s Inventory", user.name))

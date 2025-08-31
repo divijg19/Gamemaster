@@ -15,7 +15,7 @@ use std::time::Duration;
 
 pub struct BattleGame {
     pub session: BattleSession,
-    pub party_members: Vec<database::profile::PlayerPet>,
+    pub party_members: Vec<database::models::PlayerPet>,
     pub node_id: i32,
 }
 
@@ -45,10 +45,9 @@ impl Game for BattleGame {
                     let coins = 50;
                     let xp_per_pet = 25;
                     let actual_loot = {
-                        let potential_rewards =
-                            database::profile::get_rewards_for_node(db, self.node_id)
-                                .await
-                                .unwrap_or_default();
+                        let potential_rewards = database::get_rewards_for_node(db, self.node_id)
+                            .await
+                            .unwrap_or_default();
                         let mut loot = Vec::new();
                         let mut rng = rand::rng();
                         for reward in potential_rewards {
@@ -61,7 +60,7 @@ impl Game for BattleGame {
                         }
                         loot
                     };
-                    let results = database::profile::apply_battle_rewards(
+                    let results = database::apply_battle_rewards(
                         db,
                         interaction.user.id,
                         coins,
@@ -71,13 +70,9 @@ impl Game for BattleGame {
                     )
                     .await
                     .unwrap_or_default();
-                    database::profile::advance_story_progress(
-                        db,
-                        interaction.user.id,
-                        self.node_id,
-                    )
-                    .await
-                    .ok();
+                    database::advance_story_progress(db, interaction.user.id, self.node_id)
+                        .await
+                        .ok();
                     let mut victory_log = vec![
                         format!("🎉 **Victory!**"),
                         format!("💰 You earned **{}** coins.", coins),
@@ -138,8 +133,7 @@ impl Game for BattleGame {
                 let pet_id_to_tame = living_enemy.pet_id; // This makes the `pet_id` field "live".
 
                 let result =
-                    database::profile::attempt_tame_pet(db, interaction.user.id, pet_id_to_tame)
-                        .await;
+                    database::attempt_tame_pet(db, interaction.user.id, pet_id_to_tame).await;
 
                 match result {
                     Ok(pet_name) => {

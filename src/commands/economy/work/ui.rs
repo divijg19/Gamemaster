@@ -1,7 +1,7 @@
 //! Handles all UI and embed creation for the `work` command.
 
 use super::jobs::Job;
-use crate::database::profile::WorkRewards;
+use crate::database::models::WorkRewards;
 use chrono::Duration;
 use serenity::builder::CreateEmbed;
 

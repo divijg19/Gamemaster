@@ -25,7 +25,7 @@ pub fn xp_for_level(level: i32) -> i64 {
 ///
 /// # Returns
 /// The new, updated streak count.
-pub fn check_and_update_streak(profile: &mut database::profile::Profile) -> i32 {
+pub fn check_and_update_streak(profile: &mut database::models::Profile) -> i32 {
     let today = Utc::now().date_naive();
 
     // Determine the new streak based on the last work date.

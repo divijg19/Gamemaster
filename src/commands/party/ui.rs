@@ -1,6 +1,6 @@
 //! Handles the UI creation for the `/party` command.
 
-use crate::database::profile::PlayerPet;
+use crate::database::models::PlayerPet;
 use serenity::builder::{
     CreateActionRow, CreateEmbed, CreateEmbedFooter, CreateSelectMenu, CreateSelectMenuKind,
     CreateSelectMenuOption,

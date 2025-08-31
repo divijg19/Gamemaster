@@ -1,6 +1,6 @@
 //! Defines the data structures for a battle session.
 
-use crate::database::profile::{Pet, PlayerPet};
+use crate::database::models::{Pet, PlayerPet};
 
 #[derive(Debug, Clone)]
 pub struct BattleUnit {

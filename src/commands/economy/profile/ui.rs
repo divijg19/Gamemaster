@@ -2,14 +2,14 @@
 
 use crate::commands::economy::core;
 use crate::database;
-use crate::database::profile::SagaProfile;
+use crate::database::models::SagaProfile;
 use serenity::builder::CreateEmbed;
 use serenity::model::user::User;
 
 pub fn create_profile_embed(
     user: &User,
-    profile_result: Result<database::profile::Profile, sqlx::Error>,
-    inventory_result: Result<Vec<database::profile::InventoryItem>, sqlx::Error>,
+    profile_result: Result<database::models::Profile, sqlx::Error>,
+    inventory_result: Result<Vec<database::models::InventoryItem>, sqlx::Error>,
     saga_result: Result<SagaProfile, sqlx::Error>,
 ) -> CreateEmbed {
     let mut embed = CreateEmbed::new()

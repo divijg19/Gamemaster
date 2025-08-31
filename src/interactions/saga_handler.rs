@@ -17,29 +17,24 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
         Some(&"map") => {
             component.defer_ephemeral(&ctx.http).await.ok();
 
-            // Get the player's up-to-date profile to check their story progress.
-            let saga_profile = match database::profile::update_and_get_saga_profile(
-                &db,
-                component.user.id,
-            )
-            .await
-            {
-                Ok(profile) => profile,
-                Err(_) => {
-                    let builder = EditInteractionResponse::new()
-                        .content("Error: Could not retrieve your game profile.");
-                    component.edit_response(&ctx.http, builder).await.ok();
-                    return;
-                }
-            };
+            // (✓) FIXED: Updated to the new database module path.
+            let saga_profile =
+                match database::update_and_get_saga_profile(&db, component.user.id).await {
+                    Ok(profile) => profile,
+                    Err(_) => {
+                        let builder = EditInteractionResponse::new()
+                            .content("Error: Could not retrieve your game profile.");
+                        component.edit_response(&ctx.http, builder).await.ok();
+                        return;
+                    }
+                };
 
-            // Get the list of node IDs the player can access based on their progress.
             let available_node_ids = saga::map::get_available_nodes(saga_profile.story_progress);
-            let available_nodes = database::profile::get_map_nodes_by_ids(&db, &available_node_ids)
+            // (✓) FIXED: Updated to the new database module path.
+            let available_nodes = database::get_map_nodes_by_ids(&db, &available_node_ids)
                 .await
                 .unwrap_or_default();
 
-            // Render the world map view with buttons for each available node.
             let (embed, components) =
                 commands::saga::ui::create_world_map_view(&available_nodes, &saga_profile);
             let builder = EditInteractionResponse::new()
@@ -51,14 +46,13 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
         Some(&"node") => {
             component.defer(&ctx.http).await.ok();
 
-            // Spend 1 AP to start the battle.
-            let spend_result =
-                database::profile::spend_action_points(&db, component.user.id, 1).await;
+            // (✓) FIXED: Updated to the new database module path.
+            let spend_result = database::spend_action_points(&db, component.user.id, 1).await;
             if let Ok(true) = spend_result {
                 let node_id = custom_id_parts[2].parse::<i32>().unwrap();
 
-                // Fetch the player's active party.
-                let player_party_pets = database::profile::get_player_pets(&db, component.user.id)
+                // (✓) FIXED: Updated to the new database module path.
+                let player_party_pets = database::get_player_pets(&db, component.user.id)
                     .await
                     .unwrap_or_default()
                     .into_iter()
@@ -77,14 +71,14 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     return;
                 }
 
-                // Fetch the specific enemies for this node from the database.
-                let enemies = database::profile::get_enemies_for_node(&db, node_id)
+                // (✓) FIXED: Updated to the new database module path.
+                let enemies = database::get_enemies_for_node(&db, node_id)
                     .await
                     .unwrap_or_default();
                 let battle_enemies: Vec<_> = enemies.iter().map(Into::into).collect();
 
-                // Fetch the node's data for its description.
-                let node_data = database::profile::get_map_nodes_by_ids(&db, &[node_id])
+                // (✓) FIXED: Updated to the new database module path.
+                let node_data = database::get_map_nodes_by_ids(&db, &[node_id])
                     .await
                     .unwrap()
                     .remove(0);
@@ -98,7 +92,6 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     })],
                 };
 
-                // Construct the BattleGame with all necessary data for rewards and progression.
                 let battle_game = BattleGame {
                     session,
                     party_members: player_party_pets,
@@ -130,13 +123,14 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
         }
         Some(&"tavern") => {
             component.defer_ephemeral(&ctx.http).await.ok();
-            let profile = database::profile::get_or_create_profile(&db, component.user.id)
+            // (✓) FIXED: Updated to the new database module path.
+            let profile = database::get_or_create_profile(&db, component.user.id)
                 .await
                 .unwrap();
-            let recruits =
-                database::profile::get_pets_by_ids(&db, &commands::saga::tavern::TAVERN_RECRUITS)
-                    .await
-                    .unwrap_or_default();
+            // (✓) FIXED: Updated to the new database module path.
+            let recruits = database::get_pets_by_ids(&db, &commands::saga::tavern::TAVERN_RECRUITS)
+                .await
+                .unwrap_or_default();
             let (embed, components) =
                 commands::saga::tavern::create_tavern_menu(&recruits, profile.balance);
             let builder = EditInteractionResponse::new()
@@ -147,7 +141,8 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
         Some(&"hire") => {
             component.defer_ephemeral(&ctx.http).await.ok();
             let pet_id_to_hire = custom_id_parts[2].parse::<i32>().unwrap();
-            let result = database::profile::hire_mercenary(
+            // (✓) FIXED: Updated to the new database module path.
+            let result = database::hire_mercenary(
                 &db,
                 component.user.id,
                 pet_id_to_hire,
@@ -171,10 +166,12 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
         }
         Some(&"team") => {
             component.defer_ephemeral(&ctx.http).await.ok();
-            database::profile::update_and_get_saga_profile(&db, component.user.id)
+            // (✓) FIXED: Updated to the new database module path.
+            database::update_and_get_saga_profile(&db, component.user.id)
                 .await
                 .ok();
-            let pets = database::profile::get_player_pets(&db, component.user.id)
+            // (✓) FIXED: Updated to the new database module path.
+            let pets = database::get_player_pets(&db, component.user.id)
                 .await
                 .unwrap_or_default();
             let (embed, components) = commands::party::ui::create_party_view(&pets);

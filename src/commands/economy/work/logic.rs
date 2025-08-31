@@ -21,7 +21,7 @@ pub async fn perform_work(pool: &PgPool, user: &User, job_name: &str) -> CreateE
         }
     };
 
-    let mut profile = match database::profile::get_or_create_profile(pool, user.id).await {
+    let mut profile = match database::economy::get_or_create_profile(pool, user.id).await {
         Ok(p) => p,
         Err(_) => return ui::create_error_embed("Could not fetch your profile."),
     };
@@ -50,7 +50,7 @@ pub async fn perform_work(pool: &PgPool, user: &User, job_name: &str) -> CreateE
         core::profile::handle_leveling(current_level, current_xp, rewards.xp);
 
     let progression_update = if level_up_info.is_some() || rewards.xp > 0 {
-        Some(database::profile::ProgressionUpdate {
+        Some(database::models::ProgressionUpdate {
             job_name: chosen_job.name.to_string(),
             new_level,
             new_xp,
@@ -65,7 +65,7 @@ pub async fn perform_work(pool: &PgPool, user: &User, job_name: &str) -> CreateE
     };
 
     for (item, quantity) in &rewards.items {
-        if database::profile::add_to_inventory(&mut tx, user.id, *item, *quantity)
+        if database::economy::add_to_inventory(&mut tx, user.id, *item, *quantity)
             .await
             .is_err()
         {
@@ -74,7 +74,7 @@ pub async fn perform_work(pool: &PgPool, user: &User, job_name: &str) -> CreateE
         }
     }
 
-    if database::profile::update_work_stats(&mut tx, user.id, &rewards, streak, progression_update)
+    if database::economy::update_work_stats(&mut tx, user.id, &rewards, streak, progression_update)
         .await
         .is_err()
     {
@@ -99,7 +99,7 @@ fn calculate_rewards(
     current_level: i32,
     job: &Job,
     streak: i32,
-) -> (database::profile::WorkRewards, Vec<String>, i64) {
+) -> (database::models::WorkRewards, Vec<String>, i64) {
     let mut rng = rng();
     let base_coins = rng.random_range(job.min_payout..=job.max_payout);
     let streak_bonus = if streak > 1 {
@@ -109,7 +109,7 @@ fn calculate_rewards(
     };
 
     // (✓) FIXED: The WorkRewards struct is now correctly populated using the `items` vector.
-    let mut rewards = database::profile::WorkRewards {
+    let mut rewards = database::models::WorkRewards {
         coins: base_coins + streak_bonus,
         xp: job.xp_gain,
         items: Vec::new(),

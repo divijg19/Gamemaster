@@ -44,7 +44,7 @@ pub async fn handle(
             let player_pet_id = custom_id_parts[3].parse::<i32>().unwrap();
 
             // Call the database function to start the training session.
-            let success = database::profile::start_training(
+            let success = database::pets::start_training(
                 &db,
                 component.user.id,
                 player_pet_id,

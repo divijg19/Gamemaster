@@ -23,11 +23,10 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
         interaction.user.clone()
     };
 
-    let profile = database::profile::get_or_create_profile(&pool, user_to_fetch.id).await;
-    let inventory = database::profile::get_inventory(&pool, user_to_fetch.id).await;
+    let profile = database::economy::get_or_create_profile(&pool, user_to_fetch.id).await;
+    let inventory = database::economy::get_inventory(&pool, user_to_fetch.id).await;
     // (✓) MODIFIED: Call the new, intelligent update function to ensure AP/TP are always current.
-    let saga_profile =
-        database::profile::update_and_get_saga_profile(&pool, user_to_fetch.id).await;
+    let saga_profile = database::saga::update_and_get_saga_profile(&pool, user_to_fetch.id).await;
 
     let embed = create_profile_embed(&user_to_fetch, profile, inventory, saga_profile);
     let builder = CreateInteractionResponseFollowup::new().embed(embed);
@@ -43,11 +42,10 @@ pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
         .cloned()
         .unwrap_or_else(|| msg.author.clone());
 
-    let profile = database::profile::get_or_create_profile(&pool, user_to_fetch.id).await;
-    let inventory = database::profile::get_inventory(&pool, user_to_fetch.id).await;
+    let profile = database::economy::get_or_create_profile(&pool, user_to_fetch.id).await;
+    let inventory = database::economy::get_inventory(&pool, user_to_fetch.id).await;
     // (✓) MODIFIED: Call the new, intelligent update function here as well for the prefix command.
-    let saga_profile =
-        database::profile::update_and_get_saga_profile(&pool, user_to_fetch.id).await;
+    let saga_profile = database::saga::update_and_get_saga_profile(&pool, user_to_fetch.id).await;
 
     let embed = create_profile_embed(&user_to_fetch, profile, inventory, saga_profile);
     let builder = CreateMessage::new().embed(embed).reference_message(msg);

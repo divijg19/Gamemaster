@@ -1,6 +1,6 @@
 //! Handles the UI creation for the `/saga` command menu.
 
-use crate::database::profile::{MapNode, SagaProfile};
+use crate::database::models::{MapNode, SagaProfile};
 use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed};
 use serenity::model::application::ButtonStyle;
 

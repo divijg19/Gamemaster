@@ -112,9 +112,13 @@ src/commands/saga/ui.rs
 src/commands/train/mod.rs
 src/commands/train/run.rs
 src/commands/train/ui.rs
+src/database/economy.rs
 src/database/leaderboard.rs
 src/database/mod.rs
-src/database/profile.rs
+src/database/models.rs
+src/database/pets.rs
+src/database/saga.rs
+src/database/world.rs
 src/handler.rs
 src/interactions/game_handler.rs
 src/interactions/leaderboard_handler.rs

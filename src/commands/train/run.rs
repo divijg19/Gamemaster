@@ -29,25 +29,25 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
     let pool = { ctx.data.read().await.get::<AppState>().unwrap().db.clone() };
 
     // First, get the player's up-to-date saga profile.
-    let saga_profile =
-        match database::profile::update_and_get_saga_profile(&pool, interaction.user.id).await {
-            Ok(p) => p,
-            Err(e) => {
-                println!("[TRAIN CMD] DB error getting saga profile: {:?}", e);
-                interaction
-                    .edit_response(
-                        &ctx.http,
-                        EditInteractionResponse::new()
-                            .content("Could not retrieve your game profile."),
-                    )
-                    .await
-                    .ok();
-                return;
-            }
-        };
+    let saga_profile = match database::saga::update_and_get_saga_profile(&pool, interaction.user.id)
+        .await
+    {
+        Ok(p) => p,
+        Err(e) => {
+            println!("[TRAIN CMD] DB error getting saga profile: {:?}", e);
+            interaction
+                .edit_response(
+                    &ctx.http,
+                    EditInteractionResponse::new().content("Could not retrieve your game profile."),
+                )
+                .await
+                .ok();
+            return;
+        }
+    };
 
     // Next, get the list of all pets the player owns.
-    let pets = match database::profile::get_player_pets(&pool, interaction.user.id).await {
+    let pets = match database::pets::get_player_pets(&pool, interaction.user.id).await {
         Ok(p) => p,
         Err(e) => {
             println!("[TRAIN CMD] DB error getting player pets: {:?}", e);
@@ -74,19 +74,19 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
 pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
     let pool = { ctx.data.read().await.get::<AppState>().unwrap().db.clone() };
 
-    let saga_profile =
-        match database::profile::update_and_get_saga_profile(&pool, msg.author.id).await {
-            Ok(p) => p,
-            Err(e) => {
-                println!("[TRAIN CMD] DB error getting saga profile: {:?}", e);
-                msg.reply(ctx, "Could not retrieve your game profile.")
-                    .await
-                    .ok();
-                return;
-            }
-        };
+    let saga_profile = match database::saga::update_and_get_saga_profile(&pool, msg.author.id).await
+    {
+        Ok(p) => p,
+        Err(e) => {
+            println!("[TRAIN CMD] DB error getting saga profile: {:?}", e);
+            msg.reply(ctx, "Could not retrieve your game profile.")
+                .await
+                .ok();
+            return;
+        }
+    };
 
-    let pets = match database::profile::get_player_pets(&pool, msg.author.id).await {
+    let pets = match database::pets::get_player_pets(&pool, msg.author.id).await {
         Ok(p) => p,
         Err(e) => {
             println!("[TRAIN CMD] DB error getting player pets: {:?}", e);

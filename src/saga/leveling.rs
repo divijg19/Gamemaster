@@ -1,6 +1,6 @@
 //! Contains the business logic for pet progression and leveling.
 
-use crate::database::profile::PlayerPet;
+use crate::database::models::PlayerPet;
 
 const BASE_XP_PER_LEVEL: i32 = 100;
 

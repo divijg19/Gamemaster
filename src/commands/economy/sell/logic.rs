@@ -28,7 +28,7 @@ pub async fn sell_items(
         Err(_) => return ui::create_error_embed("Could not start database transaction."),
     };
 
-    let inventory_item = match database::profile::get_inventory_item(&mut tx, user.id, item).await {
+    let inventory_item = match database::economy::get_inventory_item(&mut tx, user.id, item).await {
         Ok(Some(item)) => item,
         _ => {
             tx.rollback().await.ok();
@@ -51,14 +51,14 @@ pub async fn sell_items(
 
     let total_sale_price = sell_price * amount_to_sell;
 
-    if database::profile::add_to_inventory(&mut tx, user.id, item, -amount_to_sell)
+    if database::economy::add_to_inventory(&mut tx, user.id, item, -amount_to_sell)
         .await
         .is_err()
     {
         tx.rollback().await.ok();
         return ui::create_error_embed("Failed to remove items from your inventory.");
     }
-    if database::profile::add_balance(&mut tx, user.id, total_sale_price)
+    if database::economy::add_balance(&mut tx, user.id, total_sale_price)
         .await
         .is_err()
     {

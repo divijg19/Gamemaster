@@ -1,6 +1,6 @@
 //! Handles the UI creation for the `/train` command.
 
-use crate::database::profile::{PlayerPet, SagaProfile};
+use crate::database::models::{PlayerPet, SagaProfile};
 use serenity::builder::{
     CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter, CreateSelectMenu,
     CreateSelectMenuKind, CreateSelectMenuOption,

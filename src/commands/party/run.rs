@@ -30,10 +30,10 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
 
     // First, run the main saga update function. This is crucial because it will
     // apply any completed training sessions before we fetch the pet list.
-    let _ = database::profile::update_and_get_saga_profile(&pool, interaction.user.id).await;
+    let _ = database::saga::update_and_get_saga_profile(&pool, interaction.user.id).await;
 
     // Now, fetch the fresh list of all pets the player owns.
-    let pets = match database::profile::get_player_pets(&pool, interaction.user.id).await {
+    let pets = match database::pets::get_player_pets(&pool, interaction.user.id).await {
         Ok(p) => p,
         Err(e) => {
             println!("[PARTY CMD] DB error getting player pets: {:?}", e);
@@ -61,8 +61,8 @@ pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
     let pool = { ctx.data.read().await.get::<AppState>().unwrap().db.clone() };
 
     // Same logic as the slash command: update first, then fetch.
-    let _ = database::profile::update_and_get_saga_profile(&pool, msg.author.id).await;
-    let pets = match database::profile::get_player_pets(&pool, msg.author.id).await {
+    let _ = database::saga::update_and_get_saga_profile(&pool, msg.author.id).await;
+    let pets = match database::pets::get_player_pets(&pool, msg.author.id).await {
         Ok(p) => p,
         Err(e) => {
             println!("[PARTY CMD] DB error getting player pets: {:?}", e);
