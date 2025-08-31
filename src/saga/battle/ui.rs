@@ -17,11 +17,24 @@ pub fn render_battle(session: &BattleSession) -> (CreateEmbed, Vec<CreateActionR
         .field("Enemy Party", format_party_hp(&session.enemy_party), true)
         .color(0xE74C3C); // Red
 
+    // (✓) MODIFIED: The UI now dynamically determines if a tame attempt is possible.
+    let living_enemies: Vec<_> = session
+        .enemy_party
+        .iter()
+        .filter(|e| e.current_hp > 0)
+        .collect();
+    let can_tame = living_enemies.len() == 1 && living_enemies[0].is_tameable;
+
     let components = vec![CreateActionRow::Buttons(vec![
         CreateButton::new("battle_attack")
             .label("Attack")
             .style(ButtonStyle::Primary)
             .disabled(session.current_turn != BattleParty::Player),
+        // (✓) ADDED: A new Tame button that is only enabled under specific conditions.
+        CreateButton::new("battle_tame")
+            .label("Tame")
+            .style(ButtonStyle::Success)
+            .disabled(session.current_turn != BattleParty::Player || !can_tame),
         CreateButton::new("battle_flee")
             .label("Flee")
             .style(ButtonStyle::Secondary),

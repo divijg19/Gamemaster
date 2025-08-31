@@ -7,6 +7,7 @@ use crate::saga::leveling::LevelUpResult;
 use serenity::model::id::UserId;
 use sqlx::types::chrono::{DateTime, Utc};
 use sqlx::{PgPool, Postgres, Transaction};
+use std::str::FromStr;
 
 // --- Data Structures ---
 
@@ -47,6 +48,7 @@ pub struct Pet {
     pub base_attack: i32,
     pub base_defense: i32,
     pub base_health: i32,
+    pub is_tameable: bool,
 }
 
 #[allow(dead_code)]
@@ -459,4 +461,74 @@ pub async fn advance_story_progress(
     let user_id_i64 = user_id.get() as i64;
     sqlx::query!("UPDATE player_saga_profile SET story_progress = $1 WHERE user_id = $2 AND story_progress < $1", new_progress, user_id_i64).execute(pool).await?;
     Ok(())
+}
+
+pub async fn attempt_tame_pet(
+    pool: &PgPool,
+    user_id: UserId,
+    pet_id_to_tame: i32,
+) -> Result<String, String> {
+    let user_id_i64 = user_id.get() as i64;
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    let pet_master = sqlx::query_as!(Pet, "SELECT * FROM pets WHERE pet_id = $1", pet_id_to_tame)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|_| "Creature data not found.".to_string())?;
+
+    if !pet_master.is_tameable {
+        tx.rollback().await.ok();
+        return Err("This creature cannot be tamed.".to_string());
+    }
+
+    let army_size: i64 = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM player_pets WHERE user_id = $1",
+        user_id_i64
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap_or(Some(0))
+    .unwrap_or(0);
+    if army_size >= 10 {
+        tx.rollback().await.ok();
+        return Err(
+            "Your army is full! You must dismiss a pet before taming a new one.".to_string(),
+        );
+    }
+
+    let research_data_item_name = format!("{} Research Data", pet_master.name);
+    let research_data_item = Item::from_str(&research_data_item_name)
+        .map_err(|_| "Could not identify the required research data.".to_string())?;
+    let required_items = [(Item::TamingLure, 1), (research_data_item, 10)];
+
+    for (item, required_quantity) in required_items {
+        let has_item = get_inventory_item(&mut tx, user_id, item)
+            .await
+            .map_err(|_| "Could not check your inventory.".to_string())?;
+        if has_item.is_none_or(|i| i.quantity < required_quantity) {
+            tx.rollback().await.ok();
+            return Err(format!(
+                "You don't have enough materials! You need {} {}.",
+                required_quantity,
+                item.display_name()
+            ));
+        }
+    }
+
+    for (item, required_quantity) in required_items {
+        add_to_inventory(&mut tx, user_id, item, -required_quantity)
+            .await
+            .map_err(|_| "Failed to consume taming items.".to_string())?;
+    }
+
+    sqlx::query!(
+        "INSERT INTO player_pets (user_id, pet_id, nickname, current_attack, current_defense, current_health) VALUES ($1, $2, $3, $4, $5, $6)",
+        user_id_i64, pet_id_to_tame, &pet_master.name, pet_master.base_attack, pet_master.base_defense, pet_master.base_health
+    ).execute(&mut *tx).await.map_err(|_| "Failed to add the tamed pet to your army.".to_string())?;
+
+    tx.commit()
+        .await
+        .map_err(|_| "Failed to finalize the transaction.".to_string())?;
+
+    Ok(pet_master.name)
 }

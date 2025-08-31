@@ -42,6 +42,8 @@ migrations/20250828003809_populate_base_pets.sql
 migrations/20250829223430_add_wild_slime_enemy.sql
 migrations/20250829234847_add_battle_loot_items.sql
 migrations/20250830183054_create_world_map.sql
+migrations/20250830210405_add_taming_lure_item.sql
+migrations/20250831002251_add_tameable_flag_to_pets.sql
 src/commands/blackjack/game.rs
 src/commands/blackjack/handlers.rs
 src/commands/blackjack/mod.rs

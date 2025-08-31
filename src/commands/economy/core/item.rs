@@ -62,6 +62,7 @@ pub enum Item {
     XpBooster = 7,
     SlimeGel = 8,
     SlimeResearchData = 9,
+    TamingLure = 10,
 }
 
 impl Item {
@@ -166,14 +167,30 @@ impl Item {
                 buy_price: None,
                 sell_price: None,
             },
+            Item::TamingLure => ItemProperties {
+                display_name: "Taming Lure",
+                description: "A lure used to attract and pacify wild creatures.",
+                emoji: "🐾",
+                category: ItemCategory::Consumable,
+                rarity: Rarity::Uncommon,
+                is_sellable: true,
+                is_tradeable: true,
+                buy_price: Some(250),
+                sell_price: Some(125),
+            },
         }
     }
 
     pub fn get_all_purchasable() -> Vec<Item> {
-        vec![Item::Fish, Item::Ore, Item::Gem, Item::XpBooster]
+        vec![
+            Item::Fish,
+            Item::Ore,
+            Item::Gem,
+            Item::XpBooster,
+            Item::TamingLure,
+        ]
     }
 
-    // (✓) ADDED: A safe function to convert a database ID into an Item enum.
     pub fn from_i32(id: i32) -> Option<Self> {
         match id {
             1 => Some(Item::Fish),
@@ -185,6 +202,7 @@ impl Item {
             7 => Some(Item::XpBooster),
             8 => Some(Item::SlimeGel),
             9 => Some(Item::SlimeResearchData),
+            10 => Some(Item::TamingLure),
             _ => None,
         }
     }
@@ -213,6 +231,7 @@ impl FromStr for Item {
             "xpbooster" | "booster" => Ok(Item::XpBooster),
             "slimegel" | "gel" => Ok(Item::SlimeGel),
             "slimedata" | "data" => Ok(Item::SlimeResearchData),
+            "taminglure" | "lure" => Ok(Item::TamingLure),
             _ => Err(()),
         }
     }
@@ -233,6 +252,7 @@ impl fmt::Display for Item {
                 Item::XpBooster => "xpbooster",
                 Item::SlimeGel => "slimegel",
                 Item::SlimeResearchData => "slimedata",
+                Item::TamingLure => "taminglure",
             }
         )
     }
