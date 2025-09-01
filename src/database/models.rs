@@ -70,6 +70,8 @@ pub struct MapNode {
     pub name: String,
     pub description: Option<String>,
     pub story_progress_required: i32,
+    pub reward_coins: i64,
+    pub reward_pet_xp: i32,
 }
 
 #[derive(sqlx::FromRow, Debug, Clone)]
@@ -90,4 +92,18 @@ pub struct ProgressionUpdate {
     pub job_name: String,
     pub new_level: i32,
     pub new_xp: i64,
+}
+
+// (✓) ADDED: New structs to represent the crafting system tables.
+#[derive(sqlx::FromRow, Debug, Clone)]
+pub struct Recipe {
+    pub recipe_id: i32,
+    pub output_item_id: i32,
+    pub output_quantity: i32,
+}
+
+#[derive(sqlx::FromRow, Debug, Clone)]
+pub struct RecipeIngredient {
+    pub item_id: i32,
+    pub quantity: i32,
 }

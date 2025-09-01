@@ -1,44 +1,96 @@
 //! Handles rendering the battle state into a Discord embed.
 
-use super::state::{BattleParty, BattleSession, BattleUnit};
+use super::state::{BattlePhase, BattleSession, BattleUnit};
 use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed};
 use serenity::model::application::ButtonStyle;
 
-pub fn render_battle(session: &BattleSession) -> (CreateEmbed, Vec<CreateActionRow>) {
-    let turn_text = match session.current_turn {
-        BattleParty::Player => "Your Turn",
-        BattleParty::Enemy => "Enemy's Turn",
+pub fn render_battle(
+    session: &BattleSession,
+    can_afford_tame: bool,
+) -> (CreateEmbed, Vec<CreateActionRow>) {
+    // (✓) MODIFIED: Title and color are now dynamic based on the battle's final outcome.
+    let (title, color) = match session.phase {
+        BattlePhase::PlayerTurn => ("Battle - Your Turn", 0xE74C3C), // Red
+        BattlePhase::PlayerSelectingItem => ("Battle - Select an Item", 0x3498DB), // Blue
+        BattlePhase::EnemyTurn => ("Battle - Enemy's Turn", 0xE74C3C), // Red
+        BattlePhase::Victory => ("Victory!", 0x57F287),              // Green
+        BattlePhase::Defeat => ("Defeat", 0x99AAB5),                 // Grey
     };
 
     let embed = CreateEmbed::new()
-        .title(format!("Battle in Progress - {}", turn_text))
+        .title(title)
         .description(session.log.join("\n"))
         .field("Your Party", format_party_hp(&session.player_party), true)
         .field("Enemy Party", format_party_hp(&session.enemy_party), true)
-        .color(0xE74C3C); // Red
+        .color(color);
 
-    // (✓) MODIFIED: The UI now dynamically determines if a tame attempt is possible.
-    let living_enemies: Vec<_> = session
-        .enemy_party
-        .iter()
-        .filter(|e| e.current_hp > 0)
-        .collect();
-    let can_tame = living_enemies.len() == 1 && living_enemies[0].is_tameable;
+    // (✓) MODIFIED: The entire component layout is now determined by the battle phase.
+    let components = match session.phase {
+        BattlePhase::PlayerTurn => {
+            let living_enemies: Vec<_> = session
+                .enemy_party
+                .iter()
+                .filter(|e| e.current_hp > 0)
+                .collect();
+            let is_last_enemy = living_enemies.len() == 1;
+            let is_tameable = is_last_enemy && living_enemies[0].is_tameable;
+            let can_tame = is_tameable && can_afford_tame;
 
-    let components = vec![CreateActionRow::Buttons(vec![
-        CreateButton::new("battle_attack")
-            .label("Attack")
-            .style(ButtonStyle::Primary)
-            .disabled(session.current_turn != BattleParty::Player),
-        // (✓) ADDED: A new Tame button that is only enabled under specific conditions.
-        CreateButton::new("battle_tame")
-            .label("Tame")
-            .style(ButtonStyle::Success)
-            .disabled(session.current_turn != BattleParty::Player || !can_tame),
-        CreateButton::new("battle_flee")
-            .label("Flee")
-            .style(ButtonStyle::Secondary),
-    ])];
+            vec![CreateActionRow::Buttons(vec![
+                CreateButton::new("battle_attack")
+                    .label("Attack")
+                    .style(ButtonStyle::Primary),
+                // (✓) NEW: The Item button is now live.
+                CreateButton::new("battle_item")
+                    .label("Item")
+                    .style(ButtonStyle::Secondary),
+                CreateButton::new("battle_tame")
+                    .label("Tame")
+                    .style(ButtonStyle::Success)
+                    .disabled(!can_tame),
+                CreateButton::new("battle_flee")
+                    .label("Flee")
+                    .style(ButtonStyle::Danger),
+            ])]
+        }
+        // (✓) MODIFIED: In these phases, show the buttons but disable them so the user knows what's available.
+        BattlePhase::EnemyTurn | BattlePhase::PlayerSelectingItem => {
+            vec![CreateActionRow::Buttons(vec![
+                CreateButton::new("disabled_attack")
+                    .label("Attack")
+                    .style(ButtonStyle::Primary)
+                    .disabled(true),
+                CreateButton::new("disabled_item")
+                    .label("Item")
+                    .style(ButtonStyle::Secondary)
+                    .disabled(true),
+                CreateButton::new("disabled_tame")
+                    .label("Tame")
+                    .style(ButtonStyle::Success)
+                    .disabled(true),
+                CreateButton::new("disabled_flee")
+                    .label("Flee")
+                    .style(ButtonStyle::Danger)
+                    .disabled(true),
+            ])]
+        }
+        // (✓) MODIFIED: When the battle is won, show a "Claim Rewards" button.
+        BattlePhase::Victory => {
+            vec![CreateActionRow::Buttons(vec![
+                CreateButton::new("battle_claim_rewards")
+                    .label("Claim Rewards")
+                    .style(ButtonStyle::Success),
+            ])]
+        }
+        // (✓) MODIFIED: When the battle is lost, show a simple "Close" button.
+        BattlePhase::Defeat => {
+            vec![CreateActionRow::Buttons(vec![
+                CreateButton::new("battle_close")
+                    .label("Close")
+                    .style(ButtonStyle::Secondary),
+            ])]
+        }
+    };
 
     (embed, components)
 }

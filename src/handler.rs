@@ -1,4 +1,3 @@
-// (✓) MODIFIED: Imports are now cleaner as logic has been moved to specialized handlers.
 use crate::{AppState, commands, interactions};
 use serenity::async_trait;
 use serenity::client::Context;
@@ -22,6 +21,7 @@ enum Command {
     Leaderboard,
     Train,
     Party,
+    Craft, // (✓) ADDED
     Help,
     Blackjack,
     Poker,
@@ -46,6 +46,7 @@ impl FromStr for Command {
             "leaderboard" | "lb" => Ok(Command::Leaderboard),
             "train" => Ok(Command::Train),
             "party" | "army" => Ok(Command::Party),
+            "craft" => Ok(Command::Craft), // (✓) ADDED
             "help" => Ok(Command::Help),
             "blackjack" | "bj" => Ok(Command::Blackjack),
             "poker" => Ok(Command::Poker),
@@ -87,6 +88,7 @@ impl EventHandler for Handler {
                     "leaderboard" => commands::leaderboard::run_slash(&ctx, command).await,
                     "train" => commands::train::run_slash(&ctx, command).await,
                     "party" => commands::party::run_slash(&ctx, command).await,
+                    "craft" => commands::craft::run_slash(&ctx, command).await, // (✓) ADDED
                     "help" => commands::help::run_slash(&ctx, command).await,
                     "blackjack" => commands::blackjack::run_slash(&ctx, command).await,
                     "poker" => commands::poker::run_slash(&ctx, command).await,
@@ -99,9 +101,6 @@ impl EventHandler for Handler {
             }
             Interaction::Component(component) => {
                 let command_family = component.data.custom_id.split('_').next().unwrap_or("");
-
-                // (✓) FIXED: This is the fully refactored and modularized interaction router.
-                // It now calls the specialized handlers, which will make their code "live".
                 match command_family {
                     "rps" | "bj" | "poker" | "shop" | "battle" => {
                         interactions::game_handler::handle(&ctx, component, app_state).await;
@@ -120,6 +119,9 @@ impl EventHandler for Handler {
                     }
                     "party" => {
                         interactions::party_handler::handle(&ctx, component, app_state).await;
+                    }
+                    "craft" => {
+                        interactions::craft_handler::handle(&ctx, component, app_state).await;
                     }
                     _ => {}
                 }
@@ -150,7 +152,6 @@ impl EventHandler for Handler {
         };
         let command = Command::from_str(command_str).unwrap_or(Command::Unknown);
         let args_vec: Vec<&str> = args.collect();
-
         match command {
             Command::Ping => commands::ping::run_prefix(&ctx, &msg).await,
             Command::Prefix => commands::prefix::run_prefix(&ctx, &msg, args_vec).await,
@@ -168,6 +169,7 @@ impl EventHandler for Handler {
             Command::Leaderboard => commands::leaderboard::run_prefix(&ctx, &msg, args_vec).await,
             Command::Train => commands::train::run_prefix(&ctx, &msg, args_vec).await,
             Command::Party => commands::party::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Craft => commands::craft::run_prefix(&ctx, &msg, args_vec).await, // (✓) ADDED
             Command::Help => commands::help::run_prefix(&ctx, &msg, args_vec).await,
             Command::Blackjack => commands::blackjack::run_prefix(&ctx, &msg, args_vec).await,
             Command::Poker => commands::poker::run_prefix(&ctx, &msg, args_vec).await,
@@ -219,6 +221,7 @@ impl EventHandler for Handler {
             commands::leaderboard::register(),
             commands::train::register(),
             commands::party::register(),
+            commands::craft::register(), // (✓) ADDED
             commands::blackjack::register(),
             commands::poker::register(),
             commands::rps::register(),

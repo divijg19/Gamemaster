@@ -8,13 +8,10 @@ use std::sync::Arc;
 
 pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_state: Arc<AppState>) {
     let db = app_state.db.clone();
-    component.defer_ephemeral(&ctx.http).await.ok();
+    component.defer_ephemeral(ctx.http.clone()).await.ok();
 
-    // Determine if we are adding or removing a pet.
     let action = component.data.custom_id.split('_').nth(1).unwrap_or("");
-    let is_adding = action == "add";
 
-    // Get the selected pet's ID from the dropdown menu.
     let pet_id_str =
         if let serenity::model::application::ComponentInteractionDataKind::StringSelect { values } =
             &component.data.kind
@@ -25,26 +22,49 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
         };
     let pet_id = pet_id_str.parse::<i32>().unwrap();
 
-    // (✓) FIXED: Updated to the new database module path.
-    let result = database::set_pet_party_status(&db, component.user.id, pet_id, is_adding).await;
+    let mut confirmation_message = "".to_string();
 
-    // After any change, always re-fetch the full list of pets and re-render the UI.
-    // (✓) FIXED: Updated to the new database module path.
-    let pets = database::get_player_pets(&db, component.user.id)
+    // (✓) MODIFIED: The logic is now in a match block to handle all party actions.
+    match action {
+        "add" => {
+            let result =
+                database::pets::set_pet_party_status(&db, component.user.id, pet_id, true).await;
+            if let Ok(false) = result {
+                confirmation_message = "Could not add pet: Your party is full (5/5).".to_string();
+            }
+        }
+        "remove" => {
+            database::pets::set_pet_party_status(&db, component.user.id, pet_id, false)
+                .await
+                .ok();
+        }
+        // (✓) ADDED: Handler for the dismiss action.
+        "dismiss" => {
+            let success = database::pets::dismiss_pet(&db, component.user.id, pet_id)
+                .await
+                .unwrap_or(false);
+            if success {
+                confirmation_message = "The pet has been dismissed from your army.".to_string();
+            } else {
+                confirmation_message = "Failed to dismiss the pet.".to_string();
+            }
+        }
+        _ => {}
+    }
+
+    // After any action, always re-fetch the pet list and re-render the UI.
+    let pets = database::pets::get_player_pets(&db, component.user.id)
         .await
         .unwrap_or_default();
     let (embed, components) = commands::party::ui::create_party_view(&pets);
 
-    let mut builder = EditInteractionResponse::new()
+    let builder = EditInteractionResponse::new()
         .embed(embed)
-        .components(components);
+        .components(components)
+        .content(confirmation_message); // Display the confirmation message.
 
-    // If the database function reported a failure (e.g., party was full), add a small error message.
-    if let Ok(false) = result
-        && is_adding
-    {
-        builder = builder.content("Could not add pet: Your party is full (5/5).");
-    }
-
-    component.edit_response(&ctx.http, builder).await.ok();
+    component
+        .edit_response(ctx.http.clone(), builder)
+        .await
+        .ok();
 }

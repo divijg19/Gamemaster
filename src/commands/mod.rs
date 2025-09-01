@@ -2,6 +2,7 @@
 // This file declares the existence of our command modules.
 
 pub mod blackjack;
+pub mod craft;
 pub mod economy;
 pub mod games;
 pub mod help;

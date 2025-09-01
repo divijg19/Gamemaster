@@ -93,6 +93,27 @@ pub fn create_party_view(pets: &[PlayerPet]) -> (CreateEmbed, Vec<CreateActionRo
         components.push(CreateActionRow::SelectMenu(menu));
     }
 
+    // (✓) ADDED: A new dropdown menu for dismissing pets.
+    // It is populated with all pets, both party members and reserves.
+    if !pets.is_empty() {
+        let dismiss_options: Vec<_> = pets
+            .iter()
+            .map(|p| {
+                let pet_name = p.nickname.as_deref().unwrap_or(&p.name);
+                CreateSelectMenuOption::new(pet_name, p.player_pet_id.to_string())
+            })
+            .collect();
+
+        let menu = CreateSelectMenu::new(
+            "party_dismiss",
+            CreateSelectMenuKind::String {
+                options: dismiss_options,
+            },
+        )
+        .placeholder("Dismiss a unit from your army...");
+        components.push(CreateActionRow::SelectMenu(menu));
+    }
+
     (embed, components)
 }
 
@@ -108,7 +129,6 @@ fn format_pet_line(pet: &PlayerPet) -> String {
 
     let pet_name = pet.nickname.as_deref().unwrap_or(&pet.name);
 
-    // (✓) ALIVE: The pet's current_xp is now displayed, making the data model whole.
     format!(
         "**{}** | Lvl {} (`{}` XP) | Atk: {} | Def: {} | HP: {} {}",
         pet_name,

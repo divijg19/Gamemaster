@@ -9,7 +9,6 @@ pub struct BattleUnit {
     pub max_hp: i32,
     pub attack: i32,
     pub defense: i32,
-    // (✓) ADDED: The battle unit now tracks the master ID and tameable status of the creature.
     pub pet_id: i32,
     pub is_tameable: bool,
 }
@@ -22,7 +21,6 @@ impl From<&PlayerPet> for BattleUnit {
             max_hp: pet.current_health,
             attack: pet.current_attack,
             defense: pet.current_defense,
-            // Player-owned pets are not wild, so they are not tameable.
             pet_id: pet.pet_id,
             is_tameable: false,
         }
@@ -37,17 +35,21 @@ impl From<&Pet> for BattleUnit {
             max_hp: pet.base_health,
             attack: pet.base_attack,
             defense: pet.base_defense,
-            // This data comes directly from the master `pets` table.
             pet_id: pet.pet_id,
             is_tameable: pet.is_tameable,
         }
     }
 }
 
+// (✓) MODIFIED: Added the `Victory` and `Defeat` phases to fully represent the entire
+// lifecycle of a battle, from start to finish. This is crucial for the new UI flow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BattleParty {
-    Player,
-    Enemy,
+pub enum BattlePhase {
+    PlayerTurn,
+    PlayerSelectingItem,
+    EnemyTurn,
+    Victory,
+    Defeat,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,6 +63,6 @@ pub enum BattleOutcome {
 pub struct BattleSession {
     pub player_party: Vec<BattleUnit>,
     pub enemy_party: Vec<BattleUnit>,
-    pub current_turn: BattleParty,
+    pub phase: BattlePhase,
     pub log: Vec<String>,
 }

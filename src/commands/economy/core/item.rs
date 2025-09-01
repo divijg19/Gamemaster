@@ -63,6 +63,7 @@ pub enum Item {
     SlimeGel = 8,
     SlimeResearchData = 9,
     TamingLure = 10,
+    HealthPotion = 11, // (✓) ADDED: The new craftable item.
 }
 
 impl Item {
@@ -178,6 +179,18 @@ impl Item {
                 buy_price: Some(250),
                 sell_price: Some(125),
             },
+            // (✓) ADDED: Properties for the new craftable Health Potion.
+            Item::HealthPotion => ItemProperties {
+                display_name: "Health Potion",
+                description: "A basic potion that restores a small amount of health.",
+                emoji: "🧪",
+                category: ItemCategory::Consumable,
+                rarity: Rarity::Uncommon,
+                is_sellable: true, // Let's let players sell them
+                is_tradeable: true,
+                buy_price: None, // Cannot be bought
+                sell_price: Some(50),
+            },
         }
     }
 
@@ -203,6 +216,7 @@ impl Item {
             8 => Some(Item::SlimeGel),
             9 => Some(Item::SlimeResearchData),
             10 => Some(Item::TamingLure),
+            11 => Some(Item::HealthPotion), // (✓) ADDED
             _ => None,
         }
     }
@@ -232,6 +246,7 @@ impl FromStr for Item {
             "slimegel" | "gel" => Ok(Item::SlimeGel),
             "slimedata" | "data" => Ok(Item::SlimeResearchData),
             "taminglure" | "lure" => Ok(Item::TamingLure),
+            "healthpotion" | "potion" => Ok(Item::HealthPotion), // (✓) ADDED
             _ => Err(()),
         }
     }
@@ -253,6 +268,7 @@ impl fmt::Display for Item {
                 Item::SlimeGel => "slimegel",
                 Item::SlimeResearchData => "slimedata",
                 Item::TamingLure => "taminglure",
+                Item::HealthPotion => "healthpotion", // (✓) ADDED
             }
         )
     }

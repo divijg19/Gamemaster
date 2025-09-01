@@ -5,6 +5,7 @@
 //! (e.g., "saga", "party", "train"). This keeps the main handler clean and
 //! organizes all interaction logic in one place.
 
+pub mod craft_handler;
 pub mod game_handler;
 pub mod leaderboard_handler;
 pub mod party_handler;

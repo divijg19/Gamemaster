@@ -4,6 +4,7 @@
 //! (e.g., `database::get_player_pets(...)` instead of `database::pets::get_player_pets(...)`).
 
 // Declare all the new, specialized modules.
+pub mod crafting;
 pub mod economy;
 pub mod leaderboard;
 pub mod models;

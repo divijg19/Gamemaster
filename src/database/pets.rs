@@ -31,6 +31,24 @@ pub async fn get_pets_by_ids(pool: &PgPool, pet_ids: &[i32]) -> Result<Vec<Pet>,
         .await
 }
 
+// (✓) NEW: A read-only function to check if the user has the required items for taming.
+// This is used to enable/disable the "Tame" button in the battle UI.
+pub async fn can_afford_tame(pool: &PgPool, user_id: UserId) -> Result<bool, sqlx::Error> {
+    let user_id_i64 = user_id.get() as i64;
+    let lure_item_id = Item::TamingLure as i32;
+    // For now, we just check for the Taming Lure by item_id. A more complex implementation could check for specific research data.
+    let count = sqlx::query_scalar!(
+        "SELECT quantity FROM inventories WHERE user_id = $1 AND item_id = $2",
+        user_id_i64,
+        lure_item_id
+    )
+    .fetch_optional(pool)
+    .await?
+    .unwrap_or(0);
+
+    Ok(count >= 1)
+}
+
 /// A transaction to hire a mercenary.
 pub async fn hire_mercenary(
     pool: &PgPool,
@@ -241,4 +259,22 @@ pub async fn apply_battle_rewards(
     }
     tx.commit().await?;
     Ok(level_up_results)
+}
+
+/// Deletes a specific pet from a user's army.
+pub async fn dismiss_pet(
+    pool: &PgPool,
+    user_id: UserId,
+    player_pet_id: i32,
+) -> Result<bool, sqlx::Error> {
+    let user_id_i64 = user_id.get() as i64;
+    let rows_affected = sqlx::query!(
+        "DELETE FROM player_pets WHERE player_pet_id = $1 AND user_id = $2",
+        player_pet_id,
+        user_id_i64
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok(rows_affected > 0)
 }

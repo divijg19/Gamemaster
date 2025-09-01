@@ -44,12 +44,17 @@ migrations/20250829234847_add_battle_loot_items.sql
 migrations/20250830183054_create_world_map.sql
 migrations/20250830210405_add_taming_lure_item.sql
 migrations/20250831002251_add_tameable_flag_to_pets.sql
+migrations/20250831124427_create_crafting_system.sql
+migrations/20250901012653_add_rewards_to_nodes.sql
 src/commands/blackjack/game.rs
 src/commands/blackjack/handlers.rs
 src/commands/blackjack/mod.rs
 src/commands/blackjack/run.rs
 src/commands/blackjack/state.rs
 src/commands/blackjack/ui.rs
+src/commands/craft/mod.rs
+src/commands/craft/run.rs
+src/commands/craft/ui.rs
 src/commands/economy/core/item.rs
 src/commands/economy/core/mod.rs
 src/commands/economy/core/profile.rs
@@ -112,6 +117,7 @@ src/commands/saga/ui.rs
 src/commands/train/mod.rs
 src/commands/train/run.rs
 src/commands/train/ui.rs
+src/database/crafting.rs
 src/database/economy.rs
 src/database/leaderboard.rs
 src/database/mod.rs
@@ -120,6 +126,7 @@ src/database/pets.rs
 src/database/saga.rs
 src/database/world.rs
 src/handler.rs
+src/interactions/craft_handler.rs
 src/interactions/game_handler.rs
 src/interactions/leaderboard_handler.rs
 src/interactions/mod.rs
