@@ -27,6 +27,16 @@
         "ordinal": 4,
         "name": "story_progress_required",
         "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "reward_coins",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "reward_pet_xp",
+        "type_info": "Int4"
       }
     ],
     "parameters": {
@@ -39,6 +49,8 @@
       false,
       false,
       true,
+      false,
+      false,
       false
     ]
   },
