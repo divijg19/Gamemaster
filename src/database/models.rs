@@ -69,6 +69,9 @@ pub struct MapNode {
     pub reward_coins: i64,
     pub reward_pet_xp: i32,
 }
+// Transitional aliases while renaming "pets" to "units" in higher layers.
+pub type Unit = Pet;
+pub type PlayerUnit = PlayerPet;
 #[derive(sqlx::FromRow, Debug, Clone)]
 pub struct NodeReward {
     pub item_id: i32,

@@ -15,10 +15,10 @@ use tokio::time::Duration;
 
 pub struct BattleGame {
     pub session: BattleSession,
-    pub party_members: Vec<database::models::PlayerPet>,
+    pub party_members: Vec<database::models::PlayerPet>, // TODO: rename to PlayerUnit after DB migration
     pub node_id: i32,
     pub node_name: String,
-    pub can_afford_tame: bool,
+    pub can_afford_recruit: bool,
     // (✓) NEW: Add a field to track if this battle is for a quest.
     pub player_quest_id: Option<i32>,
 }
@@ -38,7 +38,7 @@ impl Game for BattleGame {
             BattlePhase::Defeat => "☠️ **DEFEAT** ☠️".to_string(),
             _ => "".to_string(),
         };
-        let (embed, components) = ui::render_battle(&self.session, self.can_afford_tame);
+    let (embed, components) = ui::render_battle(&self.session, self.can_afford_recruit);
         (content, embed, components)
     }
 
@@ -72,38 +72,38 @@ impl Game for BattleGame {
 
                 GameUpdate::ReRender
             }
-            "battle_tame" => {
-                // Taming is disabled for quest battles for simplicity.
+            "battle_recruit" => {
+                // Recruiting is disabled for quest battles for simplicity.
                 if self.player_quest_id.is_some() {
                     self.session
                         .log
-                        .push("⚠️ You cannot tame quest enemies.".to_string());
+                        .push("⚠️ You cannot recruit quest enemies.".to_string());
                     return GameUpdate::ReRender;
                 }
 
                 if let Some(living_enemy) =
                     self.session.enemy_party.iter().find(|e| e.current_hp > 0)
                 {
-                    let pet_id_to_tame = living_enemy.pet_id;
-                    match database::pets::attempt_tame_pet(db, interaction.user.id, pet_id_to_tame)
+                    let unit_id_to_recruit = living_enemy.unit_id;
+                    match database::pets::attempt_tame_pet(db, interaction.user.id, unit_id_to_recruit)
                         .await
                     {
                         Ok(pet_name) => GameUpdate::GameOver {
                             message: format!(
-                                "🐾 **Success!** You spent your materials and successfully tamed the **{}**!",
+                                "� **Success!** You secured a contract and successfully recruited **{}**!",
                                 pet_name
                             ),
                             payouts: vec![],
                         },
                         Err(e) => {
-                            self.session.log.push(format!("⚠️ Tame failed: {}", e));
+                            self.session.log.push(format!("⚠️ Recruit failed: {}", e));
                             GameUpdate::ReRender
                         }
                     }
                 } else {
                     self.session
                         .log
-                        .push("⚠️ Tame failed: No target found.".to_string());
+                        .push("⚠️ Recruit failed: No target found.".to_string());
                     GameUpdate::ReRender
                 }
             }

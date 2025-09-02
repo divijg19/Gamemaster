@@ -167,9 +167,9 @@ const COMMANDS: &[CommandInfo] = &[
     },
     CommandInfo {
         name: "train",
-        description: "Train your pets to improve their stats.",
+        description: "Train your units to improve their stats.",
         usage: &["train", "tr"],
-        details: "Opens the training menu to spend Training Points (TP) on offline training sessions for your pets.",
+        details: "Opens the training menu to spend Training Points (TP) on offline training sessions for your units.",
         category: CommandCategory::Saga,
     },
     // Games Commands

@@ -105,7 +105,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
 
                 let session = BattleSession::new(player_units, enemy_units);
 
-                let can_afford_tame = database::pets::can_afford_tame(db, component.user.id)
+                let can_afford_recruit = database::pets::can_afford_tame(db, component.user.id)
                     .await
                     .unwrap_or(false);
 
@@ -114,7 +114,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     party_members: player_party_pets,
                     node_id,
                     node_name: node_data.name,
-                    can_afford_tame,
+                    can_afford_recruit,
                     player_quest_id: None,
                 };
 

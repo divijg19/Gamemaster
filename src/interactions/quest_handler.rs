@@ -119,7 +119,7 @@ async fn start_quest_battle(
         party_members: player_party_db,
         node_id: 0,
         node_name: "Quest Battle".to_string(),
-        can_afford_tame: false,
+        can_afford_recruit: false,
         player_quest_id: Some(quest.player_quest_id),
     };
 

@@ -6,7 +6,7 @@ use serenity::model::application::ButtonStyle;
 
 pub fn render_battle(
     session: &BattleSession,
-    can_afford_tame: bool,
+    can_afford_recruit: bool,
 ) -> (CreateEmbed, Vec<CreateActionRow>) {
     // (✓) MODIFIED: Title and color are now dynamic based on the battle's final outcome.
     let (title, color) = match session.phase {
@@ -33,8 +33,8 @@ pub fn render_battle(
                 .filter(|e| e.current_hp > 0)
                 .collect();
             let is_last_enemy = living_enemies.len() == 1;
-            let is_tameable = is_last_enemy && living_enemies[0].is_tameable;
-            let can_tame = is_tameable && can_afford_tame;
+            let is_recruitable = is_last_enemy && living_enemies[0].is_recruitable;
+            let can_recruit = is_recruitable && can_afford_recruit;
 
             vec![CreateActionRow::Buttons(vec![
                 CreateButton::new("battle_attack")
@@ -44,10 +44,10 @@ pub fn render_battle(
                 CreateButton::new("battle_item")
                     .label("Item")
                     .style(ButtonStyle::Secondary),
-                CreateButton::new("battle_tame")
-                    .label("Tame")
+                CreateButton::new("battle_recruit")
+                    .label("Recruit")
                     .style(ButtonStyle::Success)
-                    .disabled(!can_tame),
+                    .disabled(!can_recruit),
                 CreateButton::new("battle_flee")
                     .label("Flee")
                     .style(ButtonStyle::Danger),
@@ -64,8 +64,8 @@ pub fn render_battle(
                     .label("Item")
                     .style(ButtonStyle::Secondary)
                     .disabled(true),
-                CreateButton::new("disabled_tame")
-                    .label("Tame")
+                CreateButton::new("disabled_recruit")
+                    .label("Recruit")
                     .style(ButtonStyle::Success)
                     .disabled(true),
                 CreateButton::new("disabled_flee")
