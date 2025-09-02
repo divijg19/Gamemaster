@@ -2,10 +2,18 @@
 //! It is used to check the bot's heartbeat latency to the Discord gateway.
 
 use crate::ShardManagerContainer;
-use serenity::builder::{CreateInteractionResponse, CreateInteractionResponseMessage};
+// (✓) FIXED: Import CreateCommand for the register function.
+use serenity::builder::{
+    CreateCommand, CreateInteractionResponse, CreateInteractionResponseMessage,
+};
 use serenity::model::application::CommandInteraction;
 use serenity::model::channel::Message;
 use serenity::prelude::*;
+
+// (✓) NEW: Add a register function for the slash command.
+pub fn register() -> CreateCommand {
+    CreateCommand::new("ping").description("Checks the bot's latency.")
+}
 
 /// A helper function to get the bot's current shard latency.
 /// This logic is shared between both the prefix and slash command handlers.

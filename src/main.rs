@@ -23,50 +23,57 @@ async fn serenity(
     #[shuttle_shared_db::Postgres] pool: PgPool,
     #[shuttle_runtime::Secrets] secrets: SecretStore,
 ) -> ShuttleSerenity {
-    // Run database migrations on startup.
+    // 1. Run database migrations on startup.
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
         .expect("Failed to run database migrations.");
-    println!("Database migrations run successfully.");
+    println!("[SETUP] Database migrations run successfully.");
 
-    // Load secrets from the Shuttle secret store.
+    // 2. Load secrets from the Shuttle secret store.
     let token = secrets
         .get("DISCORD_TOKEN")
-        .expect("'DISCORD_TOKEN' was not found in the secret store.");
+        .expect("'DISCORD_TOKEN' was not found.");
     let server_id_str = secrets
         .get("SERVER_ID")
-        .expect("'SERVER_ID' was not found in the secret store.");
+        .expect("'SERVER_ID' was not found.");
+    println!("[SETUP] Secrets loaded successfully.");
 
     let server_id = server_id_str
         .parse::<u64>()
         .expect("SERVER_ID must be a valid number.");
     let allowed_guild_id = GuildId::new(server_id);
 
-    // Initialize the shared application state.
+    // 3. Initialize the shared application state.
     let app_state = Arc::new(AppState {
+        // GameManager is wrapped for interior mutability across async tasks.
         game_manager: Arc::new(RwLock::new(GameManager::new())),
+        // PgPool is already thread-safe (it's an Arc internally).
         db: pool,
+        // The prefix needs to be mutable at runtime by admins.
         prefix: Arc::new(RwLock::new("$".to_string())),
     });
+    println!("[SETUP] Shared application state initialized.");
 
-    // Set gateway intents required for the bot's functionality.
+    // 4. Set gateway intents required for the bot's functionality.
     let intents =
         GatewayIntents::GUILDS | GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
 
-    // Build the Serenity client.
+    // 5. Build the Serenity client.
     let client = Client::builder(&token, intents)
         .event_handler(Handler { allowed_guild_id })
         .await
         .expect("Error creating the Discord client.");
+    println!("[SETUP] Serenity client built successfully.");
 
-    // Insert the shared state and shard manager into the client's data TypeMap.
+    // 6. Insert the shared state and shard manager into the client's data TypeMap.
     {
         let mut data = client.data.write().await;
         data.insert::<ShardManagerContainer>(client.shard_manager.clone());
         data.insert::<AppState>(app_state);
     }
+    println!("[SETUP] Global data state has been inserted.");
 
-    // Return the client to the Shuttle runtime.
+    // 7. Return the client to the Shuttle runtime.
     Ok(client.into())
 }

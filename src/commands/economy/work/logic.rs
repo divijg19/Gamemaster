@@ -5,7 +5,7 @@ use super::ui;
 use crate::commands::economy::core;
 use crate::database;
 use chrono::Utc;
-use rand::{Rng, rng}; // (✓) MODIFIED: Use the correct imports for your version of rand.
+use rand::{Rng, rng};
 use serenity::builder::CreateEmbed;
 use serenity::model::user::User;
 use sqlx::PgPool;
@@ -33,7 +33,6 @@ pub async fn perform_work(pool: &PgPool, user: &User, job_name: &str) -> CreateE
         }
     }
 
-    // (✓) FIXED: check_and_update_streak is a synchronous function and should not be awaited.
     let streak = core::profile::check_and_update_streak(&mut profile);
 
     let (current_level, current_xp) = match chosen_job.name {
@@ -59,31 +58,59 @@ pub async fn perform_work(pool: &PgPool, user: &User, job_name: &str) -> CreateE
         None
     };
 
-    let mut tx = match pool.begin().await {
-        Ok(tx) => tx,
-        Err(_) => return ui::create_error_embed("Failed to start database transaction."),
-    };
+    // --- Main Transaction for Critical Data ---
+    {
+        let mut tx = match pool.begin().await {
+            Ok(tx) => tx,
+            Err(_) => return ui::create_error_embed("Failed to start database transaction."),
+        };
 
-    for (item, quantity) in &rewards.items {
-        if database::economy::add_to_inventory(&mut tx, user.id, *item, *quantity)
-            .await
-            .is_err()
-        {
-            tx.rollback().await.ok();
-            return ui::create_error_embed("Failed to update your inventory.");
+        for (item, quantity) in &rewards.items {
+            if database::economy::add_to_inventory(&mut tx, user.id, *item, *quantity)
+                .await
+                .is_err()
+            {
+                tx.rollback().await.ok();
+                return ui::create_error_embed("Failed to update your inventory.");
+            }
         }
-    }
 
-    if database::economy::update_work_stats(&mut tx, user.id, &rewards, streak, progression_update)
+        if database::economy::update_work_stats(
+            &mut tx,
+            user.id,
+            &rewards,
+            streak,
+            progression_update,
+        )
         .await
         .is_err()
-    {
-        tx.rollback().await.ok();
-        return ui::create_error_embed("Failed to save your work stats.");
-    }
+        {
+            tx.rollback().await.ok();
+            return ui::create_error_embed("Failed to save your work stats.");
+        }
 
-    if tx.commit().await.is_err() {
-        return ui::create_error_embed("Failed to commit your rewards to the database.");
+        if tx.commit().await.is_err() {
+            return ui::create_error_embed("Failed to commit your rewards to the database.");
+        }
+    }
+    // --- End of Transaction ---
+
+    // (✓) FIXED: Update tasks *after* the main transaction is committed.
+    // This prevents Executor type errors and ensures tasks are only updated on success.
+    // We use .ok() because a failed task update should not show an error to the user.
+    database::tasks::update_task_progress(pool, user.id, "Work", 1)
+        .await
+        .ok();
+
+    for (item, quantity) in &rewards.items {
+        database::tasks::update_task_progress(
+            pool,
+            user.id,
+            &format!("GatherItem:{}", item.id()), // e.g., "GatherItem:1"
+            *quantity as i32,
+        )
+        .await
+        .ok();
     }
 
     ui::create_success_embed(
@@ -108,7 +135,6 @@ fn calculate_rewards(
         0
     };
 
-    // (✓) FIXED: The WorkRewards struct is now correctly populated using the `items` vector.
     let mut rewards = database::models::WorkRewards {
         coins: base_coins + streak_bonus,
         xp: job.xp_gain,

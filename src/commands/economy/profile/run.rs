@@ -7,6 +7,18 @@ use serenity::model::application::CommandInteraction;
 use serenity::model::channel::Message;
 use serenity::prelude::*;
 
+use serenity::builder::{CreateCommand, CreateCommandOption};
+use serenity::model::application::CommandOptionType;
+
+pub fn register() -> CreateCommand {
+    CreateCommand::new("profile")
+        .description("View your or another user's economy profile.")
+        .add_option(
+            CreateCommandOption::new(CommandOptionType::User, "user", "The user to view.")
+                .required(false),
+        )
+}
+
 pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
     interaction.defer_ephemeral(&ctx.http).await.ok();
     let pool = { ctx.data.read().await.get::<AppState>().unwrap().db.clone() };

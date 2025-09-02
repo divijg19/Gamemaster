@@ -17,11 +17,13 @@ pub async fn get_player_pets(
     user_id: UserId,
 ) -> Result<Vec<PlayerPet>, sqlx::Error> {
     let user_id_i64 = user_id.get() as i64;
-    sqlx::query_as!(
-        PlayerPet,
-        "SELECT pp.*, p.name FROM player_pets pp JOIN pets p ON pp.pet_id = p.pet_id WHERE pp.user_id = $1 ORDER BY pp.is_in_party DESC, pp.current_level DESC",
-        user_id_i64
-    ).fetch_all(pool).await
+    sqlx::query_as!(PlayerPet, "SELECT pp.*, p.name FROM player_pets pp JOIN pets p ON pp.pet_id = p.pet_id WHERE pp.user_id = $1 ORDER BY pp.is_in_party DESC, pp.current_level DESC", user_id_i64).fetch_all(pool).await
+}
+
+/// Fetches only the pets that are currently in the player's active party.
+pub async fn get_user_party(pool: &PgPool, user_id: UserId) -> Result<Vec<PlayerPet>, sqlx::Error> {
+    let user_id_i64 = user_id.get() as i64;
+    sqlx::query_as!(PlayerPet, "SELECT pp.*, p.name FROM player_pets pp JOIN pets p ON pp.pet_id = p.pet_id WHERE pp.user_id = $1 AND pp.is_in_party = TRUE ORDER BY pp.player_pet_id", user_id_i64).fetch_all(pool).await
 }
 
 /// Fetches the master data for a list of pets by their IDs.
@@ -31,12 +33,9 @@ pub async fn get_pets_by_ids(pool: &PgPool, pet_ids: &[i32]) -> Result<Vec<Pet>,
         .await
 }
 
-// (✓) NEW: A read-only function to check if the user has the required items for taming.
-// This is used to enable/disable the "Tame" button in the battle UI.
 pub async fn can_afford_tame(pool: &PgPool, user_id: UserId) -> Result<bool, sqlx::Error> {
     let user_id_i64 = user_id.get() as i64;
     let lure_item_id = Item::TamingLure as i32;
-    // For now, we just check for the Taming Lure by item_id. A more complex implementation could check for specific research data.
     let count = sqlx::query_scalar!(
         "SELECT quantity FROM inventories WHERE user_id = $1 AND item_id = $2",
         user_id_i64,
@@ -45,11 +44,9 @@ pub async fn can_afford_tame(pool: &PgPool, user_id: UserId) -> Result<bool, sql
     .fetch_optional(pool)
     .await?
     .unwrap_or(0);
-
     Ok(count >= 1)
 }
 
-/// A transaction to hire a mercenary.
 pub async fn hire_mercenary(
     pool: &PgPool,
     user_id: UserId,
@@ -79,6 +76,7 @@ pub async fn hire_mercenary(
         .fetch_one(&mut *tx)
         .await
         .map_err(|_| "This mercenary is no longer available.".to_string())?;
+    // (✓) FIXED: Pass `&mut tx` to your helper function.
     add_balance(&mut tx, user_id, -cost)
         .await
         .map_err(|_| "Failed to process payment.".to_string())?;
@@ -89,7 +87,6 @@ pub async fn hire_mercenary(
     Ok(pet_to_hire.name)
 }
 
-/// Attempts to tame a pet, consuming items and adding the pet to the user's army on success.
 pub async fn attempt_tame_pet(
     pool: &PgPool,
     user_id: UserId,
@@ -124,10 +121,11 @@ pub async fn attempt_tame_pet(
         .map_err(|_| "Could not identify the required research data.".to_string())?;
     let required_items = [(Item::TamingLure, 1), (research_data_item, 10)];
     for (item, required_quantity) in required_items {
+        // (✓) FIXED: Pass `&mut tx` to your helper function.
         let has_item = get_inventory_item(&mut tx, user_id, item)
             .await
             .map_err(|_| "Could not check your inventory.".to_string())?;
-        if has_item.is_none_or(|i| i.quantity < required_quantity) {
+        if has_item.is_none() || has_item.unwrap().quantity < required_quantity {
             tx.rollback().await.ok();
             return Err(format!(
                 "You don't have enough materials! You need {} {}.",
@@ -137,6 +135,7 @@ pub async fn attempt_tame_pet(
         }
     }
     for (item, required_quantity) in required_items {
+        // (✓) FIXED: Pass `&mut tx` to your helper function.
         add_to_inventory(&mut tx, user_id, item, -required_quantity)
             .await
             .map_err(|_| "Failed to consume taming items.".to_string())?;
@@ -148,7 +147,6 @@ pub async fn attempt_tame_pet(
     Ok(pet_master.name)
 }
 
-/// Spends a player's Training Points within a transaction.
 async fn spend_training_points(
     tx: &mut Transaction<'_, Postgres>,
     user_id: UserId,
@@ -159,7 +157,6 @@ async fn spend_training_points(
     Ok(rows_affected > 0)
 }
 
-/// Starts a training session for a specific pet.
 pub async fn start_training(
     pool: &PgPool,
     user_id: UserId,
@@ -185,7 +182,6 @@ pub async fn start_training(
     }
 }
 
-/// Sets a pet's party status, enforcing the 5-member party limit.
 pub async fn set_pet_party_status(
     pool: &PgPool,
     user_id: UserId,
@@ -225,7 +221,6 @@ pub async fn set_pet_party_status(
     }
 }
 
-/// Atomically applies battle rewards, including loot, coins, and pet XP/level-ups.
 pub async fn apply_battle_rewards(
     pool: &PgPool,
     user_id: UserId,
@@ -235,13 +230,13 @@ pub async fn apply_battle_rewards(
     xp_per_pet: i32,
 ) -> Result<Vec<LevelUpResult>, sqlx::Error> {
     let mut tx = pool.begin().await?;
-    let mut level_up_results = Vec::new();
     if coins > 0 {
         add_balance(&mut tx, user_id, coins).await?;
     }
     for (item, quantity) in loot {
         add_to_inventory(&mut tx, user_id, *item, *quantity).await?;
     }
+    let mut level_up_results = Vec::new();
     for pet in pets_in_battle {
         let level_result = saga::leveling::handle_pet_leveling(pet, xp_per_pet);
         if level_result.did_level_up {
@@ -261,7 +256,6 @@ pub async fn apply_battle_rewards(
     Ok(level_up_results)
 }
 
-/// Deletes a specific pet from a user's army.
 pub async fn dismiss_pet(
     pool: &PgPool,
     user_id: UserId,

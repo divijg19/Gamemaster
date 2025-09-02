@@ -17,6 +17,55 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 
+// (✓) FIXED: The main prefix command logic is now correctly named `run_prefix`.
+// The incorrect placeholder function has been removed.
+/// Entry point for the `$rps` prefix command.
+pub async fn run_prefix(
+    ctx: &Context,
+    msg: &Message,
+    args: Vec<&str>,
+    game_manager: Arc<RwLock<GameManager>>,
+) {
+    let opponent = match msg.mentions.first() {
+        Some(user) if user.id != msg.author.id && !user.bot => user.clone(),
+        _ => {
+            msg.reply(
+                ctx,
+                "You must mention a valid opponent (not a bot or yourself).",
+            )
+            .await
+            .ok();
+            return;
+        }
+    };
+
+    let duel_format = parse_duel_format_from_args(&args).unwrap_or_default();
+    let bet = parse_bet_from_args(&args).unwrap_or(0);
+
+    let game_state = GameState::new(
+        Arc::new(msg.author.clone()),
+        Arc::new(opponent),
+        duel_format,
+        bet,
+    );
+    let rps_game = RpsGame { state: game_state };
+
+    let (content, embed, components) = rps_game.render();
+    let builder = CreateMessage::new()
+        .content(content)
+        .embed(embed)
+        .components(components)
+        .reference_message(msg);
+
+    if let Ok(game_msg) = msg.channel_id.send_message(&ctx.http, builder).await {
+        game_manager
+            .write()
+            .await
+            .start_game(game_msg.id, Box::new(rps_game));
+        spawn_timeout_handler(ctx.clone(), game_manager, game_msg);
+    }
+}
+
 /// Registers the `/rps` slash command with betting.
 pub fn register() -> CreateCommand {
     CreateCommand::new("rps")
@@ -80,64 +129,13 @@ pub async fn run_slash(
     );
     let rps_game = RpsGame { state: game_state };
 
-    // (✓) MODIFIED: Unpack the new content string from the render function.
     let (content, embed, components) = rps_game.render();
-    // (✓) MODIFIED: Apply the content string to the initial message builder.
     let builder = EditInteractionResponse::new()
         .content(content)
         .embed(embed)
         .components(components);
 
     if let Ok(game_msg) = command.edit_response(&ctx.http, builder).await {
-        game_manager
-            .write()
-            .await
-            .start_game(game_msg.id, Box::new(rps_game));
-        spawn_timeout_handler(ctx.clone(), game_manager, game_msg);
-    }
-}
-
-/// Entry point for the `$rps` prefix command.
-pub async fn run(
-    ctx: &Context,
-    msg: &Message,
-    args: Vec<&str>,
-    game_manager: Arc<RwLock<GameManager>>,
-) {
-    let opponent = match msg.mentions.first() {
-        Some(user) if user.id != msg.author.id && !user.bot => user.clone(),
-        _ => {
-            msg.reply(
-                ctx,
-                "You must mention a valid opponent (not a bot or yourself).",
-            )
-            .await
-            .ok();
-            return;
-        }
-    };
-
-    let duel_format = parse_duel_format_from_args(&args).unwrap_or_default();
-    let bet = parse_bet_from_args(&args).unwrap_or(0);
-
-    let game_state = GameState::new(
-        Arc::new(msg.author.clone()),
-        Arc::new(opponent),
-        duel_format,
-        bet,
-    );
-    let rps_game = RpsGame { state: game_state };
-
-    // (✓) MODIFIED: Unpack the new content string from the render function.
-    let (content, embed, components) = rps_game.render();
-    // (✓) MODIFIED: Apply the content string to the initial message builder.
-    let builder = CreateMessage::new()
-        .content(content)
-        .embed(embed)
-        .components(components)
-        .reference_message(msg);
-
-    if let Ok(game_msg) = msg.channel_id.send_message(&ctx.http, builder).await {
         game_manager
             .write()
             .await
@@ -160,9 +158,7 @@ fn spawn_timeout_handler(
             && let Some(rps_game) = game_box.as_any().downcast_ref::<RpsGame>()
             && !rps_game.state.accepted
         {
-            // (✓) MODIFIED: Unpack the content string for the timeout message.
             let (content, embed, components) = RpsGame::render_timeout_message(&rps_game.state);
-            // (✓) MODIFIED: Apply the content string when editing the message.
             let builder = EditMessage::new()
                 .content(content)
                 .embed(embed)

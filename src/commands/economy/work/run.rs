@@ -2,10 +2,24 @@
 
 use super::logic::perform_work;
 use crate::AppState;
+use serenity::builder::{CreateCommand, CreateCommandOption};
 use serenity::builder::{CreateInteractionResponseFollowup, CreateMessage};
 use serenity::model::application::CommandInteraction;
+use serenity::model::application::CommandOptionType;
 use serenity::model::channel::Message;
 use serenity::prelude::*;
+
+pub fn register() -> CreateCommand {
+    CreateCommand::new("work")
+        .description("Work a job to earn coins and resources.")
+        .add_option(
+            CreateCommandOption::new(CommandOptionType::String, "job", "The job to perform.")
+                .required(true)
+                .add_string_choice("Fishing", "fishing")
+                .add_string_choice("Mining", "mining")
+                .add_string_choice("Coding", "coding"),
+        )
+}
 
 pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
     interaction.defer_ephemeral(&ctx.http).await.ok();

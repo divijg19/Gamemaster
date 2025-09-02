@@ -3,11 +3,19 @@
 //! - A prefix command `!prefix` to view, and `!prefix set` for admins to change the prefix.
 
 use crate::AppState;
-use serenity::builder::{CreateInteractionResponse, CreateInteractionResponseMessage};
+// (✓) FIXED: Import CreateCommand for the register function.
+use serenity::builder::{
+    CreateCommand, CreateInteractionResponse, CreateInteractionResponseMessage,
+};
 use serenity::model::application::CommandInteraction;
 use serenity::model::channel::Message;
 use serenity::model::permissions::Permissions;
 use serenity::prelude::*;
+
+// (✓) NEW: Add a register function for the slash command.
+pub fn register() -> CreateCommand {
+    CreateCommand::new("prefix").description("Check the bot's current command prefix.")
+}
 
 /// The entry point for the public slash command `/prefix`.
 pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
@@ -46,19 +54,16 @@ pub async fn run_prefix(ctx: &Context, msg: &Message, args: Vec<&str>) {
         // Case: `!prefix set <new_prefix>` - ADMIN ONLY
         Some("set") => {
             let has_admin_perms = {
-                // Perform the async operation first to ensure thread safety.
                 let member = match msg.member(&ctx.http).await {
                     Ok(member) => member,
-                    Err(_) => return, // Can't get member, can't check perms.
+                    Err(_) => return,
                 };
 
-                // Now, safely access the synchronous cache.
                 let guild = match msg.guild(&ctx.cache) {
                     Some(guild) => guild,
-                    None => return, // Not in a guild.
+                    None => return,
                 };
 
-                // Check for owner or administrator role.
                 if member.user.id == guild.owner_id {
                     true
                 } else {

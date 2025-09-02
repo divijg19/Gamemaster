@@ -21,7 +21,10 @@ enum Command {
     Leaderboard,
     Train,
     Party,
-    Craft, // (✓) ADDED
+    Craft,
+    Tasks,
+    Quests,
+    QuestLog,
     Help,
     Blackjack,
     Poker,
@@ -36,20 +39,23 @@ impl FromStr for Command {
             "prefix" => Ok(Command::Prefix),
             "rps" => Ok(Command::Rps),
             "profile" | "p" => Ok(Command::Profile),
-            "work" => Ok(Command::Work),
+            "work" | "w" => Ok(Command::Work),
             "inventory" | "inv" | "i" => Ok(Command::Inventory),
             "sell" => Ok(Command::Sell),
             "shop" => Ok(Command::Shop),
             "give" | "gift" => Ok(Command::Give),
-            "open" => Ok(Command::Open),
+            "open" | "o" => Ok(Command::Open),
             "saga" | "play" => Ok(Command::Saga),
             "leaderboard" | "lb" => Ok(Command::Leaderboard),
-            "train" => Ok(Command::Train),
+            "train" | "tr" => Ok(Command::Train),
             "party" | "army" => Ok(Command::Party),
-            "craft" => Ok(Command::Craft), // (✓) ADDED
-            "help" => Ok(Command::Help),
+            "craft" | "c" => Ok(Command::Craft),
+            "tasks" | "t" => Ok(Command::Tasks),
+            "quests" | "q" => Ok(Command::Quests),
+            "questlog" | "ql" => Ok(Command::QuestLog),
+            "help" | "h" => Ok(Command::Help),
             "blackjack" | "bj" => Ok(Command::Blackjack),
-            "poker" => Ok(Command::Poker),
+            "poker" | "pk" => Ok(Command::Poker),
             _ => Ok(Command::Unknown),
         }
     }
@@ -70,63 +76,56 @@ impl EventHandler for Handler {
                 .expect("Expected AppState in TypeMap.")
                 .clone()
         };
-
-        match &mut interaction {
-            Interaction::Command(command) => {
-                println!("[HANDLER] Received slash command: {}", command.data.name);
-                match command.data.name.as_str() {
-                    "ping" => commands::ping::run_slash(&ctx, command).await,
-                    "prefix" => commands::prefix::run_slash(&ctx, command).await,
-                    "profile" => commands::economy::profile_slash(&ctx, command).await,
-                    "work" => commands::economy::work_slash(&ctx, command).await,
-                    "inventory" => commands::economy::inventory_slash(&ctx, command).await,
-                    "sell" => commands::economy::sell_slash(&ctx, command).await,
-                    "shop" => commands::economy::shop_slash(&ctx, command).await,
-                    "give" => commands::economy::give_slash(&ctx, command).await,
-                    "open" => commands::open::run_slash(&ctx, command).await,
-                    "saga" => commands::saga::run_slash(&ctx, command).await,
-                    "leaderboard" => commands::leaderboard::run_slash(&ctx, command).await,
-                    "train" => commands::train::run_slash(&ctx, command).await,
-                    "party" => commands::party::run_slash(&ctx, command).await,
-                    "craft" => commands::craft::run_slash(&ctx, command).await, // (✓) ADDED
-                    "help" => commands::help::run_slash(&ctx, command).await,
-                    "blackjack" => commands::blackjack::run_slash(&ctx, command).await,
-                    "poker" => commands::poker::run_slash(&ctx, command).await,
-                    "rps" => {
-                        commands::rps::run_slash(&ctx, command, app_state.game_manager.clone())
-                            .await
-                    }
-                    _ => {}
+        if let Interaction::Command(command) = &mut interaction {
+            // (✓) DEFINITIVE FIX: Reverted to explicit, correct paths for all commands.
+            match command.data.name.as_str() {
+                "ping" => commands::ping::run_slash(&ctx, command).await,
+                "prefix" => commands::prefix::run_slash(&ctx, command).await,
+                "profile" => commands::economy::profile::run::run_slash(&ctx, command).await,
+                "work" => commands::economy::work::run::run_slash(&ctx, command).await,
+                "inventory" => commands::economy::inventory::run::run_slash(&ctx, command).await,
+                "sell" => commands::economy::sell::run::run_slash(&ctx, command).await,
+                "shop" => commands::economy::shop::run::run_slash(&ctx, command).await,
+                "give" => commands::economy::give::run::run_slash(&ctx, command).await,
+                "open" => commands::open::run::run_slash(&ctx, command).await,
+                "saga" => commands::saga::run::run_slash(&ctx, command).await,
+                "leaderboard" => commands::leaderboard::run::run_slash(&ctx, command).await,
+                "train" => commands::train::run::run_slash(&ctx, command).await,
+                "party" => commands::party::run::run_slash(&ctx, command).await,
+                "craft" => commands::craft::run::run_slash(&ctx, command).await,
+                "tasks" => commands::tasks::run::run_slash(&ctx, command).await,
+                "quests" => commands::quests::run::run_slash(&ctx, command).await,
+                "questlog" => commands::questlog::run::run_slash(&ctx, command).await,
+                "help" => commands::help::run_slash(&ctx, command).await,
+                "blackjack" => commands::blackjack::run::run_slash(&ctx, command).await,
+                "poker" => commands::poker::run::run_slash(&ctx, command).await,
+                "rps" => {
+                    commands::rps::run::run_slash(&ctx, command, app_state.game_manager.clone())
+                        .await
                 }
+                _ => {}
             }
-            Interaction::Component(component) => {
-                let command_family = component.data.custom_id.split('_').next().unwrap_or("");
-                match command_family {
-                    "rps" | "bj" | "poker" | "shop" | "battle" => {
-                        interactions::game_handler::handle(&ctx, component, app_state).await;
-                    }
-                    "help" => {
-                        commands::help::handle_interaction(&ctx, component).await;
-                    }
-                    "saga" => {
-                        interactions::saga_handler::handle(&ctx, component, app_state).await;
-                    }
-                    "leaderboard" => {
-                        interactions::leaderboard_handler::handle(&ctx, component, app_state).await;
-                    }
-                    "train" => {
-                        interactions::train_handler::handle(&ctx, component, app_state).await;
-                    }
-                    "party" => {
-                        interactions::party_handler::handle(&ctx, component, app_state).await;
-                    }
-                    "craft" => {
-                        interactions::craft_handler::handle(&ctx, component, app_state).await;
-                    }
-                    _ => {}
+        } else if let Interaction::Component(component) = &mut interaction {
+            let command_family = component.data.custom_id.split('_').next().unwrap_or("");
+            match command_family {
+                "rps" | "bj" | "poker" | "shop" | "battle" => {
+                    interactions::game_handler::handle(&ctx, component, app_state).await
                 }
+                "help" => commands::help::handle_interaction(&ctx, component).await,
+                "saga" => interactions::saga_handler::handle(&ctx, component, app_state).await,
+                "leaderboard" => {
+                    interactions::leaderboard_handler::handle(&ctx, component, app_state).await
+                }
+                "train" => interactions::train_handler::handle(&ctx, component, app_state).await,
+                "party" => interactions::party_handler::handle(&ctx, component, app_state).await,
+                "craft" => interactions::craft_handler::handle(&ctx, component, app_state).await,
+                "task" => interactions::task_handler::handle(&ctx, component, app_state).await,
+                "quest" => interactions::quest_handler::handle(&ctx, component, app_state).await,
+                "questlog" => {
+                    interactions::questlog_handler::handle(&ctx, component, app_state).await
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 
@@ -156,78 +155,64 @@ impl EventHandler for Handler {
             Command::Ping => commands::ping::run_prefix(&ctx, &msg).await,
             Command::Prefix => commands::prefix::run_prefix(&ctx, &msg, args_vec).await,
             Command::Rps => {
-                commands::rps::run(&ctx, &msg, args_vec, app_state.game_manager.clone()).await;
+                commands::rps::run::run_prefix(&ctx, &msg, args_vec, app_state.game_manager.clone())
+                    .await
             }
-            Command::Profile => commands::economy::profile_prefix(&ctx, &msg, args_vec).await,
-            Command::Work => commands::economy::work_prefix(&ctx, &msg, args_vec).await,
-            Command::Inventory => commands::economy::inventory_prefix(&ctx, &msg, args_vec).await,
-            Command::Sell => commands::economy::sell_prefix(&ctx, &msg, args_vec).await,
-            Command::Shop => commands::economy::shop_prefix(&ctx, &msg, args_vec).await,
-            Command::Give => commands::economy::give_prefix(&ctx, &msg, args_vec).await,
-            Command::Open => commands::open::run_prefix(&ctx, &msg, args_vec).await,
-            Command::Saga => commands::saga::run_prefix(&ctx, &msg, args_vec).await,
-            Command::Leaderboard => commands::leaderboard::run_prefix(&ctx, &msg, args_vec).await,
-            Command::Train => commands::train::run_prefix(&ctx, &msg, args_vec).await,
-            Command::Party => commands::party::run_prefix(&ctx, &msg, args_vec).await,
-            Command::Craft => commands::craft::run_prefix(&ctx, &msg, args_vec).await, // (✓) ADDED
+            Command::Profile => {
+                commands::economy::profile::run::run_prefix(&ctx, &msg, args_vec).await
+            }
+            Command::Work => commands::economy::work::run::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Inventory => {
+                commands::economy::inventory::run::run_prefix(&ctx, &msg, args_vec).await
+            }
+            Command::Sell => commands::economy::sell::run::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Shop => commands::economy::shop::run::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Give => commands::economy::give::run::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Open => commands::open::run::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Saga => commands::saga::run::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Leaderboard => {
+                commands::leaderboard::run::run_prefix(&ctx, &msg, args_vec).await
+            }
+            Command::Train => commands::train::run::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Party => commands::party::run::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Craft => commands::craft::run::run_prefix(&ctx, &msg, args_vec).await,
+            // (✓) DEFINITIVE FIX: Removed the incorrect extra `args_vec` argument.
+            Command::Tasks => commands::tasks::run::run_prefix(&ctx, &msg).await,
+            Command::Quests => commands::quests::run::run_prefix(&ctx, &msg, args_vec).await,
+            Command::QuestLog => commands::questlog::run::run_prefix(&ctx, &msg, args_vec).await,
             Command::Help => commands::help::run_prefix(&ctx, &msg, args_vec).await,
-            Command::Blackjack => commands::blackjack::run_prefix(&ctx, &msg, args_vec).await,
-            Command::Poker => commands::poker::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Blackjack => commands::blackjack::run::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Poker => commands::poker::run::run_prefix(&ctx, &msg, args_vec).await,
             Command::Unknown => {}
         }
     }
 
     async fn ready(&self, ctx: Context, ready: Ready) {
         println!("{} is connected and ready!", ready.user.name);
-
-        use serenity::builder::{CreateCommand, CreateCommandOption};
-        use serenity::model::application::CommandOptionType;
-
-        let mut commands_to_register = vec![
-            CreateCommand::new("ping").description("Checks the bot's latency."),
-            CreateCommand::new("prefix").description("Check the bot's current command prefix."),
-            CreateCommand::new("profile")
-                .description("View your or another user's economy profile.")
-                .add_option(
-                    CreateCommandOption::new(
-                        CommandOptionType::User,
-                        "user",
-                        "The user whose profile you want to see.",
-                    )
-                    .required(false),
-                ),
-            CreateCommand::new("work")
-                .description("Work a job to earn coins and resources.")
-                .add_option(
-                    CreateCommandOption::new(
-                        CommandOptionType::String,
-                        "job",
-                        "The type of job you want to do.",
-                    )
-                    .required(true)
-                    .add_string_choice("Fishing", "fishing")
-                    .add_string_choice("Mining", "mining")
-                    .add_string_choice("Coding", "coding"),
-                ),
-        ];
-
-        commands_to_register.extend(vec![
-            commands::economy::inventory::register(),
-            commands::economy::sell::register(),
-            commands::economy::shop::register(),
-            commands::economy::give::register(),
-            commands::open::register(),
-            commands::saga::register(),
-            commands::leaderboard::register(),
-            commands::train::register(),
-            commands::party::register(),
-            commands::craft::register(), // (✓) ADDED
-            commands::blackjack::register(),
-            commands::poker::register(),
-            commands::rps::register(),
+        let commands_to_register = vec![
+            // (✓) DEFINITIVE FIX: Use the full, correct path to each `register` function.
+            commands::ping::register(),
+            commands::prefix::register(),
+            commands::economy::profile::run::register(),
+            commands::economy::work::run::register(),
+            commands::economy::inventory::run::register(),
+            commands::economy::sell::run::register(),
+            commands::economy::shop::run::register(),
+            commands::economy::give::run::register(),
+            commands::open::run::register(),
+            commands::saga::run::register(),
+            commands::leaderboard::run::register(),
+            commands::train::run::register(),
+            commands::party::run::register(),
+            commands::craft::run::register(),
+            commands::tasks::register(),
+            commands::quests::register(),
+            commands::questlog::register(),
+            commands::blackjack::run::register(),
+            commands::poker::run::register(),
+            commands::rps::run::register(),
             commands::help::register(),
-        ]);
-
+        ];
         if let Err(e) = self
             .allowed_guild_id
             .set_commands(&ctx.http, commands_to_register)

@@ -7,6 +7,3 @@ pub mod handlers;
 pub mod run;
 pub mod state;
 pub mod ui;
-
-// Publicly re-export the functions needed by the central command handler.
-pub use run::{register, run_prefix, run_slash};

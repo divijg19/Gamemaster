@@ -1,0 +1,86 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n            pt.player_task_id, pt.progress, pt.is_completed, t.task_type as \"task_type: _\",\n            t.title, t.description, t.objective_goal, t.reward_coins,\n            t.reward_item_id, t.reward_item_quantity\n        FROM player_tasks pt JOIN tasks t ON pt.task_id = t.task_id\n        WHERE pt.user_id = $1 AND pt.claimed_at IS NULL\n        AND pt.assigned_at >= date_trunc(\n            CASE t.task_type WHEN 'Daily' THEN 'day' ELSE 'week' END::text, NOW()\n        )\n        ORDER BY t.task_type, t.title",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "player_task_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "progress",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "is_completed",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "task_type: _",
+        "type_info": {
+          "Custom": {
+            "name": "task_type",
+            "kind": {
+              "Enum": [
+                "Daily",
+                "Weekly"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "title",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "objective_goal",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "reward_coins",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "reward_item_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "reward_item_quantity",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "c57e1ecd1b424e8f69b4ea8dfb8e372a212e7c7e6ee6587435766d4652e22741"
+}

@@ -13,8 +13,9 @@ pub struct BattleUnit {
     pub is_tameable: bool,
 }
 
-impl From<&PlayerPet> for BattleUnit {
-    fn from(pet: &PlayerPet) -> Self {
+// (✓) NEW: Add explicit constructors to resolve compiler errors.
+impl BattleUnit {
+    pub fn from_player_pet(pet: &PlayerPet) -> Self {
         Self {
             name: pet.nickname.as_deref().unwrap_or(&pet.name).to_string(),
             current_hp: pet.current_health,
@@ -22,13 +23,11 @@ impl From<&PlayerPet> for BattleUnit {
             attack: pet.current_attack,
             defense: pet.current_defense,
             pet_id: pet.pet_id,
-            is_tameable: false,
+            is_tameable: false, // Players' pets can't be tamed.
         }
     }
-}
 
-impl From<&Pet> for BattleUnit {
-    fn from(pet: &Pet) -> Self {
+    pub fn from_pet(pet: &Pet) -> Self {
         Self {
             name: pet.name.clone(),
             current_hp: pet.base_health,
@@ -41,8 +40,6 @@ impl From<&Pet> for BattleUnit {
     }
 }
 
-// (✓) MODIFIED: Added the `Victory` and `Defeat` phases to fully represent the entire
-// lifecycle of a battle, from start to finish. This is crucial for the new UI flow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BattlePhase {
     PlayerTurn,
@@ -65,4 +62,19 @@ pub struct BattleSession {
     pub enemy_party: Vec<BattleUnit>,
     pub phase: BattlePhase,
     pub log: Vec<String>,
+}
+
+// (✓) NEW: Add a constructor to resolve compiler errors.
+impl BattleSession {
+    pub fn new(player_party: Vec<BattleUnit>, enemy_party: Vec<BattleUnit>) -> Self {
+        Self {
+            log: vec![format!(
+                "A battle begins between your party and {} enemies!",
+                enemy_party.len()
+            )],
+            player_party,
+            enemy_party,
+            phase: BattlePhase::PlayerTurn,
+        }
+    }
 }

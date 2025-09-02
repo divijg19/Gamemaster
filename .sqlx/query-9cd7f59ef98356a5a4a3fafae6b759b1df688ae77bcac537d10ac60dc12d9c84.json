@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE player_quests SET status = 'Completed', completed_at = NOW() WHERE player_quest_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9cd7f59ef98356a5a4a3fafae6b759b1df688ae77bcac537d10ac60dc12d9c84"
+}

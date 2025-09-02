@@ -21,7 +21,8 @@ use serenity::prelude::*;
 enum CommandCategory {
     General,
     Economy,
-    Games,
+    Saga,
+    Games, // (✓) IMPROVED: Re-added for clarity.
     Admin,
 }
 
@@ -29,8 +30,9 @@ impl CommandCategory {
     fn name(&self) -> &'static str {
         match self {
             Self::General => "General",
-            Self::Economy => "Economy",
-            Self::Games => "Games",
+            Self::Economy => "Economy & Items",
+            Self::Saga => "Gamemaster Saga",
+            Self::Games => "Mini-Games",
             Self::Admin => "Admin",
         }
     }
@@ -38,6 +40,7 @@ impl CommandCategory {
         match self {
             Self::General => "🔧",
             Self::Economy => "💰",
+            Self::Saga => "📜",
             Self::Games => "🎮",
             Self::Admin => "🛡️",
         }
@@ -58,96 +61,118 @@ const COMMANDS: &[CommandInfo] = &[
         name: "ping",
         description: "Checks the bot's latency.",
         usage: &["ping"],
-        details: "Pings the Discord gateway to check the bot's heartbeat latency. A quick way to see if the bot is responsive.",
+        details: "Pings the Discord gateway to check the bot's heartbeat latency.",
         category: CommandCategory::General,
     },
     CommandInfo {
         name: "help",
         description: "Shows this help menu.",
-        usage: &["help", "help <command>"],
+        usage: &["help", "h", "help <command>"],
         details: "Displays a list of all available commands or detailed information about a specific command.",
         category: CommandCategory::General,
     },
-    // (✓) ADDED: Documentation for the leaderboard command.
     CommandInfo {
         name: "leaderboard",
         description: "View the server-wide leaderboards.",
         usage: &["leaderboard", "lb"],
-        details: "Displays the top players across several categories, including the main Gamemaster Score, Wealth, and Work Streaks.",
+        details: "Displays the top players across several categories.",
+        category: CommandCategory::General,
+    },
+    CommandInfo {
+        name: "tasks",
+        description: "View your daily and weekly tasks.",
+        usage: &["tasks", "t"],
+        details: "Shows your current daily and weekly tasks. Completed tasks can be claimed for rewards from this menu.",
         category: CommandCategory::General,
     },
     // Economy Commands
     CommandInfo {
         name: "profile",
         description: "Displays your or another user's profile.",
-        usage: &["profile", "profile @user"],
+        usage: &["profile", "p", "profile @user"],
         details: "Shows your complete profile, including coin balance, game stats (AP/TP), job levels, and inventory.",
         category: CommandCategory::Economy,
     },
     CommandInfo {
         name: "work",
         description: "Work a job to earn coins and resources.",
-        usage: &["work <job_name>"],
-        details: "Allows you to perform a job to earn rewards and XP. Each job has a cooldown.\n**Available jobs:** `fishing`, `mining`, `coding`.",
+        usage: &["work <job>", "w <job>"],
+        details: "Perform a job to earn rewards and XP. **Jobs:** `fishing`, `mining`, `coding`.",
         category: CommandCategory::Economy,
     },
     CommandInfo {
         name: "inventory",
         description: "Check your item inventory.",
-        usage: &["inventory", "inv"],
-        details: "Displays a list of all the items you currently own, along with their quantities and rarity.",
+        usage: &["inventory", "inv", "i"],
+        details: "Displays a list of all the items you currently own.",
         category: CommandCategory::Economy,
     },
     CommandInfo {
         name: "sell",
-        description: "Sell items from your inventory for coins.",
+        description: "Sell items from your inventory.",
         usage: &["sell <item> [quantity]"],
-        details: "Sell items you've collected to earn coins. If you don't specify a quantity, you'll sell all of that item.",
+        details: "Sell items you've collected to earn coins. Sells the whole stack if quantity is omitted.",
         category: CommandCategory::Economy,
     },
     CommandInfo {
         name: "shop",
         description: "Buy items from the bot.",
         usage: &["shop"],
-        details: "Opens an interactive shop menu where you can browse and purchase items using your coins.",
+        details: "Opens an interactive shop menu to purchase items.",
         category: CommandCategory::Economy,
     },
     CommandInfo {
         name: "give",
         description: "Give an item to another user.",
         usage: &["give @user <item> [quantity]"],
-        details: "Transfer an item from your inventory to another user. Note that not all items are tradeable.",
+        details: "Transfer an item from your inventory to another user.",
         category: CommandCategory::Economy,
     },
     CommandInfo {
-        name: "open",
-        description: "Open an item to see what's inside.",
-        usage: &["open <item>"],
-        details: "Opens a container-type item, like a Large Geode, to reveal the contents within. (Feature coming soon!)",
+        name: "craft",
+        description: "Craft new items from materials.",
+        usage: &["craft", "c"],
+        details: "Opens the crafting menu to create new items from resources.",
         category: CommandCategory::Economy,
     },
-    // Game Commands
+    // Saga Commands
     CommandInfo {
         name: "saga",
         description: "Opens the main menu for the Gamemaster Saga.",
         usage: &["saga", "play"],
-        details: "The central hub for the main game. From here you can view your daily energy, visit the world map, hire mercenaries, and manage your party.",
-        category: CommandCategory::Games,
+        details: "The central hub for the main game. From here you can view the world map, hire mercenaries, and manage your party.",
+        category: CommandCategory::Saga,
+    },
+    CommandInfo {
+        name: "quests",
+        description: "View the Guild Quest Board.",
+        usage: &["quests", "q"],
+        details: "Displays the quest board, showing available quests to accept. Accepting a battle quest starts the fight immediately.",
+        category: CommandCategory::Saga,
+    },
+    // (✓) NEW: Added Quest Log to the help menu.
+    CommandInfo {
+        name: "questlog",
+        description: "View your active and completed quests.",
+        usage: &["questlog", "ql"],
+        details: "Opens your personal quest log, allowing you to track your active quests and view your completed history.",
+        category: CommandCategory::Saga,
     },
     CommandInfo {
         name: "party",
         description: "Manage your active party and army.",
         usage: &["party", "army"],
-        details: "View all the units you own, and set which ones are in your active 5-member combat party.",
-        category: CommandCategory::Games,
+        details: "View all the units you own and set your active 5-member combat party.",
+        category: CommandCategory::Saga,
     },
     CommandInfo {
         name: "train",
         description: "Train your pets to improve their stats.",
-        usage: &["train"],
-        details: "Opens an interactive menu to spend Training Points (TP) on automated, offline training sessions for your pets.",
-        category: CommandCategory::Games,
+        usage: &["train", "tr"],
+        details: "Opens the training menu to spend Training Points (TP) on offline training sessions for your pets.",
+        category: CommandCategory::Saga,
     },
+    // Games Commands
     CommandInfo {
         name: "rps",
         description: "Challenge a user to Rock, Paper, Scissors.",
@@ -157,16 +182,16 @@ const COMMANDS: &[CommandInfo] = &[
     },
     CommandInfo {
         name: "blackjack",
-        description: "Play a game of Blackjack against the house.",
+        description: "Play a game of Blackjack.",
         usage: &["blackjack <bet>", "bj <bet>"],
-        details: "Starts a game of single-player Blackjack. Try to get as close to 21 as possible without going over to win your bet.",
+        details: "Starts a game of Blackjack against the house. Try to get as close to 21 as possible without going over.",
         category: CommandCategory::Games,
     },
     CommandInfo {
         name: "poker",
-        description: "Play Five Card Draw poker against the dealer.",
-        usage: &["poker <bet>"],
-        details: "Starts a game of Five Card Draw poker. Place your bet, draw your cards, and try to make a better hand than the dealer to win.",
+        description: "Play Five Card Draw poker.",
+        usage: &["poker <bet>", "pk <bet>"],
+        details: "Starts a game of Five Card Draw poker against the dealer.",
         category: CommandCategory::Games,
     },
     // Admin Commands
@@ -212,16 +237,21 @@ fn create_command_select_menu() -> CreateActionRow {
 
 async fn create_help_embed(ctx: &Context, command_name_opt: Option<&str>) -> CreateEmbed {
     let prefix = {
-        let data = ctx.data.read().await;
-        let app_state = data
+        ctx.data
+            .read()
+            .await
             .get::<AppState>()
-            .expect("Expected AppState in TypeMap.");
-        app_state.prefix.read().await.clone()
+            .expect("Expected AppState in TypeMap.")
+            .prefix
+            .read()
+            .await
+            .clone()
     };
     let footer_text = format!("Current Prefix: {}", prefix);
     let mut embed = CreateEmbed::new()
         .footer(CreateEmbedFooter::new(footer_text))
         .color(0x5865F2);
+
     match command_name_opt {
         Some(name) => {
             if let Some(cmd) = COMMANDS.iter().find(|c| c.name == name) {
@@ -244,11 +274,11 @@ async fn create_help_embed(ctx: &Context, command_name_opt: Option<&str>) -> Cre
             }
         }
         None => {
-            embed = embed.title("Help Menu")
-                 .description(format!("Here are my available commands. For more details, use `{}help <command>` or select an option from the dropdown below.", prefix));
+            embed = embed.title("Help Menu").description(format!("Here are my available commands. For more details, use `{}help <command>` or select an option from the dropdown below.", prefix));
             let categories = [
                 CommandCategory::General,
                 CommandCategory::Economy,
+                CommandCategory::Saga,
                 CommandCategory::Games,
                 CommandCategory::Admin,
             ];

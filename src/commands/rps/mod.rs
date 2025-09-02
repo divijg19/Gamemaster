@@ -4,6 +4,3 @@
 pub mod game;
 pub mod run;
 pub mod state;
-
-// Re-export the main functions for easy access from the handler.
-pub use run::{register, run, run_slash};

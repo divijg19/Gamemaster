@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pq.player_quest_id, pq.status as \"status: _\", q.title, q.description, q.giver_name, q.difficulty\n        FROM player_quests pq JOIN quests q ON pq.quest_id = q.quest_id\n        WHERE pq.user_id = $1 AND pq.status = $2\n        ORDER BY pq.accepted_at DESC, pq.completed_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "player_quest_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "status: _",
+        "type_info": {
+          "Custom": {
+            "name": "player_quest_status_enum",
+            "kind": {
+              "Enum": [
+                "Offered",
+                "Accepted",
+                "Completed",
+                "Failed"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "giver_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "difficulty",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        {
+          "Custom": {
+            "name": "player_quest_status_enum",
+            "kind": {
+              "Enum": [
+                "Offered",
+                "Accepted",
+                "Completed",
+                "Failed"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b3c658f0df043667644de70737956da6c38050b2ae6cf9f810aba99b7c521a2c"
+}

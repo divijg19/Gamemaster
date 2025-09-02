@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pp.*, p.name FROM player_pets pp JOIN pets p ON pp.pet_id = p.pet_id WHERE pp.user_id = $1 AND pp.is_in_party = TRUE ORDER BY pp.player_pet_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "player_pet_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "pet_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "nickname",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "current_level",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "current_xp",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "current_attack",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "current_defense",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "current_health",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "is_in_party",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "is_training",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 11,
+        "name": "training_stat",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "training_ends_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "bc612d513bfa74ec03b143c452ab47b93237d9612358cec92cf1838a09da458f"
+}
