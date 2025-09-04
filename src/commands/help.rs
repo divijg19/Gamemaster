@@ -244,7 +244,33 @@ const COMMANDS: &[CommandInfo] = &[
         details: "Displays the current command prefix. Administrators can use the `set` subcommand to change it.",
         category: CommandCategory::Admin,
     },
+    CommandInfo {
+        name: "adminutil",
+        description: "Owner maintenance utilities (cache stats, bonding tests, marking units).",
+        usage: &[
+            "adminutil cachestats",
+            "adminutil markhuman <unit_id>",
+            "adminutil bondhost <id> bondequip <id>",
+        ],
+        details: "Provides maintenance helpers: view global cache hit/miss counters, mark units as Human, perform a raw bond test pair, and inspect research progress.",
+        category: CommandCategory::Admin,
+    },
+    CommandInfo {
+        name: "config",
+        description: "Bot runtime configuration (admin only).",
+        usage: &["config starter <unit_id>"],
+        details: "Adjusts live bot configuration values such as the starter unit id used in the saga tutorial.",
+        category: CommandCategory::Admin,
+    },
 ];
+
+/// Public helper returning all registered primary help command names.
+/// Exposed for integration tests to ensure help coverage. Marked allow(dead_code)
+/// because it's only referenced externally by tests.
+#[allow(dead_code)]
+pub fn all_command_names() -> Vec<&'static str> {
+    COMMANDS.iter().map(|c| c.name).collect()
+}
 
 pub fn register() -> CreateCommand {
     let command = CreateCommand::new("help").description("Shows information about commands");

@@ -260,6 +260,7 @@ src/services/saga.rs
 src/ui/mod.rs
 src/ui/nav.rs
 src/ui/style.rs
+tests/help_commands.rs
 tests/saga_first_time.rs
 tests/saga_logic.rs
 tests/unit_basic.rs

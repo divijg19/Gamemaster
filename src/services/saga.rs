@@ -81,3 +81,37 @@ pub async fn get_profile_and_units(
         }
     }
 }
+
+/// Debug/diagnostic variant that preserves the underlying sqlx::Error instead of collapsing
+/// to an Option. Used by the saga command to surface actionable messages (e.g. missing
+/// migrations / connectivity issues) to the user.
+pub async fn get_profile_and_units_debug(
+    app_state: &AppState,
+    user_id: UserId,
+) -> Result<
+    (
+        crate::database::models::SagaProfile,
+        Vec<crate::database::models::PlayerUnit>,
+    ),
+    sqlx::Error,
+> {
+    let ttl = Duration::from_secs(SAGA_PROFILE_CACHE_TTL_SECS);
+    if let Some(profile) =
+        cache::get_with_ttl(&app_state.saga_profile_cache, &user_id.get(), ttl).await
+    {
+        if let Ok(units) = database::units::get_player_units(&app_state.db, user_id).await {
+            return Ok((profile, units));
+        } else {
+            // Fall through to combined path to capture full error
+        }
+    }
+    let (profile, units) =
+        database::saga::update_get_profile_and_units(&app_state.db, user_id).await?;
+    cache::insert(
+        &app_state.saga_profile_cache,
+        user_id.get(),
+        profile.clone(),
+    )
+    .await;
+    Ok((profile, units))
+}

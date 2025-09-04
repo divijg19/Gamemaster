@@ -18,6 +18,14 @@ pub fn register() -> CreateCommand {
         .add_option(
             CreateCommandOption::new(
                 CommandOptionType::Integer,
+                "diaguser",
+                "Diagnose saga state for a user id (default: invoking user)",
+            )
+            .required(false),
+        )
+        .add_option(
+            CreateCommandOption::new(
+                CommandOptionType::Integer,
                 "bondhost",
                 "Host player_unit_id for bonding test",
             )
@@ -58,12 +66,18 @@ pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
     let mut bond_pair: Option<(i32, i32)> = None;
     let mut research_unit: Option<i32> = None;
     let mut show_cache = false;
+    let mut diag_user: Option<i64> = None;
     for opt in &interaction.data.options {
         match opt.name.as_str() {
             "cachestats" => show_cache = true,
             "markhuman" => {
                 if let Some(v) = opt.value.as_i64() {
                     mark_ids.push(v as i32);
+                }
+            }
+            "diaguser" => {
+                if let Some(v) = opt.value.as_i64() {
+                    diag_user = Some(v);
                 }
             }
             "bondhost" => {
@@ -115,6 +129,55 @@ pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
     }
     if notes.is_empty() {
         notes.push("No actions performed.".into());
+    }
+    // Saga diagnostics (performed after mutation actions so they don't overwrite earlier notes)
+    if let Some(target) = diag_user {
+        use sqlx::{Error, Row};
+        notes.push(format!("-- Saga Diagnostics for user {} --", target));
+        // Base profile presence
+        match sqlx::query_scalar::<_, i64>("SELECT 1 FROM profiles WHERE user_id = $1")
+            .bind(target)
+            .fetch_optional(db)
+            .await
+        {
+            Ok(Some(_)) => notes.push("Base profile: PRESENT".into()),
+            Ok(None) => {
+                notes.push("Base profile: MISSING (run an economy command like /profile)".into())
+            }
+            Err(e) => notes.push(format!("Base profile query error: {e}")),
+        }
+        // Saga profile row
+        match sqlx::query("SELECT current_ap, max_ap, current_tp, max_tp, story_progress FROM player_saga_profile WHERE user_id = $1")
+            .bind(target)
+            .fetch_optional(db)
+            .await
+        {
+            Ok(Some(row)) => {
+                notes.push(format!(
+                    "Saga profile: PRESENT (AP {}/{} | TP {}/{} | Story {})",
+                    row.get::<i32,_>(0),
+                    row.get::<i32,_>(1),
+                    row.get::<i32,_>(2),
+                    row.get::<i32,_>(3),
+                    row.get::<i32,_>(4)
+                ));
+            }
+            Ok(None) => notes.push("Saga profile: MISSING (first /saga run should auto-create)".into()),
+            Err(Error::Database(db_err)) if db_err.code().map(|c| c == "42P01").unwrap_or(false) => {
+                notes.push("Saga profile: TABLE MISSING (run migrations: sqlx migrate run)".into());
+            }
+            Err(e) => notes.push(format!("Saga profile query error: {e}")),
+        }
+        // Unit count
+        match sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM player_units WHERE user_id = $1")
+            .bind(target)
+            .fetch_one(db)
+            .await
+        {
+            Ok(count) => notes.push(format!("Units owned: {}", count)),
+            Err(e) => notes.push(format!("Unit count error: {e}")),
+        }
+        notes.push("Diagnostic hints: if Saga profile missing but base present, invoke /saga again; if table missing, run migrations; if connection errors persist, verify DATABASE_URL.".into());
     }
     if show_cache {
         let (hits, misses) = crate::services::cache::cache_stats().await;
