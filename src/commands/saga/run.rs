@@ -37,24 +37,48 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
         println!("[SAGA CMD] Failed to create base profile: {e:?}");
     }
     // This function automatically updates AP/TP before fetching, ensuring the data is always current.
-    let (saga_profile, has_party) =
-        match services::saga::get_profile_and_units(&app_state, interaction.user.id).await {
-            Some((profile, units)) => {
-                let has_party = units.iter().any(|u| u.is_in_party);
-                (profile, has_party)
+    let (saga_profile, has_party) = match services::saga::get_profile_and_units_debug(
+        &app_state,
+        interaction.user.id,
+    )
+    .await
+    {
+        Ok((profile, units)) => (profile, units.iter().any(|u| u.is_in_party)),
+        Err(e) => {
+            // Provide targeted guidance based on error category
+            let mut msg = String::from("Could not retrieve your game profile. ");
+            use sqlx::Error::*;
+            match &e {
+                Database(db_err) => {
+                    let code_cow = db_err.code().unwrap_or(std::borrow::Cow::Borrowed("?"));
+                    let code = code_cow.as_ref();
+                    if code == "42P01" {
+                        // undefined_table
+                        msg.push_str("Migration missing: run migrations (\n`sqlx migrate run`\n) to create saga tables.");
+                    } else {
+                        msg.push_str(&format!("Database error ({}): {}", code, db_err));
+                    }
+                }
+                Io(_) | PoolTimedOut | Tls(_) => {
+                    msg.push_str("Database connection issue. Check DATABASE_URL and connectivity.");
+                }
+                RowNotFound => {
+                    msg.push_str("Profile row not found after creation attempt.");
+                }
+                _ => {
+                    msg.push_str(&format!("Unexpected error: {e}"));
+                }
             }
-            None => {
-                interaction
-                    .edit_response(
-                        &ctx.http,
-                        serenity::builder::EditInteractionResponse::new()
-                            .content("Could not retrieve your game profile."),
-                    )
-                    .await
-                    .ok();
-                return;
-            }
-        };
+            interaction
+                .edit_response(
+                    &ctx.http,
+                    serenity::builder::EditInteractionResponse::new().content(msg),
+                )
+                .await
+                .ok();
+            return;
+        }
+    };
     let (embed, components) = if !has_party && saga_profile.story_progress == 0 {
         create_first_time_tutorial()
     } else {
@@ -77,12 +101,30 @@ pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
         println!("[SAGA CMD] Failed to create base profile (prefix): {e:?}");
     }
     let (saga_profile, has_party) =
-        match services::saga::get_profile_and_units(&app_state, msg.author.id).await {
-            Some((profile, units)) => (profile, units.iter().any(|u| u.is_in_party)),
-            None => {
-                msg.reply(ctx, "Could not retrieve your game profile.")
-                    .await
-                    .ok();
+        match services::saga::get_profile_and_units_debug(&app_state, msg.author.id).await {
+            Ok((profile, units)) => (profile, units.iter().any(|u| u.is_in_party)),
+            Err(e) => {
+                let mut content = String::from("Could not retrieve your game profile. ");
+                use sqlx::Error::*;
+                match &e {
+                    Database(db_err) => {
+                        let code_cow = db_err.code().unwrap_or(std::borrow::Cow::Borrowed("?"));
+                        let code = code_cow.as_ref();
+                        if code == "42P01" {
+                            content.push_str("Migration missing. Run `sqlx migrate run`. ");
+                        } else {
+                            content.push_str(&format!("DB error ({}): {}", code, db_err));
+                        }
+                    }
+                    Io(_) | PoolTimedOut | Tls(_) => {
+                        content.push_str("Connection issue (check DATABASE_URL).")
+                    }
+                    RowNotFound => {
+                        content.push_str("Profile row not found after creation attempt.")
+                    }
+                    _ => content.push_str(&format!("Unexpected error: {e}")),
+                }
+                msg.reply(ctx, content).await.ok();
                 return;
             }
         };

@@ -139,22 +139,27 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
         // (Removed duplicate early tutorial handler; consolidated later in file around line ~630)
         // Global navigation buttons (handled here for saga context)
         Some(&"saga") if component.data.custom_id == "nav_saga" => {
-            // Re-render main saga menu (alias to saga_play)
+            // Re-render main saga root; show tutorial if first-time
             component.defer(&ctx.http).await.ok();
             let _ = database::economy::get_or_create_profile(db, component.user.id).await;
-            if let Some(saga_profile) =
-                saga_service::get_saga_profile(&app_state, component.user.id, false).await
-            {
-                let has_party = database::units::get_user_party(db, component.user.id)
-                    .await
-                    .map(|p| !p.is_empty())
-                    .unwrap_or(false);
-                let (embed, components) =
-                    commands::saga::ui::create_saga_menu(&saga_profile, has_party);
-                let builder = EditInteractionResponse::new()
-                    .embed(embed)
-                    .components(components);
-                component.edit_response(&ctx.http, builder).await.ok();
+            match saga_service::get_profile_and_units_debug(&app_state, component.user.id).await {
+                Ok((profile, units)) => {
+                    let has_party = units.iter().any(|u| u.is_in_party);
+                    let (embed, components) = if !has_party && profile.story_progress == 0 {
+                        commands::saga::ui::create_first_time_tutorial()
+                    } else {
+                        commands::saga::ui::create_saga_menu(&profile, has_party)
+                    };
+                    let builder = EditInteractionResponse::new()
+                        .embed(embed)
+                        .components(components);
+                    component.edit_response(&ctx.http, builder).await.ok();
+                }
+                Err(e) => {
+                    let builder = EditInteractionResponse::new()
+                        .content(format!("Error loading saga profile: {e}"));
+                    component.edit_response(&ctx.http, builder).await.ok();
+                }
             }
             return;
         }
@@ -187,51 +192,40 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
         // saga_play: lightweight alias button that just re-renders the main menu
         Some(&"play") => {
             component.defer(&ctx.http).await.ok();
-            // Ensure economy profile exists (FK requirement) then fetch saga profile
             let _ = database::economy::get_or_create_profile(db, component.user.id).await;
-            let saga_profile =
-                match saga_service::get_saga_profile(&app_state, component.user.id, false).await {
-                    Some(p) => p,
-                    None => {
-                        let builder = EditInteractionResponse::new()
-                            .content("Error: Could not load saga profile.");
-                        component.edit_response(&ctx.http, builder).await.ok();
-                        return;
+            match saga_service::get_profile_and_units_debug(&app_state, component.user.id).await {
+                Ok((profile, units)) => {
+                    let has_party = units.iter().any(|u| u.is_in_party);
+                    let (embed, components) = if !has_party && profile.story_progress == 0 {
+                        commands::saga::ui::create_first_time_tutorial()
+                    } else {
+                        commands::saga::ui::create_saga_menu(&profile, has_party)
+                    };
+                    {
+                        let mut stacks = app_state.nav_stacks.write().await;
+                        let entry = stacks.entry(component.user.id.get()).or_default();
+                        if entry.stack.len() > 14 {
+                            entry.stack.remove(0);
+                        }
+                        entry.push(Box::new(SagaMenuState {
+                            has_party,
+                            ap: profile.current_ap,
+                            max_ap: profile.max_ap,
+                            tp: profile.current_tp,
+                            max_tp: profile.max_tp,
+                        }));
+                        debug!(target: "nav", user_id = component.user.id.get(), depth = entry.stack.len(), state = "saga_menu", action = "push");
                     }
-                };
-            let has_party = database::units::get_user_party(db, component.user.id)
-                .await
-                .map(|p| !p.is_empty())
-                .unwrap_or(false);
-            {
-                let mut stacks = app_state.nav_stacks.write().await;
-                let entry = stacks.entry(component.user.id.get()).or_default();
-                if entry.stack.len() > 14 {
-                    entry.stack.remove(0);
+                    let builder = EditInteractionResponse::new()
+                        .embed(embed)
+                        .components(components);
+                    component.edit_response(&ctx.http, builder).await.ok();
                 }
-                entry.push(Box::new(SagaMenuState {
-                    has_party,
-                    ap: saga_profile.current_ap,
-                    max_ap: saga_profile.max_ap,
-                    tp: saga_profile.current_tp,
-                    max_tp: saga_profile.max_tp,
-                }));
-                debug!(target: "nav", user_id = component.user.id.get(), depth = entry.stack.len(), state = "saga_menu", action = "push");
-            }
-            let ctxbag = ContextBag::new(db.clone(), component.user.id);
-            // Render top of stack
-            if let Some(stack_top) = app_state
-                .nav_stacks
-                .read()
-                .await
-                .get(&component.user.id.get())
-                .and_then(|s| s.stack.last())
-            {
-                let (embed, components) = stack_top.render(&ctxbag).await;
-                let builder = EditInteractionResponse::new()
-                    .embed(embed)
-                    .components(components);
-                component.edit_response(&ctx.http, builder).await.ok();
+                Err(e) => {
+                    let builder = EditInteractionResponse::new()
+                        .content(format!("Error: Could not load saga profile ({e})"));
+                    component.edit_response(&ctx.http, builder).await.ok();
+                }
             }
         }
         Some(&"map") => {
@@ -583,28 +577,26 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             }
         }
         Some(&"main") => {
-            // Return to the main saga menu
             component.defer(&ctx.http).await.ok();
-            let saga_profile =
-                match database::saga::update_and_get_saga_profile(db, component.user.id).await {
-                    Ok(p) => p,
-                    Err(_) => {
-                        let builder = EditInteractionResponse::new()
-                            .content("Error: Could not refresh saga menu.");
-                        component.edit_response(&ctx.http, builder).await.ok();
-                        return;
-                    }
-                };
-            let has_party = database::units::get_user_party(db, component.user.id)
-                .await
-                .map(|p| !p.is_empty())
-                .unwrap_or(false);
-            let (embed, components) =
-                commands::saga::ui::create_saga_menu(&saga_profile, has_party);
-            let builder = EditInteractionResponse::new()
-                .embed(embed)
-                .components(components);
-            component.edit_response(&ctx.http, builder).await.ok();
+            match saga_service::get_profile_and_units_debug(&app_state, component.user.id).await {
+                Ok((profile, units)) => {
+                    let has_party = units.iter().any(|u| u.is_in_party);
+                    let (embed, components) = if !has_party && profile.story_progress == 0 {
+                        commands::saga::ui::create_first_time_tutorial()
+                    } else {
+                        commands::saga::ui::create_saga_menu(&profile, has_party)
+                    };
+                    let builder = EditInteractionResponse::new()
+                        .embed(embed)
+                        .components(components);
+                    component.edit_response(&ctx.http, builder).await.ok();
+                }
+                Err(e) => {
+                    let builder = EditInteractionResponse::new()
+                        .content(format!("Error: Could not refresh saga menu ({e})"));
+                    component.edit_response(&ctx.http, builder).await.ok();
+                }
+            }
         }
         Some(&"tutorial") => {
             component.defer_ephemeral(&ctx.http).await.ok();
