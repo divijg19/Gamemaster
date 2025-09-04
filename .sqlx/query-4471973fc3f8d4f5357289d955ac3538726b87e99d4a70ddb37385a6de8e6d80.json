@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT u.unit_id, u.name, u.description, u.base_attack, u.base_defense, u.base_health, u.is_recruitable, u.kind as \"kind: UnitKind\", u.rarity as \"rarity: UnitRarity\",\n        COALESCE(he.defeats,0) as defeats,\n        (SELECT 1 FROM drafted_human_contracts d2 WHERE d2.user_id=$1 AND d2.unit_id=u.unit_id AND d2.consumed=FALSE) as drafted_active,\n        (SELECT 1 FROM player_units pu WHERE pu.user_id=$1 AND pu.unit_id=u.unit_id LIMIT 1) as recruited\n        FROM units u LEFT JOIN human_encounters he ON he.user_id=$1 AND he.unit_id=u.unit_id WHERE u.kind='Human'",
+  "query": "SELECT u.unit_id, u.name, u.description, u.base_attack, u.base_defense, u.base_health, u.is_recruitable, u.kind as \"kind: UnitKind\", u.rarity as \"rarity: UnitRarity\",\n        COALESCE(he.defeats,0) as defeats, he.last_defeated_at,\n        (SELECT 1 FROM drafted_human_contracts d2 WHERE d2.user_id=$1 AND d2.unit_id=u.unit_id AND d2.consumed=FALSE) as drafted_active,\n        (SELECT 1 FROM player_units pu WHERE pu.user_id=$1 AND pu.unit_id=u.unit_id LIMIT 1) as recruited\n        FROM units u LEFT JOIN human_encounters he ON he.user_id=$1 AND he.unit_id=u.unit_id WHERE u.kind='Human'",
   "describe": {
     "columns": [
       {
@@ -80,11 +80,16 @@
       },
       {
         "ordinal": 10,
+        "name": "last_defeated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
         "name": "drafted_active",
         "type_info": "Int4"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "recruited",
         "type_info": "Int4"
       }
@@ -105,9 +110,10 @@
       false,
       false,
       null,
+      true,
       null,
       null
     ]
   },
-  "hash": "62e95e0cf741371d6ed82f9997e2beefc630c4d61934f0bd9e491bd0f90e8993"
+  "hash": "4471973fc3f8d4f5357289d955ac3538726b87e99d4a70ddb37385a6de8e6d80"
 }
