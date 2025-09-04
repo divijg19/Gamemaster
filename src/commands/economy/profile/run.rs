@@ -1,7 +1,7 @@
 //! Implements the `/profile` command.
 
 use super::ui::create_profile_embed;
-use crate::{AppState, database};
+use crate::{AppState, database, services};
 use serenity::builder::{CreateInteractionResponseFollowup, CreateMessage};
 use serenity::model::application::CommandInteraction;
 use serenity::model::channel::Message;
@@ -21,7 +21,9 @@ pub fn register() -> CreateCommand {
 
 pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
     interaction.defer_ephemeral(&ctx.http).await.ok();
-    let Some(app_state) = AppState::from_ctx(ctx).await else { return };
+    let Some(app_state) = AppState::from_ctx(ctx).await else {
+        return;
+    };
     let pool = app_state.db.clone();
 
     let user_to_fetch = if let Some(option) = interaction.data.options.first() {
@@ -39,7 +41,9 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
     let profile = database::economy::get_or_create_profile(&pool, user_to_fetch.id).await;
     let inventory = database::economy::get_inventory(&pool, user_to_fetch.id).await;
     // (✓) MODIFIED: Call the new, intelligent update function to ensure AP/TP are always current.
-    let saga_profile = database::saga::update_and_get_saga_profile(&pool, user_to_fetch.id).await;
+    let saga_profile = services::saga::get_saga_profile(&app_state, user_to_fetch.id, false)
+        .await
+        .ok_or_else(|| sqlx::Error::RowNotFound);
 
     let embed = create_profile_embed(&user_to_fetch, profile, inventory, saga_profile);
     let builder = CreateInteractionResponseFollowup::new().embed(embed);
@@ -47,7 +51,9 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
 }
 
 pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
-    let Some(app_state) = AppState::from_ctx(ctx).await else { return };
+    let Some(app_state) = AppState::from_ctx(ctx).await else {
+        return;
+    };
     let pool = app_state.db.clone();
 
     let user_to_fetch = msg
@@ -59,7 +65,9 @@ pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
     let profile = database::economy::get_or_create_profile(&pool, user_to_fetch.id).await;
     let inventory = database::economy::get_inventory(&pool, user_to_fetch.id).await;
     // (✓) MODIFIED: Call the new, intelligent update function here as well for the prefix command.
-    let saga_profile = database::saga::update_and_get_saga_profile(&pool, user_to_fetch.id).await;
+    let saga_profile = services::saga::get_saga_profile(&app_state, user_to_fetch.id, false)
+        .await
+        .ok_or_else(|| sqlx::Error::RowNotFound);
 
     let embed = create_profile_embed(&user_to_fetch, profile, inventory, saga_profile);
     let builder = CreateMessage::new().embed(embed).reference_message(msg);

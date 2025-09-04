@@ -26,9 +26,14 @@ impl BlackjackGame {
         let player_count = self.players.len();
         let embed = CreateEmbed::new()
             .title("♦️ Blackjack Lobby ♥️")
-            .description(format!("{}\n\n**Players ({}):**\n{}", desc, player_count, players_list))
+            .description(format!(
+                "{}\n\n**Players ({}):**\n{}",
+                desc, player_count, players_list
+            ))
             .color(0x71368A)
-            .footer(CreateEmbedFooter::new("Lobby expires in 2 minutes. Use Start when ready."));
+            .footer(CreateEmbedFooter::new(
+                "Lobby expires in 2 minutes. Use Start when ready.",
+            ));
         let buttons = vec![
             CreateButton::new("bj_join")
                 .label("Join")
@@ -62,7 +67,10 @@ impl BlackjackGame {
             .join("\n");
         let embed = CreateEmbed::new()
             .title("♦️ Place Your Bets ♠️")
-            .description(format!("Minimum Bet: **💰{}**\nUse the buttons below to adjust. Confirm to lock in.", self.min_bet))
+            .description(format!(
+                "Minimum Bet: **💰{}**\nUse the buttons below to adjust. Confirm to lock in.",
+                self.min_bet
+            ))
             .field("Betting Status", betting_status, false)
             .color(0xFFA500)
             .footer(CreateEmbedFooter::new(
@@ -152,7 +160,9 @@ impl BlackjackGame {
             false,
         );
 
-    if self.pot > 0 { embed = embed.field("Total Pot", format!("💰{}", self.pot), true); }
+        if self.pot > 0 {
+            embed = embed.field("Total Pot", format!("💰{}", self.pot), true);
+        }
 
         for (p_idx, player) in self.players.iter().enumerate() {
             let turn_indicator =
@@ -196,7 +206,11 @@ impl BlackjackGame {
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
-            embed = embed.field(format!("{}👤 {}", turn_indicator, player.user.name), hands_display, true);
+            embed = embed.field(
+                format!("{}👤 {}", turn_indicator, player.user.name),
+                hands_display,
+                true,
+            );
         }
 
         if self.phase == GamePhase::Insurance {

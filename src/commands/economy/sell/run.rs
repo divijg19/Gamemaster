@@ -38,7 +38,9 @@ pub fn register() -> CreateCommand {
 
 pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
     interaction.defer_ephemeral(&ctx.http).await.ok();
-    let Some(app_state) = AppState::from_ctx(ctx).await else { return };
+    let Some(app_state) = AppState::from_ctx(ctx).await else {
+        return;
+    };
     let pool = app_state.db.clone();
 
     let item_str = interaction
@@ -72,7 +74,9 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
 }
 
 pub async fn run_prefix(ctx: &Context, msg: &Message, args: Vec<&str>) {
-    let Some(app_state) = AppState::from_ctx(ctx).await else { return };
+    let Some(app_state) = AppState::from_ctx(ctx).await else {
+        return;
+    };
     let pool = app_state.db.clone();
 
     let item_name = match args.first() {

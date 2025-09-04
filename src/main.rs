@@ -12,12 +12,14 @@ use tokio::sync::RwLock;
 
 // These are our application modules
 mod commands;
+mod constants;
 mod database;
 mod handler;
 mod interactions;
 mod model;
 mod saga;
-mod constants;
+mod services;
+mod ui; // navigation and shared embed utilities // service layer (profile caching)
 
 #[shuttle_runtime::main]
 async fn serenity(
@@ -27,10 +29,17 @@ async fn serenity(
     // Initialize logging/tracing once. Respect RUST_LOG / default to info.
     if !tracing::dispatcher::has_been_set() {
         let _ = tracing_subscriber::fmt()
-            .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "info".into()),
+            )
             .try_init();
     }
-    tracing::info!("startup" = true, "phase" = "init", "msg" = "Starting bot initialization");
+    tracing::info!(
+        "startup" = true,
+        "phase" = "init",
+        "msg" = "Starting bot initialization"
+    );
     // 1. Run database migrations on startup.
     sqlx::migrate!("./migrations")
         .run(&pool)
@@ -54,10 +63,11 @@ async fn serenity(
 
     // 3. Initialize the shared application state.
     // 3b. Load persisted starter unit id (falls back to 1 if not found)
-    let starter_id = match crate::database::settings::get_config_value(&pool, "starter_unit_id").await {
-        Ok(Some(v)) => v.parse::<i32>().unwrap_or(1),
-        _ => 1,
-    };
+    let starter_id =
+        match crate::database::settings::get_config_value(&pool, "starter_unit_id").await {
+            Ok(Some(v)) => v.parse::<i32>().unwrap_or(1),
+            _ => 1,
+        };
 
     let app_state = Arc::new(AppState {
         // GameManager is wrapped for interior mutability across async tasks.
@@ -66,11 +76,13 @@ async fn serenity(
         db: pool,
         // The prefix needs to be mutable at runtime by admins.
         prefix: Arc::new(RwLock::new("$".to_string())),
-    bond_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
-    bonus_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
-    starter_unit_id: Arc::new(RwLock::new(starter_id)),
-    contract_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
-    research_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
+        bond_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
+        bonus_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
+        starter_unit_id: Arc::new(RwLock::new(starter_id)),
+        contract_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
+        research_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
+        nav_stacks: Arc::new(RwLock::new(std::collections::HashMap::new())),
+        saga_profile_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
     });
     tracing::info!(target: "setup", "Shared application state initialized");
 

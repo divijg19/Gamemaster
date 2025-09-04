@@ -65,7 +65,7 @@ pub struct PlayerUnit {
 // -------------------------------------------------------------------------------------------------
 // Rarity & Equippables
 // -------------------------------------------------------------------------------------------------
-#[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[sqlx(type_name = "unit_rarity", rename_all = "PascalCase")]
 pub enum UnitRarity {
     Common,    // dark grey

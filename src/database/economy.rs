@@ -2,9 +2,9 @@
 //! This includes profiles, balances, inventories, and work stats.
 
 use super::models::{InventoryItem, Profile, ProgressionUpdate, WorkRewards};
-use sqlx::PgPool;
 use crate::commands::economy::core::item::Item;
 use serenity::model::id::UserId;
+use sqlx::PgPool;
 use sqlx::types::chrono::Utc;
 use sqlx::{Postgres, Transaction};
 

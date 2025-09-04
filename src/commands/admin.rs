@@ -39,6 +39,11 @@ pub fn register() -> CreateCommand {
             )
             .required(false),
         )
+        .add_option(CreateCommandOption::new(
+            CommandOptionType::SubCommand,
+            "cachestats",
+            "Show global in-memory cache hit/miss counters",
+        ))
 }
 
 pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
@@ -52,8 +57,10 @@ pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
     let mut mark_ids: Vec<i32> = Vec::new();
     let mut bond_pair: Option<(i32, i32)> = None;
     let mut research_unit: Option<i32> = None;
+    let mut show_cache = false;
     for opt in &interaction.data.options {
         match opt.name.as_str() {
+            "cachestats" => show_cache = true,
             "markhuman" => {
                 if let Some(v) = opt.value.as_i64() {
                     mark_ids.push(v as i32);
@@ -108,6 +115,19 @@ pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
     }
     if notes.is_empty() {
         notes.push("No actions performed.".into());
+    }
+    if show_cache {
+        let (hits, misses) = crate::services::cache::cache_stats().await;
+        let total = hits + misses;
+        let hit_rate = if total > 0 {
+            (hits as f64 / total as f64) * 100.0
+        } else {
+            0.0
+        };
+        notes.push(format!(
+            "Cache Stats => hits: {}, misses: {}, hit_rate: {:.1}%",
+            hits, misses, hit_rate
+        ));
     }
     embed = embed.description(notes.join("\n"));
     let resp = serenity::builder::CreateInteractionResponseMessage::new().embed(embed);

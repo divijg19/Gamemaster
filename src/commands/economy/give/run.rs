@@ -50,20 +50,48 @@ pub fn register() -> CreateCommand {
 
 pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
     interaction.defer_ephemeral(&ctx.http).await.ok();
-    let Some(app_state) = AppState::from_ctx(ctx).await else { return };
+    let Some(app_state) = AppState::from_ctx(ctx).await else {
+        return;
+    };
     let pool = app_state.db.clone();
 
     let options = &interaction.data.options;
-    let Some(user_id) = options.iter().find(|o| o.name == "user").and_then(|o| o.value.as_user_id()) else {
-        interaction.edit_response(&ctx.http, serenity::builder::EditInteractionResponse::new().content("Missing user option" )).await.ok();
+    let Some(user_id) = options
+        .iter()
+        .find(|o| o.name == "user")
+        .and_then(|o| o.value.as_user_id())
+    else {
+        interaction
+            .edit_response(
+                &ctx.http,
+                serenity::builder::EditInteractionResponse::new().content("Missing user option"),
+            )
+            .await
+            .ok();
         return;
     };
     let Ok(receiver_user) = user_id.to_user(&ctx.http).await else {
-        interaction.edit_response(&ctx.http, serenity::builder::EditInteractionResponse::new().content("Failed to resolve user" )).await.ok();
+        interaction
+            .edit_response(
+                &ctx.http,
+                serenity::builder::EditInteractionResponse::new().content("Failed to resolve user"),
+            )
+            .await
+            .ok();
         return;
     };
-    let Some(item_str) = options.iter().find(|o| o.name == "item").and_then(|o| o.value.as_str()) else {
-        interaction.edit_response(&ctx.http, serenity::builder::EditInteractionResponse::new().content("Missing item option" )).await.ok();
+    let Some(item_str) = options
+        .iter()
+        .find(|o| o.name == "item")
+        .and_then(|o| o.value.as_str())
+    else {
+        interaction
+            .edit_response(
+                &ctx.http,
+                serenity::builder::EditInteractionResponse::new().content("Missing item option"),
+            )
+            .await
+            .ok();
         return;
     };
     let quantity = options
@@ -73,7 +101,13 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
         .unwrap_or(1);
 
     let Ok(item) = Item::from_str(item_str) else {
-        interaction.edit_response(&ctx.http, serenity::builder::EditInteractionResponse::new().content("Invalid item" )).await.ok();
+        interaction
+            .edit_response(
+                &ctx.http,
+                serenity::builder::EditInteractionResponse::new().content("Invalid item"),
+            )
+            .await
+            .ok();
         return;
     };
 
@@ -83,7 +117,9 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
 }
 
 pub async fn run_prefix(ctx: &Context, msg: &Message, args: Vec<&str>) {
-    let Some(app_state) = AppState::from_ctx(ctx).await else { return };
+    let Some(app_state) = AppState::from_ctx(ctx).await else {
+        return;
+    };
     let pool = app_state.db.clone();
 
     let receiver = match msg.mentions.first() {

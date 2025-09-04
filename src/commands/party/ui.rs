@@ -4,14 +4,16 @@ use crate::constants::rarity_icon;
 use crate::constants::{BOND_MAP_CACHE_TTL_SECS, EQUIP_BONUS_CACHE_TTL_SECS};
 use crate::database::models::{PlayerUnit, UnitRarity};
 use crate::model::AppState;
+use crate::model::{BondedEquippablesMap, EquipmentBonusMap};
+use crate::services::cache as cache_service;
 use serenity::builder::{
     CreateActionRow, CreateEmbed, CreateEmbedFooter, CreateSelectMenu, CreateSelectMenuKind,
     CreateSelectMenuOption,
 };
 use serenity::model::id::UserId;
 use sqlx::PgPool;
-use std::collections::HashMap;
-use std::time::{Duration, Instant};
+// HashMap imported via type aliases in crate::model
+use std::time::Duration;
 
 /// Creates the main embed and components for the party and army management view.
 pub fn create_party_view(units: &[PlayerUnit]) -> (CreateEmbed, Vec<CreateActionRow>) {
@@ -133,6 +135,8 @@ pub fn create_party_view(units: &[PlayerUnit]) -> (CreateEmbed, Vec<CreateAction
 
     // Prepend Play row
     let mut rows = vec![crate::commands::saga::ui::play_button_row("Play / Menu")];
+    // Global navigation row (active = party)
+    crate::commands::saga::ui::add_nav(&mut rows, "party");
     rows.extend(components);
     (embed, rows)
 }
@@ -174,10 +178,10 @@ fn format_pet_line(unit: &PlayerUnit) -> String {
 pub async fn fetch_bonded_mapping(
     pool: &PgPool,
     user_id: UserId,
-) -> sqlx::Result<std::collections::HashMap<i32, Vec<(i32, String, UnitRarity)>>> {
+) -> sqlx::Result<BondedEquippablesMap> {
     use std::collections::HashMap;
     let rows = sqlx::query!(r#"SELECT b.host_player_unit_id, pu.player_unit_id, COALESCE(pu.nickname, u.name) as equipped_name, pu.rarity as "rarity: UnitRarity" FROM equippable_unit_bonds b JOIN player_units pu ON pu.player_unit_id = b.equipped_player_unit_id JOIN units u ON u.unit_id = pu.unit_id WHERE pu.user_id = $1 AND b.is_equipped = TRUE"#, user_id.get() as i64).fetch_all(pool).await?;
-    let mut map: HashMap<i32, Vec<(i32, String, UnitRarity)>> = HashMap::new();
+    let mut map: BondedEquippablesMap = HashMap::new();
     for r in rows {
         map.entry(r.host_player_unit_id).or_default().push((
             r.player_unit_id,
@@ -207,65 +211,58 @@ pub async fn create_party_view_with_bonds(
     .fetch_all(pool)
     .await
     .unwrap_or_default();
-    // Bond map caching -------------------------------------------------
-    let uid = user_id.get();
-    let maybe_cached = { app_state.bond_cache.read().await.get(&uid).cloned() };
-    let bond_map: HashMap<i32, Vec<(i32, String, UnitRarity)>> =
-        if let Some((ts, map)) = maybe_cached {
-            if ts.elapsed() < Duration::from_secs(BOND_MAP_CACHE_TTL_SECS) {
-                map
-            } else {
-                HashMap::new()
-            }
-        } else {
-            HashMap::new()
-        };
-    let bond_map = if bond_map.is_empty() {
-        let fresh = fetch_bonded_mapping(pool, user_id)
-            .await
-            .unwrap_or_default();
-        let mut w = app_state.bond_cache.write().await;
-        w.insert(uid, (Instant::now(), fresh.clone()));
-        fresh
-    } else {
-        bond_map
-    };
-    // Equipment bonus cache (reuse existing bonus_cache) --------------
-    let bonuses_cached = { app_state.bonus_cache.read().await.get(&uid).cloned() };
-    let bonuses_map = if let Some((ts, map)) = bonuses_cached {
-        if ts.elapsed() < Duration::from_secs(EQUIP_BONUS_CACHE_TTL_SECS) {
-            map
-        } else {
-            HashMap::new()
-        }
-    } else {
-        HashMap::new()
-    };
-    let bonuses_map = if bonuses_map.is_empty() {
-        let fresh = crate::database::units::get_equipment_bonuses(pool, user_id)
-            .await
-            .unwrap_or_default();
-        let mut w = app_state.bonus_cache.write().await;
-        w.insert(uid, (Instant::now(), fresh.clone()));
-        fresh
-    } else {
-        bonuses_map
-    };
-    let (_embed_base, components) = create_party_view(&units);
-    // Fetch bond ages (detailed) once (uncached lightweight) to show age in minutes for hosts
-    let bond_details = crate::database::units::list_active_bonds_detailed(pool, user_id)
-        .await
-        .unwrap_or_default();
-    use chrono::Utc;
-    use std::collections::HashMap as StdHashMap;
-    let mut bond_age_map: StdHashMap<i32, i64> = StdHashMap::new();
-    for b in bond_details {
-        let age = (Utc::now() - b.created_at).num_minutes();
-        bond_age_map.insert(b.host_player_unit_id, age);
+
+    // Start from base party view (gives us menus & basic embed)
+    let (mut embed, mut components) = create_party_view(&units);
+
+    // Early exit if empty army already handled by base view
+    if units.is_empty() {
+        components.push(crate::commands::saga::ui::global_nav_row("party"));
+        return (embed, components);
     }
-    // Rebuild fields with bonded info for party only
+
+    // Fetch bond & equipment bonus maps in parallel (each may hit cache or DB)
+    let uid = user_id.get();
+    let (bond_map, bonuses_map): (BondedEquippablesMap, EquipmentBonusMap) = tokio::join!(
+        async {
+            if let Some(m) = cache_service::get_with_ttl(
+                &app_state.bond_cache,
+                &uid,
+                Duration::from_secs(BOND_MAP_CACHE_TTL_SECS),
+            )
+            .await
+            {
+                m
+            } else {
+                let fresh = fetch_bonded_mapping(pool, user_id)
+                    .await
+                    .unwrap_or_default();
+                cache_service::insert(&app_state.bond_cache, uid, fresh.clone()).await;
+                fresh
+            }
+        },
+        async {
+            if let Some(m) = cache_service::get_with_ttl(
+                &app_state.bonus_cache,
+                &uid,
+                Duration::from_secs(EQUIP_BONUS_CACHE_TTL_SECS),
+            )
+            .await
+            {
+                m
+            } else {
+                let fresh = crate::database::units::get_equipment_bonuses(pool, user_id)
+                    .await
+                    .unwrap_or_default();
+                cache_service::insert(&app_state.bonus_cache, uid, fresh.clone()).await;
+                fresh
+            }
+        }
+    );
+
+    // Build enhanced party lines (replace existing Active Party field)
     let mut party_lines: Vec<String> = Vec::new();
-    for p in units.iter().filter(|x| x.is_in_party) {
+    for p in units.iter().filter(|u| u.is_in_party) {
         let mut line = format_pet_line(p);
         if let Some(b) = bonuses_map.get(&p.player_unit_id)
             && (b.0 > 0 || b.1 > 0 || b.2 > 0)
@@ -273,56 +270,81 @@ pub async fn create_party_view_with_bonds(
             line.push_str(&format!(" (+{} Atk / +{} Def / +{} HP)", b.0, b.1, b.2));
         }
         if let Some(eqs) = bond_map.get(&p.player_unit_id) {
-            let age_mins = bond_age_map.get(&p.player_unit_id).cloned().unwrap_or(0);
-            for (_, name, rarity) in eqs {
-                line.push_str(&format!(
-                    "\n   └─ {} Bonded: {} ({}m)",
-                    rarity_icon(*rarity),
-                    name,
-                    age_mins
-                ));
+            // Compact representation: group by rarity, show counts & first names
+            if !eqs.is_empty() {
+                // Map rarity -> Vec<name>
+                use std::collections::BTreeMap;
+                let mut grouped: BTreeMap<UnitRarity, Vec<&str>> = BTreeMap::new();
+                for (_, name, rarity) in eqs {
+                    grouped.entry(*rarity).or_default().push(name);
+                }
+                for (rarity, names) in grouped {
+                    if names.len() == 1 {
+                        line.push_str(&format!(
+                            "\n   └─ {} Bonded: {}",
+                            rarity_icon(rarity),
+                            names[0]
+                        ));
+                    } else {
+                        let preview = names.iter().take(2).cloned().collect::<Vec<_>>().join(", ");
+                        let more = if names.len() > 2 {
+                            format!(" +{} more", names.len() - 2)
+                        } else {
+                            String::new()
+                        };
+                        line.push_str(&format!(
+                            "\n   └─ {} {} bonded ({}{})",
+                            rarity_icon(rarity),
+                            names.len(),
+                            preview,
+                            more
+                        ));
+                    }
+                }
             }
         }
         party_lines.push(line);
     }
-    // Replace existing party field (first field after title) by rebuilding embed (simpler than mutating fields vector directly)
-    let mut embed = CreateEmbed::new()
-        .title("Party & Army Management")
-        .description(
-            "Your **Party** is your active combat team. Your **Army** is all units you own.",
-        )
-        .footer(serenity::builder::CreateEmbedFooter::new(format!(
-            "Total Army Size: {}/10",
-            units.len()
-        )))
-        .color(0x3498DB);
-    if units.is_empty() {
-        let mut rows = vec![crate::commands::saga::ui::play_button_row("Play / Menu")];
-        rows.extend(components);
-        return (embed.description("Your army is empty! Visit the Tavern in the `/saga` menu to hire your first units."), rows);
+    if !party_lines.is_empty() {
+        // Rebuild embed (simpler than editing in place)
+        let reserves: Vec<_> = units.iter().filter(|p| !p.is_in_party).collect();
+        // Aggregate bonus summary
+        let total_bonus = bonuses_map
+            .values()
+            .fold((0, 0, 0), |acc, b| (acc.0 + b.0, acc.1 + b.1, acc.2 + b.2));
+        let bonus_line = if total_bonus != (0, 0, 0) {
+            format!(
+                "**Total Bond Bonuses:** +{} Atk / +{} Def / +{} HP\n\n",
+                total_bonus.0, total_bonus.1, total_bonus.2
+            )
+        } else {
+            String::new()
+        };
+        embed = CreateEmbed::new()
+            .title("Party & Army Management")
+            .description(format!(
+                "{}Your **Party** is your active combat team. Your **Army** is all units you own.",
+                bonus_line
+            ))
+            .footer(CreateEmbedFooter::new(format!(
+                "Total Army Size: {}/10",
+                units.len()
+            )))
+            .color(0x3498DB)
+            .field(
+                format!("⚔️ Active Party ({}/5)", party_lines.len()),
+                party_lines.join("\n"),
+                false,
+            );
+        if !reserves.is_empty() {
+            let reserve_list = reserves
+                .iter()
+                .map(|p| format_pet_line(p))
+                .collect::<Vec<_>>()
+                .join("\n");
+            embed = embed.field("🛡️ Reserves", reserve_list, false);
+        }
+        embed = embed.field("🔗 Bonding Legend", "Bond bonuses are applied automatically in battles. Use the Bond Management button to equip or unequip special units.", false);
     }
-    let party_len = party_lines.len();
-    let party_block = if party_lines.is_empty() {
-        "Your active party is empty. Add members from your reserves!".to_string()
-    } else {
-        party_lines.join("\n")
-    };
-    embed = embed.field(
-        format!("⚔️ Active Party ({}/5)", party_len),
-        party_block,
-        false,
-    );
-    let reserves: Vec<_> = units.iter().filter(|p| !p.is_in_party).collect();
-    if !reserves.is_empty() {
-        let reserve_block = reserves
-            .iter()
-            .map(|p| format_pet_line(p))
-            .collect::<Vec<_>>()
-            .join("\n");
-        embed = embed.field("🛡️ Reserves", reserve_block, false);
-    }
-    embed = embed.field("🔗 Bonding Legend", "Bond bonuses are applied automatically in battles. Use the Bond Management button to equip or unequip special units.", false);
-    let mut rows = vec![crate::commands::saga::ui::play_button_row("Play / Menu")];
-    rows.extend(components);
-    (embed, rows)
+    (embed, components)
 }

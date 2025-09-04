@@ -1,7 +1,7 @@
 //! Implements the run logic for the `/saga` command.
 
 use super::ui::{create_first_time_tutorial, create_saga_menu};
-use crate::{AppState, database};
+use crate::{AppState, database, services};
 use serenity::builder::{
     CreateCommand, CreateInteractionResponse, CreateInteractionResponseMessage, CreateMessage,
 };
@@ -32,12 +32,18 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
     };
     let pool = app_state.db.clone();
 
+    // Ensure a base economy profile exists first (foreign key for saga profile table).
+    if let Err(e) = database::economy::get_or_create_profile(&pool, interaction.user.id).await {
+        println!("[SAGA CMD] Failed to create base profile: {e:?}");
+    }
     // This function automatically updates AP/TP before fetching, ensuring the data is always current.
-    let saga_profile =
-        match database::saga::update_and_get_saga_profile(&pool, interaction.user.id).await {
-            Ok(profile) => profile,
-            Err(e) => {
-                println!("[SAGA CMD] Database error: {:?}", e);
+    let (saga_profile, has_party) =
+        match services::saga::get_profile_and_units(&app_state, interaction.user.id).await {
+            Some((profile, units)) => {
+                let has_party = units.iter().any(|u| u.is_in_party);
+                (profile, has_party)
+            }
+            None => {
                 interaction
                     .edit_response(
                         &ctx.http,
@@ -49,11 +55,6 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
                 return;
             }
         };
-
-    let has_party = match database::units::get_user_party(&pool, interaction.user.id).await {
-        Ok(p) => !p.is_empty(),
-        Err(_) => false,
-    };
     let (embed, components) = if !has_party && saga_profile.story_progress == 0 {
         create_first_time_tutorial()
     } else {
@@ -72,22 +73,19 @@ pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
     };
     let pool = app_state.db.clone();
 
-    let saga_profile = match database::saga::update_and_get_saga_profile(&pool, msg.author.id).await
-    {
-        Ok(profile) => profile,
-        Err(e) => {
-            println!("[SAGA CMD] Database error: {:?}", e);
-            msg.reply(ctx, "Could not retrieve your game profile.")
-                .await
-                .ok();
-            return;
-        }
-    };
-
-    let has_party = match database::units::get_user_party(&pool, msg.author.id).await {
-        Ok(p) => !p.is_empty(),
-        Err(_) => false,
-    };
+    if let Err(e) = database::economy::get_or_create_profile(&pool, msg.author.id).await {
+        println!("[SAGA CMD] Failed to create base profile (prefix): {e:?}");
+    }
+    let (saga_profile, has_party) =
+        match services::saga::get_profile_and_units(&app_state, msg.author.id).await {
+            Some((profile, units)) => (profile, units.iter().any(|u| u.is_in_party)),
+            None => {
+                msg.reply(ctx, "Could not retrieve your game profile.")
+                    .await
+                    .ok();
+                return;
+            }
+        };
     let (embed, components) = if !has_party && saga_profile.story_progress == 0 {
         create_first_time_tutorial()
     } else {

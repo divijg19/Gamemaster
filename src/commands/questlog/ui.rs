@@ -80,6 +80,9 @@ pub fn create_questlog_embed(
         .disabled(current_view == PlayerQuestStatus::Completed);
 
     let mut rows = vec![crate::commands::saga::ui::play_button_row("Play / Menu")];
-    rows.push(CreateActionRow::Buttons(vec![active_button, completed_button]));
+    rows.push(CreateActionRow::Buttons(vec![
+        active_button,
+        completed_button,
+    ]));
     (embed, rows)
 }

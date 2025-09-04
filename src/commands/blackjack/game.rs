@@ -114,7 +114,7 @@ impl Game for BlackjackGame {
 // These are the "rules" of the game.
 impl BlackjackGame {
     pub fn new(host: Arc<User>, min_bet: i64) -> Self {
-    Self {
+        Self {
             host_id: host.id.get(),
             players: vec![Player {
                 user: host,
@@ -216,8 +216,10 @@ impl BlackjackGame {
     }
 
     pub(super) fn reset_for_next_round(&mut self) {
-    // NOTE: Actual DB balance checks occur in handlers; here we only drop players who set their bet to 0 (can't afford min bet last round)
-    if self.min_bet > 0 { self.players.retain(|p| p.current_bet >= self.min_bet); }
+        // NOTE: Actual DB balance checks occur in handlers; here we only drop players who set their bet to 0 (can't afford min bet last round)
+        if self.min_bet > 0 {
+            self.players.retain(|p| p.current_bet >= self.min_bet);
+        }
         self.ready_players.clear();
         self.pot = 0;
         self.round += 1;

@@ -29,7 +29,7 @@ pub fn create_training_menu(
     let mut unit_list_lines = Vec::new();
 
     for unit in units {
-    let unit_name = unit.nickname.as_deref().unwrap_or(&unit.name);
+        let unit_name = unit.nickname.as_deref().unwrap_or(&unit.name);
         if unit.is_training {
             if let Some(ends_at) = unit.training_ends_at {
                 let timestamp = format!("<t:{}:R>", ends_at.timestamp());
@@ -61,7 +61,7 @@ pub fn create_training_menu(
                 options: select_menu_options,
             },
         )
-    .placeholder("Select an idle unit to train...");
+        .placeholder("Select an idle unit to train...");
         components.push(CreateActionRow::SelectMenu(menu));
     } else if saga_profile.current_tp == 0 {
         // (✓) FIXED: The footer now creates the struct directly, which is the correct syntax.
@@ -70,6 +70,8 @@ pub fn create_training_menu(
         ));
     }
 
+    // Append global nav row for cross-command navigation.
+    crate::commands::saga::ui::add_nav(&mut components, "train");
     (embed, components)
 }
 
@@ -81,17 +83,19 @@ pub fn create_stat_selection_menu(player_unit_id: i32) -> (CreateEmbed, Vec<Crea
         .color(0xDAA520);
 
     let components = vec![CreateActionRow::Buttons(vec![
-    CreateButton::new(format!("train_stat_attack_{}", player_unit_id))
+        CreateButton::new(format!("train_stat_attack_{}", player_unit_id))
             .label("Attack")
             .style(ButtonStyle::Danger)
             // (✓) FIXED: Use a single `char` for the emoji as required by the builder.
             .emoji('⚔'),
-    CreateButton::new(format!("train_stat_defense_{}", player_unit_id))
+        CreateButton::new(format!("train_stat_defense_{}", player_unit_id))
             .label("Defense")
             .style(ButtonStyle::Primary)
             // (✓) FIXED: Use a single `char` for the emoji as required by the builder.
             .emoji('🛡'),
     ])];
 
-    (embed, components)
+    let mut rows = components;
+    crate::commands::saga::ui::add_nav(&mut rows, "train");
+    (embed, rows)
 }

@@ -2,7 +2,6 @@
 
 use super::state::BlackjackGame;
 use crate::AppState;
-use tracing::{instrument, warn};
 use crate::commands::games::engine::{Game, GameManager};
 use serenity::builder::{
     CreateCommand, CreateCommandOption, CreateInteractionResponse,
@@ -14,6 +13,7 @@ use serenity::prelude::*;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
+use tracing::{instrument, warn};
 
 /// Registers the `/blackjack` slash command with an optional bet.
 pub fn register() -> CreateCommand {
@@ -34,7 +34,7 @@ pub fn register() -> CreateCommand {
 #[instrument(level = "info", skip(ctx, interaction), fields(user_id = interaction.user.id.get()))]
 pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
     let Some(app_state) = AppState::from_ctx(ctx).await else {
-    warn!(command = "blackjack_slash", "missing_app_state");
+        warn!(command = "blackjack_slash", "missing_app_state");
         return;
     };
     let game_manager_lock = app_state.game_manager.clone();
@@ -84,7 +84,7 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
 #[instrument(level = "info", skip(ctx, msg, args), fields(user_id = msg.author.id.get()))]
 pub async fn run_prefix(ctx: &Context, msg: &Message, args: Vec<&str>) {
     let Some(app_state) = AppState::from_ctx(ctx).await else {
-    warn!(command = "blackjack_prefix", "missing_app_state");
+        warn!(command = "blackjack_prefix", "missing_app_state");
         return;
     };
     let game_manager_lock = app_state.game_manager.clone();

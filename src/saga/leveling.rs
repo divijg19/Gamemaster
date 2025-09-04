@@ -35,7 +35,7 @@ pub fn handle_unit_leveling(unit: &PlayerUnit, xp_gained: i32) -> LevelUpResult 
         stat_gains.1 += 1; // +1 Defense
         stat_gains.2 += 10; // +10 Health
 
-    xp_needed = xp_for_unit_level(new_level);
+        xp_needed = xp_for_unit_level(new_level);
     }
 
     LevelUpResult {

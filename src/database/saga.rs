@@ -17,12 +17,19 @@ pub async fn update_and_get_saga_profile(
     let now = Utc::now();
 
     // First, check for and apply any completed training sessions.
-    let completed_units = sqlx::query_as!(PlayerUnit, r#"SELECT 
+    let completed_units = sqlx::query_as!(
+        PlayerUnit,
+        r#"SELECT 
         pu.player_unit_id, pu.user_id, pu.unit_id, pu.nickname, pu.current_level, pu.current_xp,
         pu.current_attack, pu.current_defense, pu.current_health, pu.is_in_party, pu.is_training,
         pu.training_stat, pu.training_ends_at, u.name, pu.rarity as "rarity: UnitRarity"
         FROM player_units pu JOIN units u ON pu.unit_id = u.unit_id 
-        WHERE pu.user_id = $1 AND pu.is_training = TRUE AND pu.training_ends_at <= $2"#, user_id_i64, now).fetch_all(pool).await?;
+        WHERE pu.user_id = $1 AND pu.is_training = TRUE AND pu.training_ends_at <= $2"#,
+        user_id_i64,
+        now
+    )
+    .fetch_all(pool)
+    .await?;
     if !completed_units.is_empty() {
         let mut tx = pool.begin().await?;
         for unit in completed_units {
@@ -64,6 +71,30 @@ pub async fn update_and_get_saga_profile(
         tx.commit().await?;
         Ok(initial_profile)
     }
+}
+
+/// Same as `update_and_get_saga_profile` but also returns the user's full unit list
+/// in the same logical flow to reduce round trips when both are required.
+pub async fn update_get_profile_and_units(
+    pool: &PgPool,
+    user_id: UserId,
+) -> Result<(SagaProfile, Vec<PlayerUnit>), sqlx::Error> {
+    let profile = update_and_get_saga_profile(pool, user_id).await?;
+    // Fetch units after training completion & AP/TP update so stats reflect post-training values.
+    let units = sqlx::query_as!(
+        PlayerUnit,
+        r#"SELECT
+        pu.player_unit_id, pu.user_id, pu.unit_id, pu.nickname, pu.current_level, pu.current_xp,
+        pu.current_attack, pu.current_defense, pu.current_health, pu.is_in_party, pu.is_training,
+        pu.training_stat, pu.training_ends_at, u.name, pu.rarity as "rarity: UnitRarity"
+        FROM player_units pu JOIN units u ON pu.unit_id = u.unit_id
+        WHERE pu.user_id = $1
+        ORDER BY pu.is_in_party DESC, pu.current_level DESC"#,
+        user_id.get() as i64
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok((profile, units))
 }
 
 /// Atomically spends a player's Action Points.

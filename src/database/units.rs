@@ -535,10 +535,15 @@ pub async fn research_target_for_rarity(pool: &PgPool, rarity: UnitRarity) -> i3
         UnitRarity::Common => ("research_target_common", 5),
         UnitRarity::Rare => ("research_target_rare", 10),
         UnitRarity::Epic => ("research_target_epic", 18),
-        UnitRarity::Legendary | UnitRarity::Unique | UnitRarity::Mythical | UnitRarity::Fabled => ("research_target_high", 0),
+        UnitRarity::Legendary | UnitRarity::Unique | UnitRarity::Mythical | UnitRarity::Fabled => {
+            ("research_target_high", 0)
+        }
     };
     if let Ok(Some(val)) = crate::database::settings::get_config_value(pool, key).await
-        && let Ok(parsed) = val.parse::<i32>() { return parsed; }
+        && let Ok(parsed) = val.parse::<i32>()
+    {
+        return parsed;
+    }
     default
 }
 
@@ -546,19 +551,16 @@ pub async fn research_target_for_rarity(pool: &PgPool, rarity: UnitRarity) -> i3
 pub async fn list_research_progress_cached(
     app_state: &crate::AppState,
     user_id: UserId,
-) -> Result<Vec<(i32,i32)>, sqlx::Error> {
-    use std::time::Duration; const TTL: Duration = Duration::from_secs(20);
-    let now = std::time::Instant::now();
+) -> Result<Vec<(i32, i32)>, sqlx::Error> {
+    use std::time::Duration;
+    const TTL: Duration = Duration::from_secs(20);
+    if let Some(v) =
+        crate::services::cache::get_with_ttl(&app_state.research_cache, &user_id.get(), TTL).await
     {
-        let cache = app_state.research_cache.read().await;
-        if let Some((ts, data)) = cache.get(&user_id.get())
-            && now.duration_since(*ts) < TTL { return Ok(data.clone()); }
+        return Ok(v);
     }
     let fresh = list_research_progress(&app_state.db, user_id).await?;
-    {
-        let mut cache = app_state.research_cache.write().await;
-        cache.insert(user_id.get(), (now, fresh.clone()));
-    }
+    crate::services::cache::insert(&app_state.research_cache, user_id.get(), fresh.clone()).await;
     Ok(fresh)
 }
 

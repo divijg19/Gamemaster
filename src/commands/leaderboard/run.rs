@@ -27,7 +27,9 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
         .await
         .ok();
 
-    let Some(app_state) = AppState::from_ctx(ctx).await else { return };
+    let Some(app_state) = AppState::from_ctx(ctx).await else {
+        return;
+    };
     let pool = app_state.db.clone();
 
     let board_type = LeaderboardType::Gamemaster;
@@ -46,7 +48,9 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
 }
 
 pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
-    let Some(app_state) = AppState::from_ctx(ctx).await else { return };
+    let Some(app_state) = AppState::from_ctx(ctx).await else {
+        return;
+    };
     let pool = app_state.db.clone();
 
     let board_type = LeaderboardType::Gamemaster;

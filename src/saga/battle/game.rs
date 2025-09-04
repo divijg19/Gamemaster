@@ -21,8 +21,6 @@ pub struct BattleGame {
     pub can_afford_recruit: bool,
     // (✓) NEW: Add a field to track if this battle is for a quest.
     pub player_quest_id: Option<i32>,
-    // Cached equipment bonuses applied (host_player_unit_id -> (atk,def,hp)) to prevent recompute each interaction
-    pub applied_equipment: bool,
     pub claimed: bool,
 }
 
@@ -41,7 +39,26 @@ impl Game for BattleGame {
             BattlePhase::Defeat => "☠️ **DEFEAT** ☠️".to_string(),
             _ => "".to_string(),
         };
-        let (embed, components) = ui::render_battle(&self.session, self.can_afford_recruit);
+        let mut session_clone = self.session.clone();
+        if matches!(session_clone.phase, BattlePhase::Victory)
+            && !session_clone
+                .log
+                .iter()
+                .any(|l| l.contains("Vitality mitigated"))
+            && session_clone.vitality_mitigated > 0 {
+                session_clone.log.push(format!(
+                    "✨ Vitality mitigated a total of {} damage this battle.",
+                    session_clone.vitality_mitigated
+                ));
+            }
+        let (embed, mut components) = ui::render_battle(&session_clone, self.can_afford_recruit);
+        // Append global nav row for cross-command navigation (Saga active).
+        if matches!(
+            self.session.phase,
+            BattlePhase::Victory | BattlePhase::Defeat
+        ) {
+            crate::commands::saga::ui::add_nav(&mut components, "saga");
+        }
         (content, embed, components)
     }
 
@@ -51,31 +68,6 @@ impl Game for BattleGame {
         interaction: &mut ComponentInteraction,
         db: &PgPool,
     ) -> GameUpdate {
-        // One-time application of equipment bonuses (snapshot at first interaction) if not already applied.
-        if !self.applied_equipment {
-            if let Some(_app_state) = crate::AppState::from_ctx(ctx).await {
-                // context fetched (reserved for future use)
-                let bonuses = database::units::get_equipment_bonuses(db, interaction.user.id)
-                    .await
-                    .unwrap_or_default();
-                for unit in &mut self.session.player_party {
-                    if let Some(b) = bonuses.get(&unit.unit_id) {
-                        unit.attack += b.0;
-                        unit.defense += b.1;
-                        unit.max_hp += b.2;
-                        unit.current_hp += b.2; // heal with bonus
-                        unit.bonus_attack = b.0;
-                        unit.bonus_defense = b.1;
-                        unit.bonus_health = b.2;
-                        self.session.log.push(format!(
-                            "Equipment power surges around {} (+{} Atk / +{} Def / +{} HP).",
-                            unit.name, b.0, b.1, b.2
-                        ));
-                    }
-                }
-            }
-            self.applied_equipment = true;
-        }
         match interaction.data.custom_id.as_str() {
             "battle_attack" => {
                 if logic::process_player_turn(&mut self.session) == BattleOutcome::PlayerVictory {
@@ -268,9 +260,18 @@ impl Game for BattleGame {
                             if let Some(state) = crate::AppState::from_ctx(ctx).await {
                                 state.invalidate_user_caches(interaction.user.id).await;
                             }
-                            GameUpdate::GameOver {
-                                message: r.victory_log.join("\n"),
-                                payouts: vec![],
+                            {
+                                let mut msg = r.victory_log.join("\n");
+                                if self.session.vitality_mitigated > 0 {
+                                    msg.push_str(&format!(
+                                        "\n🔰 Vitality mitigated {} damage this battle.",
+                                        self.session.vitality_mitigated
+                                    ));
+                                }
+                                GameUpdate::GameOver {
+                                    message: msg,
+                                    payouts: vec![],
+                                }
                             }
                         }
                         Err(e) => GameUpdate::GameOver {
