@@ -147,9 +147,15 @@ impl EventHandler for Handler {
                     interactions::questlog_handler::handle(&ctx, component, app_state).await
                 }
                 "bond" => interactions::bond_handler::handle(&ctx, component, app_state).await,
-                "contracts" => interactions::contracts_handler::handle(&ctx, component, app_state).await,
-                "bestiary" => interactions::bestiary_handler::handle(&ctx, component, app_state).await,
-                "research" => interactions::research_handler::handle(&ctx, component, app_state).await,
+                "contracts" => {
+                    interactions::contracts_handler::handle(&ctx, component, app_state).await
+                }
+                "bestiary" => {
+                    interactions::bestiary_handler::handle(&ctx, component, app_state).await
+                }
+                "research" => {
+                    interactions::research_handler::handle(&ctx, component, app_state).await
+                }
                 _ => {}
             }
         }
@@ -214,7 +220,7 @@ impl EventHandler for Handler {
             Command::Bestiary => commands::bestiary::run::run_prefix(&ctx, &msg, args_vec).await,
             Command::Research => commands::research::run::run_prefix(&ctx, &msg, args_vec).await,
             Command::Progress => commands::progress::run::run_prefix(&ctx, &msg, args_vec).await,
-            Command::AdminUtil => {},
+            Command::AdminUtil => {}
             Command::Config => {}
             Command::Unknown => {}
         }

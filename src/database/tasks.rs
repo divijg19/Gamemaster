@@ -148,11 +148,12 @@ pub async fn claim_task_reward(
                 .map_err(|e| e.to_string())?;
         }
         if let (Some(item_id), Some(quantity)) = (task.reward_item_id, task.reward_item_quantity)
-            && let Some(item) = Item::from_i32(item_id) {
-                add_to_inventory(&mut tx, user_id, item, quantity as i64)
-                    .await
-                    .map_err(|e| e.to_string())?;
-            }
+            && let Some(item) = Item::from_i32(item_id)
+        {
+            add_to_inventory(&mut tx, user_id, item, quantity as i64)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
         sqlx::query!(
             "UPDATE player_tasks SET claimed_at = NOW() WHERE player_task_id = $1",
             player_task_id

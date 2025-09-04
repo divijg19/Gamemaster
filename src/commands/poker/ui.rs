@@ -27,9 +27,14 @@ impl PokerGame {
         let player_count = self.players.len();
         let embed = CreateEmbed::new()
             .title("♦️ Poker Lobby ♥️")
-            .description(format!("{}\n\n**Players ({}):**\n{}", desc, player_count, players_list))
+            .description(format!(
+                "{}\n\n**Players ({}):**\n{}",
+                desc, player_count, players_list
+            ))
             .color(0x71368A)
-            .footer(CreateEmbedFooter::new("Lobby expires in 2 minutes. Max 5 players."));
+            .footer(CreateEmbedFooter::new(
+                "Lobby expires in 2 minutes. Max 5 players.",
+            ));
 
         let buttons = vec![
             CreateButton::new("poker_join")
@@ -62,10 +67,15 @@ impl PokerGame {
 
         let embed = CreateEmbed::new()
             .title("♦️ Place Your Antes ♠️")
-            .description(format!("Ante: **💰{}**\nPress the button to lock in.", self.min_bet))
+            .description(format!(
+                "Ante: **💰{}**\nPress the button to lock in.",
+                self.min_bet
+            ))
             .field("Player Status", ante_status, false)
             .color(0xFFA500)
-            .footer(CreateEmbedFooter::new("Round begins when all are ready (60s timeout)."));
+            .footer(CreateEmbedFooter::new(
+                "Round begins when all are ready (60s timeout).",
+            ));
 
         let buttons = vec![
             CreateButton::new("poker_ante")

@@ -17,8 +17,40 @@ pub async fn handle(
 
     let custom_id_parts: Vec<&str> = component.data.custom_id.split('_').collect();
 
+    // Global navigation buttons
+    match component.data.custom_id.as_str() {
+        "nav_saga" => {
+            if let Some(profile) =
+                crate::services::saga::get_saga_profile(&app_state, component.user.id, false).await
+            {
+                let has_party = database::units::get_user_party(&db, component.user.id)
+                    .await
+                    .map(|p| !p.is_empty())
+                    .unwrap_or(false);
+                let (embed, components) = commands::saga::ui::create_saga_menu(&profile, has_party);
+                let builder = EditInteractionResponse::new()
+                    .embed(embed)
+                    .components(components);
+                component.edit_response(&ctx.http, builder).await.ok();
+            }
+            return;
+        }
+        "nav_party" => {
+            let (embed, components) =
+                commands::party::ui::create_party_view_with_bonds(&app_state, component.user.id)
+                    .await;
+            let builder = EditInteractionResponse::new()
+                .embed(embed)
+                .components(components);
+            component.edit_response(&ctx.http, builder).await.ok();
+            return;
+        }
+        "nav_train" => { /* already here; fall through */ }
+        _ => {}
+    }
+
     match custom_id_parts.get(1) {
-    // This handles the first step: the user selects a unit from the dropdown.
+        // This handles the first step: the user selects a unit from the dropdown.
         Some(&"select") => {
             let unit_id_str =
                 if let serenity::model::application::ComponentInteractionDataKind::StringSelect {
@@ -51,7 +83,8 @@ pub async fn handle(
             let player_unit_id = match custom_id_parts.get(3).and_then(|s| s.parse::<i32>().ok()) {
                 Some(id) => id,
                 None => {
-                    let builder = EditInteractionResponse::new().content("Invalid training target.");
+                    let builder =
+                        EditInteractionResponse::new().content("Invalid training target.");
                     component.edit_response(&ctx.http, builder).await.ok();
                     return;
                 }
@@ -70,15 +103,30 @@ pub async fn handle(
             .unwrap_or(false);
 
             // Respond with a confirmation or error message.
-            let mut builder = EditInteractionResponse::new().components(vec![]);
             if success {
-                // Invalidate caches so future bonus calculations reflect upcoming stat change once complete.
                 app_state.invalidate_user_caches(component.user.id).await;
-                builder = builder.content(format!("Training has begun! Your unit will gain +1 {} in 2 hours.", stat_to_train));
+                // Re-render training menu with updated TP & statuses
+                if let (Ok(units), Some(profile)) = (
+                    database::units::get_player_units(&db, component.user.id).await,
+                    crate::services::saga::get_saga_profile(&app_state, component.user.id, true)
+                        .await,
+                ) {
+                    let (embed, components) =
+                        commands::train::ui::create_training_menu(&units, &profile);
+                    let builder = EditInteractionResponse::new()
+                        .content(format!(
+                            "Training started: +1 {} in 2 hours.",
+                            stat_to_train
+                        ))
+                        .embed(embed)
+                        .components(components);
+                    component.edit_response(&ctx.http, builder).await.ok();
+                }
             } else {
-                builder = builder.content("Failed to start training. You may not have enough Training Points, or the unit does not belong to you.");
+                let builder = EditInteractionResponse::new()
+                    .content("Failed to start training. You may not have enough Training Points, or the unit does not belong to you.");
+                component.edit_response(&ctx.http, builder).await.ok();
             }
-            component.edit_response(&ctx.http, builder).await.ok();
         }
         _ => {}
     }

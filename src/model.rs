@@ -5,6 +5,7 @@
 use crate::commands::games::engine::GameManager;
 // (✓) CORRECTED: Use the concrete PgPool type directly.
 use crate::database::models::UnitRarity;
+use crate::ui::NavStack;
 use serenity::gateway::ShardManager;
 use serenity::prelude::TypeMapKey;
 use sqlx::PgPool;
@@ -13,10 +14,11 @@ use std::{collections::HashMap, time::Instant};
 use tokio::sync::RwLock;
 
 // Type aliases to reduce clippy::type_complexity noise and clarify intent.
-type BondedEquippablesMap = HashMap<i32, Vec<(i32, String, UnitRarity)>>; // host_player_unit_id -> equipped list
+// Exposed publicly where they are broadly useful for UI builders and services.
+pub type BondedEquippablesMap = HashMap<i32, Vec<(i32, String, UnitRarity)>>; // host_player_unit_id -> equipped list
 type UserBondCacheEntry = (Instant, BondedEquippablesMap);
 type UserBondCache = HashMap<u64, UserBondCacheEntry>;
-type EquipmentBonusMap = HashMap<i32, (i32, i32, i32)>; // player_unit_id -> (atk,def,hp)
+pub type EquipmentBonusMap = HashMap<i32, (i32, i32, i32)>; // player_unit_id -> (atk,def,hp)
 type UserBonusCacheEntry = (Instant, EquipmentBonusMap);
 type UserBonusCache = HashMap<u64, UserBonusCacheEntry>;
 // Contract status caching (human recruitment progress) -----------------------
@@ -35,6 +37,9 @@ type UserContractCache = HashMap<u64, UserContractCacheEntry>;
 type ResearchProgress = Vec<(i32, i32)>; // (unit_id, count)
 type UserResearchCacheEntry = (Instant, ResearchProgress);
 type UserResearchCache = HashMap<u64, UserResearchCacheEntry>;
+// Saga profile short-lived cache (avoids rapid duplicate AP/TP queries on refresh spam)
+type SagaProfileCacheEntry = (Instant, crate::database::models::SagaProfile);
+type SagaProfileCache = HashMap<u64, SagaProfileCacheEntry>;
 
 /// A container for the ShardManager, allowing it to be stored in the global context.
 /// This provides access to shard-specific information, like gateway latency.
@@ -65,6 +70,10 @@ pub struct AppState {
     pub contract_cache: Arc<RwLock<UserContractCache>>,
     /// Cached pet research progress per user with TTL.
     pub research_cache: Arc<RwLock<UserResearchCache>>,
+    /// Per-user navigation stacks for embed navigation.
+    pub nav_stacks: Arc<RwLock<HashMap<u64, NavStack>>>,
+    /// Short TTL cache for saga profiles to smooth rapid refresh interaction bursts.
+    pub saga_profile_cache: Arc<RwLock<SagaProfileCache>>,
 }
 
 impl AppState {
@@ -89,6 +98,14 @@ impl AppState {
         {
             let mut research = self.research_cache.write().await;
             research.remove(&user_id.get());
+        }
+        {
+            let mut nav = self.nav_stacks.write().await;
+            nav.remove(&user_id.get());
+        }
+        {
+            let mut saga_prof = self.saga_profile_cache.write().await;
+            saga_prof.remove(&user_id.get());
         }
     }
 }

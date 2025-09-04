@@ -42,9 +42,15 @@ impl ShopSession {
                 .map(|item| {
                     let props = item.properties();
                     if let Some(price) = props.buy_price {
-                        format!("**{} {}** - **💰{}**\n*{}*", props.emoji, props.display_name, price, props.description)
+                        format!(
+                            "**{} {}** - **💰{}**\n*{}*",
+                            props.emoji, props.display_name, price, props.description
+                        )
                     } else {
-                        format!("**{} {}**\n*{}*", props.emoji, props.display_name, props.description)
+                        format!(
+                            "**{} {}**\n*{}*",
+                            props.emoji, props.display_name, props.description
+                        )
                     }
                 })
                 .collect::<Vec<_>>()

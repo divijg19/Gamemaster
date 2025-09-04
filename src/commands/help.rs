@@ -150,14 +150,49 @@ const COMMANDS: &[CommandInfo] = &[
         details: "Displays the quest board, showing available quests to accept. Accepting a battle quest starts the fight immediately.",
         category: CommandCategory::Saga,
     },
-    // (✓) NEW: Added Quest Log to the help menu.
     CommandInfo {
         name: "questlog",
         description: "View your active and completed quests.",
         usage: &["questlog", "ql"],
-        details: "Opens your personal quest log, allowing you to track your active quests and view your completed history.",
+        details: "Opens your personal quest log so you can review active objectives and completed quest history.",
         category: CommandCategory::Saga,
     },
+    CommandInfo {
+        name: "contracts",
+        description: "Manage human encounter contracts.",
+        usage: &["contracts"],
+        details: "Shows human encounter progress, lets you draft contracts for ready humans and accept drafted contracts to recruit them.",
+        category: CommandCategory::Saga,
+    },
+    CommandInfo {
+        name: "research",
+        description: "View or advance unit research bonuses.",
+        usage: &["research"],
+        details: "Opens the research interface to see passive bonuses unlocked by collecting research data drops from battles.",
+        category: CommandCategory::Saga,
+    },
+    CommandInfo {
+        name: "bestiary",
+        description: "Browse discovered units and lore.",
+        usage: &["bestiary", "be"],
+        details: "Displays units you have encountered with basic stats and rarity; expand future lore entries here.",
+        category: CommandCategory::Saga,
+    },
+    CommandInfo {
+        name: "progress",
+        description: "Shows your overall saga progression milestones.",
+        usage: &["progress"],
+        details: "Summarizes story progress, unlocked systems, and upcoming goals.",
+        category: CommandCategory::Saga,
+    },
+    CommandInfo {
+        name: "open",
+        description: "Open loot or reward crates (if available).",
+        usage: &["open <crate>"],
+        details: "Opens a crate or reward container from your inventory and applies its contents.",
+        category: CommandCategory::Saga,
+    },
+    // (✓) NEW: Added Quest Log to the help menu.
     CommandInfo {
         name: "party",
         description: "Manage your active party and army.",
@@ -229,11 +264,12 @@ fn create_command_select_menu() -> CreateActionRow {
     let options = COMMANDS
         .iter()
         .map(|cmd| {
-            {
-                let mut opt = CreateSelectMenuOption::new(cmd.name, cmd.name).description(cmd.description);
-                if let Some(em) = cmd.category.emoji().chars().next() { opt = opt.emoji(em); }
-                opt
+            let mut opt =
+                CreateSelectMenuOption::new(cmd.name, cmd.name).description(cmd.description);
+            if let Some(em) = cmd.category.emoji().chars().next() {
+                opt = opt.emoji(em);
             }
+            opt
         })
         .collect();
     let select_menu = CreateSelectMenu::new(
@@ -257,10 +293,14 @@ async fn create_help_embed(ctx: &Context, command_name_opt: Option<&str>) -> Cre
             .clone()
     };
     let footer_text = format!("Current Prefix: {}", prefix);
-        let mut embed = CreateEmbed::new()
+    let mut embed = CreateEmbed::new()
         .footer(CreateEmbedFooter::new(footer_text))
         .color(0x5865F2);
-        if AppState::from_ctx(ctx).await.is_none() { return embed.title("Help (limited)").description("Internal state unavailable."); }
+    if AppState::from_ctx(ctx).await.is_none() {
+        return embed
+            .title("Help (limited)")
+            .description("Internal state unavailable.");
+    }
 
     match command_name_opt {
         Some(name) => {

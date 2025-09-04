@@ -95,9 +95,11 @@
 .sqlx/query-fd7936a2436931b1062938dbdbee4a9b2777e979b93980363613227ef5e4786a.json
 .sqlx/query-feb6b7d9dafd16b5d726626f9d5c92133e1c3617eae211e332709ecef264c490.json
 .sqlx/query-ffe4e352fb2224c11ba837a68fda1d73adebda1bfd2fb05c439f3e9062e92491.json
+CHANGELOG.md
 Cargo.lock
 Cargo.toml
 Codebase.txt
+README.md
 migrations/20250828003809_populate_base_pets.sql
 migrations/20250903140000_rename_pets_to_units.sql
 migrations/20250903183000_add_unit_rarity_and_bonding.sql
@@ -112,6 +114,8 @@ migrations/20250904002000_content_expansion.sql
 migrations/20250904003000_area_expansion.sql
 migrations/20250904004000_goblins_and_creatures.sql
 migrations/20250904005000_schema_not_null_fixes.sql
+migrations/20250904011000_perf_indexes_and_constraints.sql
+src/cache.rs
 src/commands/admin.rs
 src/commands/bestiary/mod.rs
 src/commands/bestiary/run.rs
@@ -250,4 +254,12 @@ src/saga/leaderboard.rs
 src/saga/leveling.rs
 src/saga/map.rs
 src/saga/mod.rs
+src/services/cache.rs
+src/services/mod.rs
+src/services/saga.rs
+src/ui/mod.rs
+src/ui/nav.rs
+src/ui/style.rs
+tests/saga_first_time.rs
+tests/saga_logic.rs
 tests/unit_basic.rs

@@ -42,14 +42,15 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 rewards.push(format!("💰 **{}** coins", coins));
             }
             if let (Some(id), Some(qty)) = (item_id, quantity)
-                && let Some(item) = Item::from_i32(id) {
-                    rewards.push(format!(
-                        "{} **{}x** {}",
-                        item.emoji(),
-                        qty,
-                        item.display_name()
-                    ));
-                }
+                && let Some(item) = Item::from_i32(id)
+            {
+                rewards.push(format!(
+                    "{} **{}x** {}",
+                    item.emoji(),
+                    qty,
+                    item.display_name()
+                ));
+            }
             // Add a default message if for some reason there are no rewards.
             if rewards.is_empty() {
                 "🎉 **Quest Complete!**".to_string()

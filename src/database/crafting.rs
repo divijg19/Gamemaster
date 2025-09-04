@@ -68,7 +68,10 @@ pub async fn craft_item(pool: &PgPool, user_id: UserId, recipe_id: i32) -> Resul
     for ingredient in &ingredients {
         let required_item = match Item::from_i32(ingredient.item_id) {
             Some(it) => it,
-            None => { tx.rollback().await.ok(); return Err("Invalid ingredient item id in recipe.".into()); }
+            None => {
+                tx.rollback().await.ok();
+                return Err("Invalid ingredient item id in recipe.".into());
+            }
         }; // Safer conversion.
         add_to_inventory(
             &mut tx,

@@ -17,7 +17,9 @@ async fn get_tasks_response(
     ctx: &Context,
     user_id: serenity::model::id::UserId,
 ) -> Result<(CreateEmbed, Vec<CreateActionRow>), String> {
-    let Some(app_state) = AppState::from_ctx(ctx).await else { return Err("Internal state unavailable".into()); };
+    let Some(app_state) = AppState::from_ctx(ctx).await else {
+        return Err("Internal state unavailable".into());
+    };
     let db = app_state.db.clone();
 
     match database::tasks::get_or_assign_player_tasks(&db, user_id).await {

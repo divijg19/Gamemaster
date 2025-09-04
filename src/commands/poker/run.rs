@@ -2,7 +2,6 @@
 
 use super::state::PokerGame;
 use crate::AppState;
-use tracing::{instrument, warn};
 use crate::commands::games::engine::{Game, GameManager};
 use serenity::builder::{
     CreateCommand, CreateCommandOption, CreateInteractionResponse,
@@ -14,6 +13,7 @@ use serenity::prelude::*;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
+use tracing::{instrument, warn};
 
 pub fn register() -> CreateCommand {
     CreateCommand::new("poker")
@@ -31,7 +31,10 @@ pub fn register() -> CreateCommand {
 
 #[instrument(level = "info", skip(ctx, interaction), fields(user_id = interaction.user.id.get()))]
 pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
-    let Some(app_state) = AppState::from_ctx(ctx).await else { warn!(command = "poker_slash", "missing_app_state"); return };
+    let Some(app_state) = AppState::from_ctx(ctx).await else {
+        warn!(command = "poker_slash", "missing_app_state");
+        return;
+    };
     let game_manager_lock = app_state.game_manager.clone();
 
     let response = CreateInteractionResponse::Defer(CreateInteractionResponseMessage::new());
@@ -75,7 +78,10 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
 
 #[instrument(level = "info", skip(ctx, msg, args), fields(user_id = msg.author.id.get()))]
 pub async fn run_prefix(ctx: &Context, msg: &Message, args: Vec<&str>) {
-    let Some(app_state) = AppState::from_ctx(ctx).await else { warn!(command = "poker_prefix", "missing_app_state"); return };
+    let Some(app_state) = AppState::from_ctx(ctx).await else {
+        warn!(command = "poker_prefix", "missing_app_state");
+        return;
+    };
     let game_manager_lock = app_state.game_manager.clone();
 
     let ante = match args.first().and_then(|arg| arg.parse::<i64>().ok()) {

@@ -1,7 +1,7 @@
 //! Implements the run logic for the `/train` command.
 
 use super::ui::create_training_menu;
-use crate::{AppState, database};
+use crate::{AppState, services};
 use serenity::builder::{
     CreateCommand, CreateInteractionResponse, CreateInteractionResponseMessage, CreateMessage,
     EditInteractionResponse,
@@ -26,42 +26,28 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
         .await
         .ok();
 
-    let Some(app_state) = AppState::from_ctx(ctx).await else { return };
-    let pool = app_state.db.clone();
-
-    // First, get the player's up-to-date saga profile.
-    let saga_profile = match database::saga::update_and_get_saga_profile(&pool, interaction.user.id)
-        .await
-    {
-        Ok(p) => p,
-        Err(e) => {
-            println!("[TRAIN CMD] DB error getting saga profile: {:?}", e);
-            interaction
-                .edit_response(
-                    &ctx.http,
-                    EditInteractionResponse::new().content("Could not retrieve your game profile."),
-                )
-                .await
-                .ok();
-            return;
-        }
+    let Some(app_state) = AppState::from_ctx(ctx).await else {
+        return;
     };
+    // DB pool accessible via app_state if needed for future expansion.
 
-    // Next, get the list of all units the player owns.
-    let pets = match database::units::get_player_units(&pool, interaction.user.id).await {
-        Ok(p) => p,
-        Err(e) => {
-        println!("[TRAIN CMD] DB error getting player units: {:?}", e);
-            interaction
-                .edit_response(
-                    &ctx.http,
-            EditInteractionResponse::new().content("Could not retrieve your units."),
-                )
-                .await
-                .ok();
-            return;
-        }
-    };
+    // Batched profile + units retrieval (saves a DB round trip; includes training completion logic)
+    let (saga_profile, pets) =
+        match services::saga::get_profile_and_units(&app_state, interaction.user.id).await {
+            Some((profile, units)) => (profile, units),
+            None => {
+                println!("[TRAIN CMD] failed combined profile+units fetch");
+                interaction
+                    .edit_response(
+                        &ctx.http,
+                        EditInteractionResponse::new()
+                            .content("Could not retrieve your game data."),
+                    )
+                    .await
+                    .ok();
+                return;
+            }
+        };
 
     let (embed, components) = create_training_menu(&pets, &saga_profile);
 
@@ -73,29 +59,22 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
 }
 
 pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
-    let Some(app_state) = AppState::from_ctx(ctx).await else { return };
-    let pool = app_state.db.clone();
-
-    let saga_profile = match database::saga::update_and_get_saga_profile(&pool, msg.author.id).await
-    {
-        Ok(p) => p,
-        Err(e) => {
-            println!("[TRAIN CMD] DB error getting saga profile: {:?}", e);
-            msg.reply(ctx, "Could not retrieve your game profile.")
-                .await
-                .ok();
-            return;
-        }
+    let Some(app_state) = AppState::from_ctx(ctx).await else {
+        return;
     };
+    // DB pool accessible via app_state if needed for future expansion.
 
-    let pets = match database::units::get_player_units(&pool, msg.author.id).await {
-        Ok(p) => p,
-        Err(e) => {
-            println!("[TRAIN CMD] DB error getting player units: {:?}", e);
-            msg.reply(ctx, "Could not retrieve your units.").await.ok();
-            return;
-        }
-    };
+    let (saga_profile, pets) =
+        match services::saga::get_profile_and_units(&app_state, msg.author.id).await {
+            Some((profile, units)) => (profile, units),
+            None => {
+                println!("[TRAIN CMD] failed combined profile+units fetch (prefix)");
+                msg.reply(ctx, "Could not retrieve your game data.")
+                    .await
+                    .ok();
+                return;
+            }
+        };
 
     let (embed, components) = create_training_menu(&pets, &saga_profile);
     let builder = CreateMessage::new()

@@ -1,6 +1,7 @@
 //! Contains the UI and logic for the Tavern.
 
 use crate::database::models::Unit;
+use crate::ui::style::*;
 use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed};
 use serenity::model::application::ButtonStyle;
 
@@ -17,8 +18,8 @@ pub fn create_tavern_menu(
     let mut embed = CreateEmbed::new()
         .title("The Weary Dragon Tavern")
         .description("The air is thick with the smell of stale ale and adventure. A few sturdy-looking mercenaries are looking for work.")
-        .field("Your Balance", format!("💰 {}", player_balance), false)
-        .color(0xCD7F32); // Bronze
+        .field("Your Balance", format!("{} {}", EMOJI_COIN, player_balance), false)
+        .color(COLOR_SAGA_TAVERN);
 
     let mut components = Vec::new();
     for unit in recruits {
@@ -46,5 +47,7 @@ pub fn create_tavern_menu(
     // Prepend Play row for consistent navigation.
     let mut rows = vec![crate::commands::saga::ui::play_button_row("Play / Menu")];
     rows.push(action_row);
+    // Append global cross-command nav row (active = saga)
+    crate::commands::saga::ui::add_nav(&mut rows, "saga");
     (embed, rows)
 }

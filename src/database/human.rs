@@ -314,20 +314,13 @@ pub async fn list_contract_status_cached(
     user_id: UserId,
 ) -> Result<Vec<ContractStatusRow>, sqlx::Error> {
     const TTL: Duration = Duration::from_secs(20);
-    let now = std::time::Instant::now();
+    if let Some(v) =
+        crate::services::cache::get_with_ttl(&app_state.contract_cache, &user_id.get(), TTL).await
     {
-        let cache = app_state.contract_cache.read().await;
-        if let Some((ts, data_any)) = cache.get(&user_id.get())
-            && now.duration_since(*ts) < TTL
-        {
-            return Ok(data_any.clone());
-        }
+        return Ok(v);
     }
     let fresh = list_contract_status(&app_state.db, user_id).await?;
-    {
-        let mut cache = app_state.contract_cache.write().await;
-        cache.insert(user_id.get(), (now, fresh.clone()));
-    }
+    crate::services::cache::insert(&app_state.contract_cache, user_id.get(), fresh.clone()).await;
     Ok(fresh)
 }
 

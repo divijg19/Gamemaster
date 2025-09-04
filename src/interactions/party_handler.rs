@@ -9,6 +9,44 @@ use std::sync::Arc;
 pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_state: Arc<AppState>) {
     let db = app_state.db.clone();
     component.defer_ephemeral(ctx.http.clone()).await.ok();
+    // Global navigation buttons short-circuit
+    if component.data.custom_id == "nav_saga" {
+        if let Some(profile) =
+            crate::services::saga::get_saga_profile(&app_state, component.user.id, false).await
+        {
+            let has_party = database::units::get_user_party(&db, component.user.id)
+                .await
+                .map(|p| !p.is_empty())
+                .unwrap_or(false);
+            let (embed, components) = commands::saga::ui::create_saga_menu(&profile, has_party);
+            let builder = EditInteractionResponse::new()
+                .embed(embed)
+                .components(components);
+            component
+                .edit_response(ctx.http.clone(), builder)
+                .await
+                .ok();
+        }
+        return;
+    } else if component.data.custom_id == "nav_train" {
+        if let Ok(units) = database::units::get_player_units(&db, component.user.id).await
+            && let Some(profile) =
+                crate::services::saga::get_saga_profile(&app_state, component.user.id, false).await
+            {
+                let (embed, components) =
+                    commands::train::ui::create_training_menu(&units, &profile);
+                let builder = EditInteractionResponse::new()
+                    .embed(embed)
+                    .components(components);
+                component
+                    .edit_response(ctx.http.clone(), builder)
+                    .await
+                    .ok();
+            }
+        return;
+    } else if component.data.custom_id == "nav_party" {
+        // Already within party domain; just fall through to standard re-render logic below (after potential action)
+    }
 
     let action = component.data.custom_id.split('_').nth(1).unwrap_or("");
 

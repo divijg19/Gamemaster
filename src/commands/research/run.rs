@@ -18,43 +18,44 @@ pub async fn build_view_cached(
         "Taming progress for sub-Legendary pets. Defeat creatures to gain research drops.",
     );
     if let Ok(units) = database::units::get_all_units(db).await
-        && let Ok(progress) = database::units::list_research_progress_cached(app_state, user).await {
-            use std::collections::HashMap;
-            let map: HashMap<i32, i32> = progress.into_iter().collect();
-            for u in units
-                .into_iter()
-                .filter(|u| matches!(u.kind, database::models::UnitKind::Pet))
-                .take(25)
-            {
-                let count = map.get(&u.unit_id).cloned().unwrap_or(0);
-                let target = database::units::research_target_for_rarity(db, u.rarity).await;
-                let field_title = format!("{} ({:?})", u.name, u.rarity);
-                if target == 0 {
-                    embed = embed.field(
-                        field_title,
-                        "Party Eligible (no research required)".to_string(),
-                        true,
-                    );
-                } else {
-                    let pct = (count as f32 / target as f32).min(1.0);
-                    let filled = (pct * 10.0).round() as i32;
-                    let mut bar = String::with_capacity(10);
-                    for i in 0..10 {
-                        if i < filled {
-                            bar.push('#');
-                        } else {
-                            bar.push('-');
-                        }
+        && let Ok(progress) = database::units::list_research_progress_cached(app_state, user).await
+    {
+        use std::collections::HashMap;
+        let map: HashMap<i32, i32> = progress.into_iter().collect();
+        for u in units
+            .into_iter()
+            .filter(|u| matches!(u.kind, database::models::UnitKind::Pet))
+            .take(25)
+        {
+            let count = map.get(&u.unit_id).cloned().unwrap_or(0);
+            let target = database::units::research_target_for_rarity(db, u.rarity).await;
+            let field_title = format!("{} ({:?})", u.name, u.rarity);
+            if target == 0 {
+                embed = embed.field(
+                    field_title,
+                    "Party Eligible (no research required)".to_string(),
+                    true,
+                );
+            } else {
+                let pct = (count as f32 / target as f32).min(1.0);
+                let filled = (pct * 10.0).round() as i32;
+                let mut bar = String::with_capacity(10);
+                for i in 0..10 {
+                    if i < filled {
+                        bar.push('#');
+                    } else {
+                        bar.push('-');
                     }
-                    let status = if count >= target { "Ready" } else { "Progress" };
-                    embed = embed.field(
-                        field_title,
-                        format!("[{bar}] {count}/{target} {status}"),
-                        true,
-                    );
                 }
+                let status = if count >= target { "Ready" } else { "Progress" };
+                embed = embed.field(
+                    field_title,
+                    format!("[{bar}] {count}/{target} {status}"),
+                    true,
+                );
             }
         }
+    }
     embed
 }
 

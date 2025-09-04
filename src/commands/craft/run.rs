@@ -27,7 +27,9 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
         .await
         .ok();
 
-    let Some(app_state) = AppState::from_ctx(ctx).await else { return };
+    let Some(app_state) = AppState::from_ctx(ctx).await else {
+        return;
+    };
     let pool = app_state.db.clone();
 
     // 1. Fetch all recipes and ingredients from the database.
@@ -75,7 +77,9 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
 }
 
 pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
-    let Some(app_state) = AppState::from_ctx(ctx).await else { return };
+    let Some(app_state) = AppState::from_ctx(ctx).await else {
+        return;
+    };
     let pool = app_state.db.clone();
 
     let all_recipes = database::crafting::get_all_recipes(&pool)
