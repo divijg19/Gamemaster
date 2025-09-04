@@ -1,4 +1,4 @@
-//! Implements the `/train` command for pet progression.
+//! Implements the `/train` command for unit progression.
 
 pub mod run;
 pub mod ui;

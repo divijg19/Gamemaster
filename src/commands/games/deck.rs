@@ -9,6 +9,12 @@ pub struct Deck {
     cards: Vec<Card>,
 }
 
+impl Default for Deck {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Deck {
     /// Creates a new, standard 52-card deck.
     pub fn new() -> Self {
@@ -57,7 +63,11 @@ impl Deck {
         let mut hand = Vec::with_capacity(count);
         for _ in 0..count {
             // This unwrap is safe because we checked the length above.
-            hand.push(self.deal_one().unwrap());
+            if let Some(card) = self.deal_one() {
+                hand.push(card);
+            } else {
+                break; // deck exhausted early
+            }
         }
         Some(hand)
     }

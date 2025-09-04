@@ -27,7 +27,8 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
         .await
         .ok();
 
-    let pool = { ctx.data.read().await.get::<AppState>().unwrap().db.clone() };
+    let Some(app_state) = AppState::from_ctx(ctx).await else { return };
+    let pool = app_state.db.clone();
 
     let board_type = LeaderboardType::Gamemaster;
     let entries = database::leaderboard::get_gamemaster_leaderboard(&pool, LEADERBOARD_LIMIT)
@@ -45,7 +46,8 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
 }
 
 pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
-    let pool = { ctx.data.read().await.get::<AppState>().unwrap().db.clone() };
+    let Some(app_state) = AppState::from_ctx(ctx).await else { return };
+    let pool = app_state.db.clone();
 
     let board_type = LeaderboardType::Gamemaster;
     let entries = database::leaderboard::get_gamemaster_leaderboard(&pool, LEADERBOARD_LIMIT)

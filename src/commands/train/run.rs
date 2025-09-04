@@ -11,7 +11,7 @@ use serenity::model::channel::Message;
 use serenity::prelude::*;
 
 pub fn register() -> CreateCommand {
-    CreateCommand::new("train").description("Train your pets to improve their stats.")
+    CreateCommand::new("train").description("Train your units to improve their stats.")
 }
 
 pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
@@ -26,7 +26,8 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
         .await
         .ok();
 
-    let pool = { ctx.data.read().await.get::<AppState>().unwrap().db.clone() };
+    let Some(app_state) = AppState::from_ctx(ctx).await else { return };
+    let pool = app_state.db.clone();
 
     // First, get the player's up-to-date saga profile.
     let saga_profile = match database::saga::update_and_get_saga_profile(&pool, interaction.user.id)
@@ -46,15 +47,15 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
         }
     };
 
-    // Next, get the list of all pets the player owns.
-    let pets = match database::pets::get_player_pets(&pool, interaction.user.id).await {
+    // Next, get the list of all units the player owns.
+    let pets = match database::units::get_player_units(&pool, interaction.user.id).await {
         Ok(p) => p,
         Err(e) => {
-            println!("[TRAIN CMD] DB error getting player pets: {:?}", e);
+        println!("[TRAIN CMD] DB error getting player units: {:?}", e);
             interaction
                 .edit_response(
                     &ctx.http,
-                    EditInteractionResponse::new().content("Could not retrieve your pets."),
+            EditInteractionResponse::new().content("Could not retrieve your units."),
                 )
                 .await
                 .ok();
@@ -72,7 +73,8 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
 }
 
 pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
-    let pool = { ctx.data.read().await.get::<AppState>().unwrap().db.clone() };
+    let Some(app_state) = AppState::from_ctx(ctx).await else { return };
+    let pool = app_state.db.clone();
 
     let saga_profile = match database::saga::update_and_get_saga_profile(&pool, msg.author.id).await
     {
@@ -86,11 +88,11 @@ pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
         }
     };
 
-    let pets = match database::pets::get_player_pets(&pool, msg.author.id).await {
+    let pets = match database::units::get_player_units(&pool, msg.author.id).await {
         Ok(p) => p,
         Err(e) => {
-            println!("[TRAIN CMD] DB error getting player pets: {:?}", e);
-            msg.reply(ctx, "Could not retrieve your pets.").await.ok();
+            println!("[TRAIN CMD] DB error getting player units: {:?}", e);
+            msg.reply(ctx, "Could not retrieve your units.").await.ok();
             return;
         }
     };

@@ -1,0 +1,95 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.unit_id, u.name, u.description, u.base_attack, u.base_defense, u.base_health, u.is_recruitable, u.kind as \"kind: UnitKind\", u.rarity as \"rarity: UnitRarity\" FROM units u JOIN node_enemies ne ON u.unit_id = ne.unit_id WHERE ne.node_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "unit_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "base_attack",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "base_defense",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "base_health",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "is_recruitable",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "kind: UnitKind",
+        "type_info": {
+          "Custom": {
+            "name": "unit_kind",
+            "kind": {
+              "Enum": [
+                "Human",
+                "Pet"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "rarity: UnitRarity",
+        "type_info": {
+          "Custom": {
+            "name": "unit_rarity",
+            "kind": {
+              "Enum": [
+                "Common",
+                "Rare",
+                "Epic",
+                "Legendary",
+                "Unique",
+                "Mythical",
+                "Fabled"
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "4348388376ac2872ba027133337e617b84f294d453a019644a079cfded9902ae"
+}

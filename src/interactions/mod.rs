@@ -5,12 +5,16 @@
 //! (e.g., "saga", "party", "train"). This keeps the main handler clean and
 //! organizes all interaction logic in one place.
 
+pub mod bestiary_handler;
+pub mod bond_handler;
+pub mod contracts_handler;
 pub mod craft_handler;
 pub mod game_handler;
 pub mod leaderboard_handler;
 pub mod party_handler;
 pub mod quest_handler;
 pub mod questlog_handler;
+pub mod research_handler;
 pub mod saga_handler;
 pub mod task_handler;
 pub mod train_handler;

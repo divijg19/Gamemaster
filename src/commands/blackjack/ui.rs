@@ -23,12 +23,12 @@ impl BlackjackGame {
                 self.host_id
             )
         };
+        let player_count = self.players.len();
         let embed = CreateEmbed::new()
             .title("♦️ Blackjack Lobby ♥️")
-            .description(desc)
-            .field("Players Joined", players_list, false)
-            .color(0x71368A) // (✓) MODIFIED: Purple color for lobby
-            .footer(CreateEmbedFooter::new("Lobby expires in 2 minutes."));
+            .description(format!("{}\n\n**Players ({}):**\n{}", desc, player_count, players_list))
+            .color(0x71368A)
+            .footer(CreateEmbedFooter::new("Lobby expires in 2 minutes. Use Start when ready."));
         let buttons = vec![
             CreateButton::new("bj_join")
                 .label("Join")
@@ -62,11 +62,11 @@ impl BlackjackGame {
             .join("\n");
         let embed = CreateEmbed::new()
             .title("♦️ Place Your Bets ♠️")
-            .description(format!("Minimum Bet: **💰{}**", self.min_bet))
+            .description(format!("Minimum Bet: **💰{}**\nUse the buttons below to adjust. Confirm to lock in.", self.min_bet))
             .field("Betting Status", betting_status, false)
-            .color(0xFFA500) // (✓) MODIFIED: Orange color for betting
+            .color(0xFFA500)
             .footer(CreateEmbedFooter::new(
-                "Round starts when all players confirm. | Timer: 60s",
+                "Round starts when all players confirm (60s timeout).",
             ));
         let buttons1 = vec![
             CreateButton::new("bj_bet_10")
@@ -152,9 +152,7 @@ impl BlackjackGame {
             false,
         );
 
-        if self.pot > 0 {
-            embed = embed.field("Total Pot", format!("💰{}", self.pot), false);
-        }
+    if self.pot > 0 { embed = embed.field("Total Pot", format!("💰{}", self.pot), true); }
 
         for (p_idx, player) in self.players.iter().enumerate() {
             let turn_indicator =
@@ -198,11 +196,7 @@ impl BlackjackGame {
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
-            embed = embed.field(
-                format!("{}👤 {}", turn_indicator, player.user.name),
-                hands_display,
-                true,
-            );
+            embed = embed.field(format!("{}👤 {}", turn_indicator, player.user.name), hands_display, true);
         }
 
         if self.phase == GamePhase::Insurance {

@@ -64,6 +64,16 @@ pub enum Item {
     SlimeResearchData = 9,
     TamingLure = 10,
     HealthPotion = 11,
+    WolfResearchData = 12,
+    BoarResearchData = 13,
+    ForestContractParchment = 14,
+    FrontierContractParchment = 15,
+    ScholarResearchNotes = 16,
+    GreaterHealthPotion = 17,
+    StaminaDraft = 18,
+    FocusTonic = 19,
+    BearResearchData = 20,
+    SpiderResearchData = 21,
 }
 
 impl Item {
@@ -175,7 +185,7 @@ impl Item {
             },
             Item::TamingLure => ItemProperties {
                 display_name: "Taming Lure",
-                description: "A lure used to attract and pacify wild creatures.",
+                description: "A lure used to attract and pacify wild or proud units for bonding.",
                 emoji: "🐾",
                 category: ItemCategory::Consumable,
                 rarity: Rarity::Uncommon,
@@ -194,6 +204,116 @@ impl Item {
                 is_tradeable: true,
                 buy_price: None,
                 sell_price: Some(50),
+            },
+            Item::WolfResearchData => ItemProperties {
+                display_name: "Wolf Research Data",
+                description: "Observations on wolf behavior, useful for taming.",
+                emoji: "📓",
+                category: ItemCategory::Special,
+                rarity: Rarity::Uncommon,
+                is_sellable: false,
+                is_tradeable: false,
+                buy_price: None,
+                sell_price: None,
+            },
+            Item::BoarResearchData => ItemProperties {
+                display_name: "Boar Research Data",
+                description: "Notes on boar aggression and patterns.",
+                emoji: "📕",
+                category: ItemCategory::Special,
+                rarity: Rarity::Uncommon,
+                is_sellable: false,
+                is_tradeable: false,
+                buy_price: None,
+                sell_price: None,
+            },
+            Item::ForestContractParchment => ItemProperties {
+                display_name: "Forest Contract Parchment",
+                description: "A blank contract ready to draft a local human recruit.",
+                emoji: "📜",
+                category: ItemCategory::Special,
+                rarity: Rarity::Rare,
+                is_sellable: true,
+                is_tradeable: true,
+                buy_price: None,
+                sell_price: Some(300),
+            },
+            Item::FrontierContractParchment => ItemProperties {
+                display_name: "Frontier Contract Parchment",
+                description: "Higher grade contract for seasoned humans.",
+                emoji: "📜",
+                category: ItemCategory::Special,
+                rarity: Rarity::Rare,
+                is_sellable: true,
+                is_tradeable: true,
+                buy_price: None,
+                sell_price: Some(500),
+            },
+            Item::ScholarResearchNotes => ItemProperties {
+                display_name: "Scholar Research Notes",
+                description: "Dense annotations that accelerate future discoveries.",
+                emoji: "📘",
+                category: ItemCategory::Special,
+                rarity: Rarity::Rare,
+                is_sellable: false,
+                is_tradeable: false,
+                buy_price: None,
+                sell_price: None,
+            },
+            Item::GreaterHealthPotion => ItemProperties {
+                display_name: "Greater Health Potion",
+                description: "Restores a large amount of health.",
+                emoji: "🧪",
+                category: ItemCategory::Consumable,
+                rarity: Rarity::Rare,
+                is_sellable: true,
+                is_tradeable: true,
+                buy_price: None,
+                sell_price: Some(150),
+            },
+            Item::StaminaDraft => ItemProperties {
+                display_name: "Stamina Draft",
+                description: "Restores action stamina in the saga.",
+                emoji: "🥤",
+                category: ItemCategory::Consumable,
+                rarity: Rarity::Rare,
+                is_sellable: true,
+                is_tradeable: true,
+                buy_price: None,
+                sell_price: Some(120),
+            },
+            Item::FocusTonic => ItemProperties {
+                display_name: "Focus Tonic",
+                description: "Slightly increases research drop rate for a short time.",
+                emoji: "🧴",
+                category: ItemCategory::Consumable,
+                rarity: Rarity::Rare,
+                is_sellable: true,
+                is_tradeable: true,
+                buy_price: None,
+                sell_price: Some(140),
+            },
+            Item::BearResearchData => ItemProperties {
+                display_name: "Bear Research Data",
+                description: "Heavy scrawlings on bear movement and power.",
+                emoji: "📙",
+                category: ItemCategory::Special,
+                rarity: Rarity::Rare,
+                is_sellable: false,
+                is_tradeable: false,
+                buy_price: None,
+                sell_price: None,
+            },
+            Item::SpiderResearchData => ItemProperties {
+                display_name: "Spider Research Data",
+                description: "Sketched web patterns and venom potency notes.",
+                emoji: "🕷️",
+                category: ItemCategory::Special,
+                rarity: Rarity::Rare,
+                is_sellable: false,
+                is_tradeable: false,
+                buy_price: None,
+                sell_price: None,
             },
         }
     }
@@ -221,6 +341,16 @@ impl Item {
             9 => Some(Item::SlimeResearchData),
             10 => Some(Item::TamingLure),
             11 => Some(Item::HealthPotion),
+            12 => Some(Item::WolfResearchData),
+            13 => Some(Item::BoarResearchData),
+            14 => Some(Item::ForestContractParchment),
+            15 => Some(Item::FrontierContractParchment),
+            16 => Some(Item::ScholarResearchNotes),
+            17 => Some(Item::GreaterHealthPotion),
+            18 => Some(Item::StaminaDraft),
+            19 => Some(Item::FocusTonic),
+            20 => Some(Item::BearResearchData),
+            21 => Some(Item::SpiderResearchData),
             _ => None,
         }
     }
@@ -233,6 +363,24 @@ impl Item {
     }
     pub fn sell_price(&self) -> Option<i64> {
         self.properties().sell_price
+    }
+
+    /// Maps a unit (pet/creature) name to its corresponding Research Data item, if any.
+    /// Includes aliasing for evolved or alpha forms sharing the same research.
+    pub fn research_item_for_unit(unit_name: &str) -> Option<Item> {
+        match unit_name {
+            // Slime family
+            "Slime" => Some(Item::SlimeResearchData),
+            // Wolves (Alpha Wolf shares Wolf research data)
+            "Wolf" | "Alpha Wolf" => Some(Item::WolfResearchData),
+            // Boars
+            "Boar" => Some(Item::BoarResearchData),
+            // Bear
+            "Bear" => Some(Item::BearResearchData),
+            // Giant Spider maps to generic Spider research
+            "Giant Spider" => Some(Item::SpiderResearchData),
+            _ => None,
+        }
     }
 }
 
@@ -249,8 +397,18 @@ impl FromStr for Item {
             "xpbooster" | "booster" => Ok(Item::XpBooster),
             "slimegel" | "gel" => Ok(Item::SlimeGel),
             "slimedata" | "data" => Ok(Item::SlimeResearchData),
-            "taminglure" | "lure" => Ok(Item::TamingLure),
+            "taminglure" | "lure" | "contract" => Ok(Item::TamingLure),
             "healthpotion" | "potion" => Ok(Item::HealthPotion),
+            "wolfresearchdata" | "wolfdata" => Ok(Item::WolfResearchData),
+            "boarresearchdata" | "boardata" => Ok(Item::BoarResearchData),
+            "forestcontract" | "forestparchment" => Ok(Item::ForestContractParchment),
+            "frontiercontract" | "frontierparchment" => Ok(Item::FrontierContractParchment),
+            "scholarnotes" | "researchnotes" => Ok(Item::ScholarResearchNotes),
+            "greaterpotion" | "greaterhealthpotion" => Ok(Item::GreaterHealthPotion),
+            "staminadraft" | "draft" => Ok(Item::StaminaDraft),
+            "focustonic" | "tonic" => Ok(Item::FocusTonic),
+            "beardata" | "bearresearchdata" => Ok(Item::BearResearchData),
+            "spiderdata" | "spiderresearchdata" => Ok(Item::SpiderResearchData),
             _ => Err(()),
         }
     }
@@ -273,6 +431,16 @@ impl fmt::Display for Item {
                 Item::SlimeResearchData => "slimedata",
                 Item::TamingLure => "taminglure",
                 Item::HealthPotion => "healthpotion",
+                Item::WolfResearchData => "wolfdata",
+                Item::BoarResearchData => "boardata",
+                Item::ForestContractParchment => "forestcontract",
+                Item::FrontierContractParchment => "frontiercontract",
+                Item::ScholarResearchNotes => "scholarnotes",
+                Item::GreaterHealthPotion => "greaterhealthpotion",
+                Item::StaminaDraft => "staminadraft",
+                Item::FocusTonic => "focustonic",
+                Item::BearResearchData => "beardata",
+                Item::SpiderResearchData => "spiderdata",
             }
         )
     }

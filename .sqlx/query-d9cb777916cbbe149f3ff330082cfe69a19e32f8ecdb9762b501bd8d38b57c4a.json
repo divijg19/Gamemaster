@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT quest_reward_id, quest_id, reward_coins, reward_item_id, reward_item_quantity FROM quest_rewards WHERE quest_id = (SELECT quest_id FROM player_quests WHERE player_quest_id = $1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "quest_reward_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "quest_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "reward_coins",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "reward_item_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "reward_item_quantity",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "d9cb777916cbbe149f3ff330082cfe69a19e32f8ecdb9762b501bd8d38b57c4a"
+}

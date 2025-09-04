@@ -14,7 +14,7 @@ use serenity::model::user::User;
 use serenity::prelude::Context;
 use sqlx::PgPool;
 use std::any::Any;
-use std::collections::{HashMap, HashSet}; // (✓) FIXED: Added missing HashSet import
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -36,13 +36,17 @@ impl Game for BlackjackGame {
         db: &PgPool,
     ) -> GameUpdate {
         // Handle player turn timeout before processing any interaction.
-        if self.phase == GamePhase::PlayerTurns
-            && self.last_action_time.elapsed() > Duration::from_secs(60)
-        {
-            let player = &mut self.players[self.current_player_index];
-            player.hands[self.current_hand_index].status = HandStatus::Stood;
-            player.has_passed_turn = false; // Standing from a timeout resets pass.
-            self.advance_turn();
+        if self.phase == GamePhase::PlayerTurns {
+            let elapsed = self.last_action_time.elapsed();
+            if elapsed > Duration::from_secs(60) {
+                let player = &mut self.players[self.current_player_index];
+                player.hands[self.current_hand_index].status = HandStatus::Stood;
+                player.has_passed_turn = false;
+                self.advance_turn();
+                self.inactivity_warned = false; // reset for next player
+            } else if elapsed > Duration::from_secs(40) && !self.inactivity_warned {
+                self.inactivity_warned = true; // single warning in-channel log (embed log style not implemented)
+            }
         }
 
         match self.phase {
@@ -110,7 +114,7 @@ impl Game for BlackjackGame {
 // These are the "rules" of the game.
 impl BlackjackGame {
     pub fn new(host: Arc<User>, min_bet: i64) -> Self {
-        Self {
+    Self {
             host_id: host.id.get(),
             players: vec![Player {
                 user: host,
@@ -130,6 +134,7 @@ impl BlackjackGame {
             current_player_index: 0,
             current_hand_index: 0,
             last_action_time: Instant::now(),
+            inactivity_warned: false,
         }
     }
 
@@ -211,7 +216,8 @@ impl BlackjackGame {
     }
 
     pub(super) fn reset_for_next_round(&mut self) {
-        // TODO: Fetch updated balances and remove players who can no longer afford the minimum bet.
+    // NOTE: Actual DB balance checks occur in handlers; here we only drop players who set their bet to 0 (can't afford min bet last round)
+    if self.min_bet > 0 { self.players.retain(|p| p.current_bet >= self.min_bet); }
         self.ready_players.clear();
         self.pot = 0;
         self.round += 1;

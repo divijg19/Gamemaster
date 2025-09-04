@@ -108,4 +108,5 @@ pub struct BlackjackGame {
     pub current_player_index: usize,
     pub current_hand_index: usize,
     pub last_action_time: Instant,
+    pub inactivity_warned: bool,
 }

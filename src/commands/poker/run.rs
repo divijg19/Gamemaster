@@ -2,6 +2,7 @@
 
 use super::state::PokerGame;
 use crate::AppState;
+use tracing::{instrument, warn};
 use crate::commands::games::engine::{Game, GameManager};
 use serenity::builder::{
     CreateCommand, CreateCommandOption, CreateInteractionResponse,
@@ -28,14 +29,10 @@ pub fn register() -> CreateCommand {
         )
 }
 
+#[instrument(level = "info", skip(ctx, interaction), fields(user_id = interaction.user.id.get()))]
 pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
-    let game_manager_lock = {
-        let data = ctx.data.read().await;
-        data.get::<AppState>()
-            .expect("Expected AppState in TypeMap.")
-            .game_manager
-            .clone()
-    };
+    let Some(app_state) = AppState::from_ctx(ctx).await else { warn!(command = "poker_slash", "missing_app_state"); return };
+    let game_manager_lock = app_state.game_manager.clone();
 
     let response = CreateInteractionResponse::Defer(CreateInteractionResponseMessage::new());
     if interaction
@@ -76,14 +73,10 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
     }
 }
 
+#[instrument(level = "info", skip(ctx, msg, args), fields(user_id = msg.author.id.get()))]
 pub async fn run_prefix(ctx: &Context, msg: &Message, args: Vec<&str>) {
-    let game_manager_lock = {
-        let data = ctx.data.read().await;
-        data.get::<AppState>()
-            .expect("Expected AppState in TypeMap.")
-            .game_manager
-            .clone()
-    };
+    let Some(app_state) = AppState::from_ctx(ctx).await else { warn!(command = "poker_prefix", "missing_app_state"); return };
+    let game_manager_lock = app_state.game_manager.clone();
 
     let ante = match args.first().and_then(|arg| arg.parse::<i64>().ok()) {
         Some(bet) if bet > 0 => bet,

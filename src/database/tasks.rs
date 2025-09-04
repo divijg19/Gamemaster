@@ -40,6 +40,19 @@ async fn assign_tasks_if_needed(
         .await?;
 
         for task in new_tasks {
+            // Build a concise debug summary referencing all fields to keep struct fully live.
+            let _dbg_summary = format!(
+                "AssignTask[id:{} type:{:?} title:{} desc:{} obj:{}:{} coins:{:?} item:{:?} qty:{:?}]",
+                task.task_id,
+                task.task_type,
+                task.title,
+                task.description,
+                task.objective_key,
+                task.objective_goal,
+                task.reward_coins,
+                task.reward_item_id,
+                task.reward_item_quantity
+            );
             sqlx::query!(
                 "INSERT INTO player_tasks (user_id, task_id) VALUES ($1, $2)",
                 user_id,

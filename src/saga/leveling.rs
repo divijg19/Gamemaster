@@ -1,6 +1,6 @@
 //! Contains the business logic for unit (formerly pet) progression and leveling.
 
-use crate::database::models::PlayerPet as PlayerUnit;
+use crate::database::models::PlayerUnit;
 
 const BASE_XP_PER_LEVEL: i32 = 100;
 
@@ -46,8 +46,4 @@ pub fn handle_unit_leveling(unit: &PlayerUnit, xp_gained: i32) -> LevelUpResult 
     }
 }
 
-// Backward compatibility wrappers (to be removed after full migration) --------------------------
-#[allow(dead_code)]
-pub fn xp_for_pet_level(level: i32) -> i32 { xp_for_unit_level(level) }
-#[allow(dead_code)]
-pub fn handle_pet_leveling(pet: &PlayerUnit, xp_gained: i32) -> LevelUpResult { handle_unit_leveling(pet, xp_gained) }
+// Wrappers removed post-migration.

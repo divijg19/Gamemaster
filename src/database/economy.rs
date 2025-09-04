@@ -2,6 +2,7 @@
 //! This includes profiles, balances, inventories, and work stats.
 
 use super::models::{InventoryItem, Profile, ProgressionUpdate, WorkRewards};
+use sqlx::PgPool;
 use crate::commands::economy::core::item::Item;
 use serenity::model::id::UserId;
 use sqlx::types::chrono::Utc;
@@ -44,6 +45,17 @@ pub async fn get_inventory_item(
     let user_id_i64 = user_id.get() as i64;
     let item_id_i32 = item as i32;
     sqlx::query_as!(InventoryItem, "SELECT i.name, inv.quantity FROM inventories inv JOIN items i ON inv.item_id = i.item_id WHERE inv.user_id = $1 AND inv.item_id = $2 FOR UPDATE", user_id_i64, item_id_i32).fetch_optional(&mut **tx).await
+}
+
+/// Read-only fetch of a single inventory item (no row locking) used for UI displays.
+pub async fn get_inventory_item_simple(
+    pool: &PgPool,
+    user_id: UserId,
+    item: Item,
+) -> Result<Option<InventoryItem>, sqlx::Error> {
+    let user_id_i64 = user_id.get() as i64;
+    let item_id_i32 = item as i32;
+    sqlx::query_as!(InventoryItem, "SELECT i.name, inv.quantity FROM inventories inv JOIN items i ON inv.item_id = i.item_id WHERE inv.user_id = $1 AND inv.item_id = $2", user_id_i64, item_id_i32).fetch_optional(pool).await
 }
 
 /// Adds or removes from a user's balance within a transaction.

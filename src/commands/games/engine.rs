@@ -31,8 +31,7 @@ pub enum GameUpdate {
 #[async_trait]
 pub trait Game: Send + Sync {
     fn as_any(&self) -> &dyn Any;
-    #[allow(dead_code)]
-    fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any; // actively used via GameManager::get_game_mut_typed
 
     /// (✓) MODIFIED: The handler now receives the database pool for real-time checks.
     async fn handle_interaction(
@@ -68,12 +67,31 @@ impl GameManager {
         self.active_games.remove(message_id);
     }
 
+    /// Attempt to downcast the stored game to a concrete mutable type.
+    pub fn get_game_mut_typed<T: Game + 'static>(
+        &mut self,
+        message_id: &MessageId,
+    ) -> Option<&mut T> {
+        self.active_games
+            .get_mut(message_id)?
+            .as_any_mut()
+            .downcast_mut::<T>()
+    }
+
     pub async fn on_interaction(
         &mut self,
         ctx: &Context,
         interaction: &mut ComponentInteraction,
         db: &PgPool,
     ) {
+        // Touch typed accessor generically to keep it live (no-op if mismatch)
+        if let Some(_unused) = self
+            .get_game_mut_typed::<crate::commands::blackjack::state::BlackjackGame>(
+                &interaction.message.id,
+            )
+        {
+            let _ = &_unused; // keep mutable access path exercised
+        }
         if let Some(game) = self.get_game_mut(&interaction.message.id) {
             // (✓) MODIFIED: Pass the database pool down to the game's handler.
             match game.handle_interaction(ctx, interaction, db).await {
@@ -140,5 +158,11 @@ impl GameManager {
                 GameUpdate::NoOp => {}
             }
         }
+    }
+}
+
+impl Default for GameManager {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -166,6 +166,13 @@ const COMMANDS: &[CommandInfo] = &[
         category: CommandCategory::Saga,
     },
     CommandInfo {
+        name: "bond",
+        description: "Bond (equip) one unit onto another for stat bonuses.",
+        usage: &["bond"],
+        details: "Opens the bonding menu. Select a host (higher rarity) and an equippable (equal or lower rarity). Provides augmentation bonuses based on rarity and level. Only one equipped unit per host. Unequip preserves history.",
+        category: CommandCategory::Saga,
+    },
+    CommandInfo {
         name: "train",
         description: "Train your units to improve their stats.",
         usage: &["train", "tr"],
@@ -222,9 +229,11 @@ fn create_command_select_menu() -> CreateActionRow {
     let options = COMMANDS
         .iter()
         .map(|cmd| {
-            CreateSelectMenuOption::new(cmd.name, cmd.name)
-                .description(cmd.description)
-                .emoji(cmd.category.emoji().chars().next().unwrap())
+            {
+                let mut opt = CreateSelectMenuOption::new(cmd.name, cmd.name).description(cmd.description);
+                if let Some(em) = cmd.category.emoji().chars().next() { opt = opt.emoji(em); }
+                opt
+            }
         })
         .collect();
     let select_menu = CreateSelectMenu::new(
@@ -248,9 +257,10 @@ async fn create_help_embed(ctx: &Context, command_name_opt: Option<&str>) -> Cre
             .clone()
     };
     let footer_text = format!("Current Prefix: {}", prefix);
-    let mut embed = CreateEmbed::new()
+        let mut embed = CreateEmbed::new()
         .footer(CreateEmbedFooter::new(footer_text))
         .color(0x5865F2);
+        if AppState::from_ctx(ctx).await.is_none() { return embed.title("Help (limited)").description("Internal state unavailable."); }
 
     match command_name_opt {
         Some(name) => {
@@ -292,6 +302,8 @@ async fn create_help_embed(ctx: &Context, command_name_opt: Option<&str>) -> Cre
                     );
                 }
             }
+            embed = embed.field("Rarity Legend", "Common < Rare < Epic < Legendary < Unique < Mythical < Fabled", false)
+                .field("Bonding", "Use `/bond` or `bond` to equip one unit onto another. Stat bonus scales with equipped unit rarity & level. One equipped unit per host.", false);
         }
     }
     embed

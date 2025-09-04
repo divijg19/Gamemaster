@@ -1,0 +1,55 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.host_player_unit_id, pu.player_unit_id, COALESCE(pu.nickname, u.name) as equipped_name, pu.rarity as \"rarity: UnitRarity\" FROM equippable_unit_bonds b JOIN player_units pu ON pu.player_unit_id = b.equipped_player_unit_id JOIN units u ON u.unit_id = pu.unit_id WHERE pu.user_id = $1 AND b.is_equipped = TRUE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "host_player_unit_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "player_unit_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "equipped_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "rarity: UnitRarity",
+        "type_info": {
+          "Custom": {
+            "name": "unit_rarity",
+            "kind": {
+              "Enum": [
+                "Common",
+                "Rare",
+                "Epic",
+                "Legendary",
+                "Unique",
+                "Mythical",
+                "Fabled"
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      false
+    ]
+  },
+  "hash": "19ba8077253475372d7529382ad446c8b73c8a3c5cc9969e80ca2c56a9ccda11"
+}

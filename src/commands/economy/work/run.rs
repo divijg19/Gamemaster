@@ -24,7 +24,8 @@ pub fn register() -> CreateCommand {
 pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
     interaction.defer_ephemeral(&ctx.http).await.ok();
 
-    let pool = { ctx.data.read().await.get::<AppState>().unwrap().db.clone() };
+    let Some(app_state) = AppState::from_ctx(ctx).await else { return };
+    let pool = app_state.db.clone();
     let job_name = interaction
         .data
         .options
@@ -39,7 +40,8 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
 }
 
 pub async fn run_prefix(ctx: &Context, msg: &Message, args: Vec<&str>) {
-    let pool = { ctx.data.read().await.get::<AppState>().unwrap().db.clone() };
+    let Some(app_state) = AppState::from_ctx(ctx).await else { return };
+    let pool = app_state.db.clone();
     let job_name = args.first().cloned().unwrap_or("fishing");
 
     let embed = perform_work(&pool, &msg.author, job_name).await;

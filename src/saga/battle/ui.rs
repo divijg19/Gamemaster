@@ -32,26 +32,48 @@ pub fn render_battle(
                 .iter()
                 .filter(|e| e.current_hp > 0)
                 .collect();
-            let is_last_enemy = living_enemies.len() == 1;
-            let is_recruitable = is_last_enemy && living_enemies[0].is_recruitable;
-            let can_recruit = is_recruitable && can_afford_recruit;
+            let (show_tame, show_contract, tame_enabled, contract_enabled) =
+                if living_enemies.len() == 1 {
+                    let target = living_enemies[0];
+                    let tame = target.is_recruitable && !target.is_human;
+                    let contract = target.is_human; // contract drafting path
+                    let tame_enabled = tame && can_afford_recruit;
+                    let contract_enabled = contract; // contract doesn't require lure cost
+                    (tame, contract, tame_enabled, contract_enabled)
+                } else {
+                    (false, false, false, false)
+                };
 
-            vec![CreateActionRow::Buttons(vec![
+            let mut buttons = vec![
                 CreateButton::new("battle_attack")
                     .label("Attack")
                     .style(ButtonStyle::Primary),
-                // (✓) NEW: The Item button is now live.
                 CreateButton::new("battle_item")
                     .label("Item")
                     .style(ButtonStyle::Secondary),
-                CreateButton::new("battle_recruit")
-                    .label("Recruit")
-                    .style(ButtonStyle::Success)
-                    .disabled(!can_recruit),
+            ];
+            if show_tame {
+                buttons.push(
+                    CreateButton::new("battle_recruit")
+                        .label("Tame")
+                        .style(ButtonStyle::Success)
+                        .disabled(!tame_enabled),
+                );
+            }
+            if show_contract {
+                buttons.push(
+                    CreateButton::new("battle_contract")
+                        .label("Contract")
+                        .style(ButtonStyle::Success)
+                        .disabled(!contract_enabled),
+                );
+            }
+            buttons.push(
                 CreateButton::new("battle_flee")
                     .label("Flee")
                     .style(ButtonStyle::Danger),
-            ])]
+            );
+            vec![CreateActionRow::Buttons(buttons)]
         }
         // (✓) MODIFIED: In these phases, show the buttons but disable them so the user knows what's available.
         BattlePhase::EnemyTurn | BattlePhase::PlayerSelectingItem => {
@@ -64,8 +86,8 @@ pub fn render_battle(
                     .label("Item")
                     .style(ButtonStyle::Secondary)
                     .disabled(true),
-                CreateButton::new("disabled_recruit")
-                    .label("Recruit")
+                CreateButton::new("disabled_placeholder")
+                    .label("...")
                     .style(ButtonStyle::Success)
                     .disabled(true),
                 CreateButton::new("disabled_flee")

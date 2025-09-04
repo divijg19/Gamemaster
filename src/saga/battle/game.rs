@@ -1,10 +1,10 @@
 //! Implements the `Game` trait for a battle session.
 
-use crate::commands::economy::core::item::Item;
 use crate::commands::games::engine::{Game, GameUpdate};
 use crate::database;
+use crate::database::battle;
+use crate::database::models::UnitKind;
 use crate::saga::battle::{logic, state::*, ui};
-use rand::Rng;
 use serenity::async_trait;
 use serenity::builder::{CreateActionRow, CreateEmbed};
 use serenity::model::application::ComponentInteraction;
@@ -15,12 +15,15 @@ use tokio::time::Duration;
 
 pub struct BattleGame {
     pub session: BattleSession,
-    pub party_members: Vec<database::models::PlayerPet>, // TODO: rename to PlayerUnit after DB migration
+    pub party_members: Vec<database::models::PlayerUnit>,
     pub node_id: i32,
     pub node_name: String,
     pub can_afford_recruit: bool,
     // (✓) NEW: Add a field to track if this battle is for a quest.
     pub player_quest_id: Option<i32>,
+    // Cached equipment bonuses applied (host_player_unit_id -> (atk,def,hp)) to prevent recompute each interaction
+    pub applied_equipment: bool,
+    pub claimed: bool,
 }
 
 #[async_trait]
@@ -38,16 +41,41 @@ impl Game for BattleGame {
             BattlePhase::Defeat => "☠️ **DEFEAT** ☠️".to_string(),
             _ => "".to_string(),
         };
-    let (embed, components) = ui::render_battle(&self.session, self.can_afford_recruit);
+        let (embed, components) = ui::render_battle(&self.session, self.can_afford_recruit);
         (content, embed, components)
     }
 
     async fn handle_interaction(
         &mut self,
-        _ctx: &Context,
+        ctx: &Context,
         interaction: &mut ComponentInteraction,
         db: &PgPool,
     ) -> GameUpdate {
+        // One-time application of equipment bonuses (snapshot at first interaction) if not already applied.
+        if !self.applied_equipment {
+            if let Some(_app_state) = crate::AppState::from_ctx(ctx).await {
+                // context fetched (reserved for future use)
+                let bonuses = database::units::get_equipment_bonuses(db, interaction.user.id)
+                    .await
+                    .unwrap_or_default();
+                for unit in &mut self.session.player_party {
+                    if let Some(b) = bonuses.get(&unit.unit_id) {
+                        unit.attack += b.0;
+                        unit.defense += b.1;
+                        unit.max_hp += b.2;
+                        unit.current_hp += b.2; // heal with bonus
+                        unit.bonus_attack = b.0;
+                        unit.bonus_defense = b.1;
+                        unit.bonus_health = b.2;
+                        self.session.log.push(format!(
+                            "Equipment power surges around {} (+{} Atk / +{} Def / +{} HP).",
+                            unit.name, b.0, b.1, b.2
+                        ));
+                    }
+                }
+            }
+            self.applied_equipment = true;
+        }
         match interaction.data.custom_id.as_str() {
             "battle_attack" => {
                 if logic::process_player_turn(&mut self.session) == BattleOutcome::PlayerVictory {
@@ -72,38 +100,110 @@ impl Game for BattleGame {
 
                 GameUpdate::ReRender
             }
-            "battle_recruit" => {
-                // Recruiting is disabled for quest battles for simplicity.
+            "battle_contract" => {
                 if self.player_quest_id.is_some() {
                     self.session
                         .log
-                        .push("⚠️ You cannot recruit quest enemies.".to_string());
+                        .push("⚠️ Contracts disabled in quest battles.".to_string());
                     return GameUpdate::ReRender;
                 }
-
-                if let Some(living_enemy) =
-                    self.session.enemy_party.iter().find(|e| e.current_hp > 0)
-                {
-                    let unit_id_to_recruit = living_enemy.unit_id;
-                    match database::pets::attempt_tame_pet(db, interaction.user.id, unit_id_to_recruit)
-                        .await
-                    {
-                        Ok(pet_name) => GameUpdate::GameOver {
-                            message: format!(
-                                "� **Success!** You secured a contract and successfully recruited **{}**!",
-                                pet_name
-                            ),
-                            payouts: vec![],
-                        },
-                        Err(e) => {
-                            self.session.log.push(format!("⚠️ Recruit failed: {}", e));
+                if let Some(target) = self.session.enemy_party.iter().find(|e| e.current_hp > 0) {
+                    match database::units::get_units_by_ids(db, &[target.unit_id]).await {
+                        Ok(units)
+                            if !units.is_empty() && matches!(units[0].kind, UnitKind::Human) =>
+                        {
+                            match database::human::draft_contract(
+                                db,
+                                interaction.user.id,
+                                units[0].unit_id,
+                            )
+                            .await
+                            {
+                                Ok(_) => {
+                                    self.session.log.push(format!(
+                                        "📝 Drafted a contract for {}! Use /contracts to review.",
+                                        units[0].name
+                                    ));
+                                }
+                                Err(e) => {
+                                    self.session
+                                        .log
+                                        .push(format!("⚠️ Could not draft contract: {}", e));
+                                }
+                            }
+                        }
+                        _ => {
+                            self.session
+                                .log
+                                .push("⚠️ No human target available.".to_string());
+                        }
+                    }
+                } else {
+                    self.session.log.push("⚠️ No target.".to_string());
+                }
+                GameUpdate::ReRender
+            }
+            "battle_recruit" => {
+                if self.player_quest_id.is_some() {
+                    self.session
+                        .log
+                        .push("⚠️ You cannot recruit or tame during a quest battle.".to_string());
+                    return GameUpdate::ReRender;
+                }
+                if let Some(target) = self.session.enemy_party.iter().find(|e| e.current_hp > 0) {
+                    // Distinguish human vs pet by master data lookup (kind)
+                    match database::units::get_units_by_ids(db, &[target.unit_id]).await {
+                        Ok(units) if !units.is_empty() => {
+                            let meta = &units[0];
+                            if matches!(meta.kind, UnitKind::Human) {
+                                // For humans: attempt contract draft if ready (auto path) else inform progress
+                                match database::human::draft_contract(
+                                    db,
+                                    interaction.user.id,
+                                    meta.unit_id,
+                                )
+                                .await
+                                {
+                                    Ok(_) => {
+                                        self.session.log.push(format!("📝 Drafted a contract for {} (use /contracts accept {}).", meta.name, meta.unit_id));
+                                        GameUpdate::ReRender
+                                    }
+                                    Err(e) => {
+                                        self.session
+                                            .log
+                                            .push(format!("⚠️ Contract draft failed: {}", e));
+                                        GameUpdate::ReRender
+                                    }
+                                }
+                            } else {
+                                // Pet / creature taming path
+                                match database::units::attempt_recruit_unit(
+                                    db,
+                                    interaction.user.id,
+                                    meta.unit_id,
+                                )
+                                .await
+                                {
+                                    Ok(name) => GameUpdate::GameOver {
+                                        message: format!("🟢 **Tamed {}!**", name),
+                                        payouts: vec![],
+                                    },
+                                    Err(e) => {
+                                        self.session.log.push(format!("⚠️ Tame failed: {}", e));
+                                        GameUpdate::ReRender
+                                    }
+                                }
+                            }
+                        }
+                        _ => {
+                            self.session
+                                .log
+                                .push("⚠️ Could not resolve target metadata.".to_string());
                             GameUpdate::ReRender
                         }
                     }
                 } else {
-                    self.session
-                        .log
-                        .push("⚠️ Recruit failed: No target found.".to_string());
+                    self.session.log.push("⚠️ No valid target.".to_string());
                     GameUpdate::ReRender
                 }
             }
@@ -117,6 +217,10 @@ impl Game for BattleGame {
                 payouts: vec![],
             },
             "battle_claim_rewards" => {
+                if self.claimed {
+                    return GameUpdate::ReRender;
+                }
+                self.claimed = true;
                 // (✓) MODIFIED: Branch logic for Quest vs. Node battles.
                 if let Some(player_quest_id) = self.player_quest_id {
                     // --- This is a QUEST BATTLE victory ---
@@ -143,116 +247,36 @@ impl Game for BattleGame {
                     }
                 } else {
                     // --- This is a NORMAL NODE BATTLE victory ---
-                    let node_data = match database::world::get_map_nodes_by_ids(db, &[self.node_id])
-                        .await
-                    {
-                        Ok(mut nodes) if !nodes.is_empty() => nodes.remove(0),
-                        _ => {
-                            return GameUpdate::GameOver {
-                                message: "Error: Could not retrieve node reward data.".to_string(),
-                                payouts: vec![],
-                            };
-                        }
-                    };
-
-                    let potential_rewards =
-                        match database::world::get_rewards_for_node(db, self.node_id).await {
-                            Ok(rewards) => rewards,
-                            Err(_) => {
-                                return GameUpdate::GameOver {
-                                    message: "Error: Could not retrieve loot data.".to_string(),
-                                    payouts: vec![],
-                                };
-                            }
-                        };
-
-                    let actual_loot = {
-                        let mut loot = Vec::new();
-                        let mut rng = rand::rng();
-                        for reward in potential_rewards {
-                            if rng.random_bool(reward.drop_chance as f64)
-                                && let Some(item_enum) = Item::from_i32(reward.item_id)
-                            {
-                                loot.push((item_enum, reward.quantity as i64));
-                            }
-                        }
-                        loot
-                    };
-
-                    let results = match database::pets::apply_battle_rewards(
+                    match battle::resolve_node_victory(
                         db,
                         interaction.user.id,
-                        node_data.reward_coins,
-                        &actual_loot,
+                        self.node_id,
+                        &self.node_name,
                         &self.party_members,
-                        node_data.reward_pet_xp,
+                        self.session.vitality_mitigated,
+                        &self
+                            .session
+                            .enemy_party
+                            .iter()
+                            .map(|e| e.unit_id)
+                            .collect::<Vec<_>>(),
                     )
                     .await
                     {
-                        Ok(res) => res,
-                        Err(_) => {
-                            return GameUpdate::GameOver {
-                                message: "Error: Failed to apply rewards to your profile."
-                                    .to_string(),
+                        Ok(r) => {
+                            // Invalidate caches that may change due to human defeats or research drops
+                            if let Some(state) = crate::AppState::from_ctx(ctx).await {
+                                state.invalidate_user_caches(interaction.user.id).await;
+                            }
+                            GameUpdate::GameOver {
+                                message: r.victory_log.join("\n"),
                                 payouts: vec![],
-                            };
+                            }
                         }
-                    };
-
-                    database::saga::advance_story_progress(db, interaction.user.id, self.node_id)
-                        .await
-                        .ok();
-
-                    // Update battle-related tasks after a node victory.
-                    database::tasks::update_task_progress(
-                        db,
-                        interaction.user.id,
-                        &format!("WinBattle:{}", self.node_id),
-                        1,
-                    )
-                    .await
-                    .ok();
-                    database::tasks::update_task_progress(db, interaction.user.id, "WinBattle", 1)
-                        .await
-                        .ok();
-
-                    let mut victory_log = vec![
-                        format!("🎉 **Victory at the {}!**", self.node_name),
-                        format!("💰 You earned **{}** coins.", node_data.reward_coins),
-                    ];
-                    if !actual_loot.is_empty() {
-                        let loot_str = actual_loot
-                            .iter()
-                            .map(|(item, qty)| format!("`{}` {}", qty, item.display_name()))
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        victory_log.push(format!("🎁 You found: **{}**!", loot_str));
-                    }
-                    victory_log.push("\n--- **Party Members Gained XP** ---".to_string());
-                    for (i, result) in results.iter().enumerate() {
-                        let pet_name = self.party_members[i]
-                            .nickname
-                            .as_deref()
-                            .unwrap_or(&self.party_members[i].name);
-                        if result.did_level_up {
-                            victory_log.push(format!(
-                                "🌟 **{} leveled up to {}!** (+{} ATK, +{} DEF, +{} HP)",
-                                pet_name,
-                                result.new_level,
-                                result.stat_gains.0,
-                                result.stat_gains.1,
-                                result.stat_gains.2
-                            ));
-                        } else {
-                            victory_log.push(format!(
-                                "- **{}** gained `{}` XP.",
-                                pet_name, node_data.reward_pet_xp
-                            ));
-                        }
-                    }
-                    GameUpdate::GameOver {
-                        message: victory_log.join("\n"),
-                        payouts: vec![],
+                        Err(e) => GameUpdate::GameOver {
+                            message: format!("Error: {}", e),
+                            payouts: vec![],
+                        },
                     }
                 }
             }
