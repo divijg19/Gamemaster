@@ -1,0 +1,73 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT user_id, unit_id, cost, offered_at, expires_at, accepted_at, rarity_snapshot as \"rarity_snapshot: UnitRarity\" FROM human_contract_offers WHERE user_id=$1 AND accepted_at IS NULL ORDER BY offered_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "unit_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "cost",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "offered_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "accepted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "rarity_snapshot: UnitRarity",
+        "type_info": {
+          "Custom": {
+            "name": "unit_rarity",
+            "kind": {
+              "Enum": [
+                "Common",
+                "Rare",
+                "Epic",
+                "Legendary",
+                "Unique",
+                "Mythical",
+                "Fabled"
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "6b49bb156dab85ab9ead776a003917110bf6cd7d37fbf90147b63e6cee639fb1"
+}
