@@ -1,7 +1,7 @@
 //! This module implements the `ping` command in both prefix and slash command formats.
 //! It is used to check the bot's heartbeat latency to the Discord gateway.
 
-use crate::ShardManagerContainer;
+use crate::model::ShardManagerContainer;
 // (✓) FIXED: Import CreateCommand for the register function.
 use serenity::builder::{
     CreateCommand, CreateInteractionResponse, CreateInteractionResponseMessage,

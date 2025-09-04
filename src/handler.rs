@@ -29,6 +29,13 @@ enum Command {
     Blackjack,
     Poker,
     Unknown,
+    Bond,
+    Config,
+    Contracts,
+    Bestiary,
+    Research,
+    Progress,
+    AdminUtil,
 }
 
 impl FromStr for Command {
@@ -56,6 +63,13 @@ impl FromStr for Command {
             "help" | "h" => Ok(Command::Help),
             "blackjack" | "bj" => Ok(Command::Blackjack),
             "poker" | "pk" => Ok(Command::Poker),
+            "bond" => Ok(Command::Bond),
+            "config" => Ok(Command::Config),
+            "contracts" => Ok(Command::Contracts),
+            "bestiary" => Ok(Command::Bestiary),
+            "research" => Ok(Command::Research),
+            "progress" => Ok(Command::Progress),
+            "adminutil" => Ok(Command::AdminUtil),
             _ => Ok(Command::Unknown),
         }
     }
@@ -89,6 +103,7 @@ impl EventHandler for Handler {
                 "give" => commands::economy::give::run::run_slash(&ctx, command).await,
                 "open" => commands::open::run::run_slash(&ctx, command).await,
                 "saga" => commands::saga::run::run_slash(&ctx, command).await,
+                "play" => commands::saga::run::run_slash(&ctx, command).await,
                 "leaderboard" => commands::leaderboard::run::run_slash(&ctx, command).await,
                 "train" => commands::train::run::run_slash(&ctx, command).await,
                 "party" => commands::party::run::run_slash(&ctx, command).await,
@@ -99,6 +114,13 @@ impl EventHandler for Handler {
                 "help" => commands::help::run_slash(&ctx, command).await,
                 "blackjack" => commands::blackjack::run::run_slash(&ctx, command).await,
                 "poker" => commands::poker::run::run_slash(&ctx, command).await,
+                "bond" => commands::bond::run::run_slash(&ctx, command).await,
+                "config" => commands::config::run_slash(&ctx, command).await,
+                "contracts" => commands::contracts::run::run_slash(&ctx, command).await,
+                "bestiary" => commands::bestiary::run::run_slash(&ctx, command).await,
+                "research" => commands::research::run::run_slash(&ctx, command).await,
+                "progress" => commands::progress::run::run_slash(&ctx, command).await,
+                "adminutil" => commands::admin::run_slash(&ctx, command).await,
                 "rps" => {
                     commands::rps::run::run_slash(&ctx, command, app_state.game_manager.clone())
                         .await
@@ -124,6 +146,10 @@ impl EventHandler for Handler {
                 "questlog" => {
                     interactions::questlog_handler::handle(&ctx, component, app_state).await
                 }
+                "bond" => interactions::bond_handler::handle(&ctx, component, app_state).await,
+                "contracts" => interactions::contracts_handler::handle(&ctx, component, app_state).await,
+                "bestiary" => interactions::bestiary_handler::handle(&ctx, component, app_state).await,
+                "research" => interactions::research_handler::handle(&ctx, component, app_state).await,
                 _ => {}
             }
         }
@@ -183,6 +209,13 @@ impl EventHandler for Handler {
             Command::Help => commands::help::run_prefix(&ctx, &msg, args_vec).await,
             Command::Blackjack => commands::blackjack::run::run_prefix(&ctx, &msg, args_vec).await,
             Command::Poker => commands::poker::run::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Bond => commands::bond::run::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Contracts => commands::contracts::run::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Bestiary => commands::bestiary::run::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Research => commands::research::run::run_prefix(&ctx, &msg, args_vec).await,
+            Command::Progress => commands::progress::run::run_prefix(&ctx, &msg, args_vec).await,
+            Command::AdminUtil => {},
+            Command::Config => {}
             Command::Unknown => {}
         }
     }
@@ -201,6 +234,7 @@ impl EventHandler for Handler {
             commands::economy::give::run::register(),
             commands::open::run::register(),
             commands::saga::run::register(),
+            commands::saga::run::register_play(),
             commands::leaderboard::run::register(),
             commands::train::run::register(),
             commands::party::run::register(),
@@ -211,7 +245,14 @@ impl EventHandler for Handler {
             commands::blackjack::run::register(),
             commands::poker::run::register(),
             commands::rps::run::register(),
+            commands::bond::run::register(),
+            commands::contracts::run::register(),
+            commands::bestiary::run::register(),
+            commands::research::run::register(),
+            commands::progress::run::register(),
+            commands::config::register(),
             commands::help::register(),
+            commands::admin::register(),
         ];
         if let Err(e) = self
             .allowed_guild_id

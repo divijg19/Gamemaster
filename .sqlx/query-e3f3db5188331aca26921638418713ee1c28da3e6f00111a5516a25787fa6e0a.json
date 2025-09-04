@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE player_units SET is_training = TRUE, training_stat = $1, training_ends_at = $2 WHERE player_unit_id = $3 AND user_id = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e3f3db5188331aca26921638418713ee1c28da3e6f00111a5516a25787fa6e0a"
+}

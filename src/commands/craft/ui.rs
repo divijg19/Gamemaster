@@ -48,15 +48,15 @@ pub fn create_crafting_menu(
         let ingredients_str = recipe_info
             .ingredients
             .iter()
-            .map(|ing| {
-                let required_item = Item::from_i32(ing.item_id).unwrap();
+            .filter_map(|ing| {
+                let required_item = Item::from_i32(ing.item_id)?; // skip invalid silently
                 let owned_qty = inventory_map.get(&ing.item_id).copied().unwrap_or(0);
-                format!(
+                Some(format!(
                     "`{}/{}` {}",
                     owned_qty,
                     ing.quantity,
                     required_item.display_name()
-                )
+                ))
             })
             .collect::<Vec<_>>()
             .join(", ");

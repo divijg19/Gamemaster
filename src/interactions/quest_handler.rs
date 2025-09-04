@@ -73,13 +73,17 @@ async fn start_quest_battle(
     // (✓) FIXED: Use the correct GameManager type: Arc<RwLock<GameManager>> to fix E0308.
     game_manager: Arc<RwLock<GameManager>>,
 ) {
-    let db = &{ ctx.data.read().await.get::<AppState>().unwrap().db.clone() };
+    let db = if let Some(app) = AppState::from_ctx(ctx).await { app.db.clone() } else {
+        let builder = EditInteractionResponse::new().content("Internal state unavailable.");
+        component.edit_response(&ctx.http, builder).await.ok();
+        return;
+    }; 
 
-    let player_party_db = match database::pets::get_user_party(db, component.user.id).await {
+    let player_party_db = match database::units::get_user_party(&db, component.user.id).await {
         Ok(party) if !party.is_empty() => party,
         _ => {
             let builder = EditInteractionResponse::new()
-                .content("You must have at least one pet in your party to accept a battle quest.");
+                .content("You must have at least one unit in your party to accept a battle quest.");
             component.edit_response(&ctx.http, builder).await.ok();
             return;
         }
@@ -97,7 +101,7 @@ async fn start_quest_battle(
         return;
     }
 
-    let enemy_pets_db = match database::pets::get_pets_by_ids(db, &enemy_ids).await {
+    let enemy_pets_db = match database::units::get_units_by_ids(&db, &enemy_ids).await {
         Ok(pets) => pets,
         Err(_) => {
             let builder =
@@ -107,11 +111,11 @@ async fn start_quest_battle(
         }
     };
 
-    let player_units: Vec<BattleUnit> = player_party_db
-        .iter()
-        .map(BattleUnit::from_player_pet)
-        .collect();
-    let enemy_units: Vec<BattleUnit> = enemy_pets_db.iter().map(BattleUnit::from_pet).collect();
+    let bonuses = database::units::get_equipment_bonuses(&db, component.user.id).await.unwrap_or_default();
+    let player_units: Vec<BattleUnit> = player_party_db.iter().map(|u| {
+        if let Some(b) = bonuses.get(&u.player_unit_id) { BattleUnit::from_player_unit_with_bonus(u, *b) } else { BattleUnit::from_player_unit(u) }
+    }).collect();
+    let enemy_units: Vec<BattleUnit> = enemy_pets_db.iter().map(BattleUnit::from_unit).collect();
     let session = BattleSession::new(player_units, enemy_units);
 
     let battle_game = BattleGame {
@@ -119,8 +123,10 @@ async fn start_quest_battle(
         party_members: player_party_db,
         node_id: 0,
         node_name: "Quest Battle".to_string(),
-        can_afford_tame: false,
+        can_afford_recruit: false,
         player_quest_id: Some(quest.player_quest_id),
+        applied_equipment: true, // already applied via with_bonus constructors
+        claimed: false,
     };
 
     interactions::game_handler::start_new_game(

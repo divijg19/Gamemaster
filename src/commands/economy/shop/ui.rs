@@ -41,13 +41,11 @@ impl ShopSession {
                 .iter()
                 .map(|item| {
                     let props = item.properties();
-                    format!(
-                        "**{} {}** - **💰{}**\n*{}*",
-                        props.emoji,
-                        props.display_name,
-                        props.buy_price.unwrap(),
-                        props.description
-                    )
+                    if let Some(price) = props.buy_price {
+                        format!("**{} {}** - **💰{}**\n*{}*", props.emoji, props.display_name, price, props.description)
+                    } else {
+                        format!("**{} {}**\n*{}*", props.emoji, props.display_name, props.description)
+                    }
                 })
                 .collect::<Vec<_>>()
                 .join("\n\n");

@@ -1,0 +1,120 @@
+use crate::{AppState, database};
+use serenity::builder::{CreateCommand, CreateCommandOption, CreateEmbed};
+use serenity::model::application::{CommandInteraction, CommandOptionType};
+use serenity::prelude::Context;
+
+// Lightweight admin utility to exercise maintenance helpers so they stay active.
+pub fn register() -> CreateCommand {
+    CreateCommand::new("adminutil")
+        .description("Maintenance utilities (owner-only)")
+        .add_option(
+            CreateCommandOption::new(
+                CommandOptionType::Integer,
+                "markhuman",
+                "Mark a unit id as Human",
+            )
+            .required(false),
+        )
+        .add_option(
+            CreateCommandOption::new(
+                CommandOptionType::Integer,
+                "bondhost",
+                "Host player_unit_id for bonding test",
+            )
+            .required(false),
+        )
+        .add_option(
+            CreateCommandOption::new(
+                CommandOptionType::Integer,
+                "bondequip",
+                "Equipped player_unit_id for bonding test",
+            )
+            .required(false),
+        )
+        .add_option(
+            CreateCommandOption::new(
+                CommandOptionType::Integer,
+                "researchunit",
+                "Unit id to fetch raw research progress",
+            )
+            .required(false),
+        )
+}
+
+pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
+    interaction.defer_ephemeral(&ctx.http).await.ok();
+    let Some(state) = AppState::from_ctx(ctx).await else {
+        return;
+    };
+    let db = &state.db;
+    let mut embed = CreateEmbed::new().title("Admin Util");
+    let mut notes = Vec::new();
+    let mut mark_ids: Vec<i32> = Vec::new();
+    let mut bond_pair: Option<(i32, i32)> = None;
+    let mut research_unit: Option<i32> = None;
+    for opt in &interaction.data.options {
+        match opt.name.as_str() {
+            "markhuman" => {
+                if let Some(v) = opt.value.as_i64() {
+                    mark_ids.push(v as i32);
+                }
+            }
+            "bondhost" => {
+                let host = opt.value.as_i64().unwrap_or(0) as i32;
+                if let Some(existing) = bond_pair {
+                    bond_pair = Some((host, existing.1));
+                } else {
+                    bond_pair = Some((host, 0));
+                }
+            }
+            "bondequip" => {
+                let eq = opt.value.as_i64().unwrap_or(0) as i32;
+                if let Some(existing) = bond_pair {
+                    bond_pair = Some((existing.0, eq));
+                } else {
+                    bond_pair = Some((0, eq));
+                }
+            }
+            "researchunit" => research_unit = opt.value.as_i64().map(|v| v as i32),
+            _ => {}
+        }
+    }
+    if !mark_ids.is_empty() {
+        match database::units::mark_units_as_human(db, &mark_ids).await {
+            Ok(n) => notes.push(format!("Marked {} units as Human", n)),
+            Err(e) => notes.push(format!("Mark error: {}", e)),
+        }
+    }
+    if let Some((host, equip)) = bond_pair
+        && host > 0
+        && equip > 0
+    {
+        if let Err(e) = database::units::bond_units(db, interaction.user.id, host, equip).await {
+            notes.push(format!("Bond error: {}", e));
+        } else {
+            notes.push("Bond attempted (see logs if constraints)".into());
+        }
+    }
+    if let Some(uid) = research_unit {
+        // Also touch list_research_progress to keep bulk path active
+        let _ = database::units::list_research_progress(db, interaction.user.id)
+            .await
+            .ok();
+        if let Ok(count) =
+            database::units::get_research_progress(db, interaction.user.id, uid).await
+        {
+            notes.push(format!("Research progress unit {} = {}", uid, count));
+        }
+    }
+    if notes.is_empty() {
+        notes.push("No actions performed.".into());
+    }
+    embed = embed.description(notes.join("\n"));
+    let resp = serenity::builder::CreateInteractionResponseMessage::new().embed(embed);
+    let _ = interaction
+        .create_response(
+            &ctx.http,
+            serenity::builder::CreateInteractionResponse::Message(resp),
+        )
+        .await;
+}

@@ -1,15 +1,15 @@
-//! Contains the business logic for pet progression and leveling.
+//! Contains the business logic for unit (formerly pet) progression and leveling.
 
-use crate::database::models::PlayerPet;
+use crate::database::models::PlayerUnit;
 
 const BASE_XP_PER_LEVEL: i32 = 100;
 
-/// Calculates the XP required to reach the next level for a pet.
-pub fn xp_for_pet_level(level: i32) -> i32 {
+/// Calculates the XP required to reach the next level for a unit.
+pub fn xp_for_unit_level(level: i32) -> i32 {
     BASE_XP_PER_LEVEL + (level * 25)
 }
 
-/// A struct to hold the results of a pet gaining XP.
+/// A struct to hold the results of a unit gaining XP.
 pub struct LevelUpResult {
     pub new_xp: i32,
     pub new_level: i32,
@@ -17,14 +17,14 @@ pub struct LevelUpResult {
     pub did_level_up: bool,
 }
 
-/// Processes XP gain for a pet and calculates level-ups and stat gains.
-pub fn handle_pet_leveling(pet: &PlayerPet, xp_gained: i32) -> LevelUpResult {
-    let mut new_xp = pet.current_xp + xp_gained;
-    let mut new_level = pet.current_level;
+/// Processes XP gain for a unit and calculates level-ups and stat gains.
+pub fn handle_unit_leveling(unit: &PlayerUnit, xp_gained: i32) -> LevelUpResult {
+    let mut new_xp = unit.current_xp + xp_gained;
+    let mut new_level = unit.current_level;
     let mut did_level_up = false;
     let mut stat_gains = (0, 0, 0);
 
-    let mut xp_needed = xp_for_pet_level(new_level);
+    let mut xp_needed = xp_for_unit_level(new_level);
     while new_xp >= xp_needed {
         new_xp -= xp_needed;
         new_level += 1;
@@ -35,7 +35,7 @@ pub fn handle_pet_leveling(pet: &PlayerPet, xp_gained: i32) -> LevelUpResult {
         stat_gains.1 += 1; // +1 Defense
         stat_gains.2 += 10; // +10 Health
 
-        xp_needed = xp_for_pet_level(new_level);
+    xp_needed = xp_for_unit_level(new_level);
     }
 
     LevelUpResult {
@@ -45,3 +45,5 @@ pub fn handle_pet_leveling(pet: &PlayerPet, xp_gained: i32) -> LevelUpResult {
         did_level_up,
     }
 }
+
+// Wrappers removed post-migration.

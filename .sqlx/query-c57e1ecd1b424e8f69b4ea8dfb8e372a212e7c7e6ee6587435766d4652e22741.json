@@ -36,7 +36,7 @@
       {
         "ordinal": 4,
         "name": "title",
-        "type_info": "Varchar"
+        "type_info": "Text"
       },
       {
         "ordinal": 5,

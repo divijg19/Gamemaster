@@ -1,0 +1,113 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT u.unit_id, u.name, u.description, u.base_attack, u.base_defense, u.base_health, u.is_recruitable, u.kind as \"kind: UnitKind\", u.rarity as \"rarity: UnitRarity\",\n        COALESCE(he.defeats,0) as defeats,\n        (SELECT 1 FROM drafted_human_contracts d2 WHERE d2.user_id=$1 AND d2.unit_id=u.unit_id AND d2.consumed=FALSE) as drafted_active,\n        (SELECT 1 FROM player_units pu WHERE pu.user_id=$1 AND pu.unit_id=u.unit_id LIMIT 1) as recruited\n        FROM units u LEFT JOIN human_encounters he ON he.user_id=$1 AND he.unit_id=u.unit_id WHERE u.kind='Human'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "unit_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "base_attack",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "base_defense",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "base_health",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "is_recruitable",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "kind: UnitKind",
+        "type_info": {
+          "Custom": {
+            "name": "unit_kind",
+            "kind": {
+              "Enum": [
+                "Human",
+                "Pet"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "rarity: UnitRarity",
+        "type_info": {
+          "Custom": {
+            "name": "unit_rarity",
+            "kind": {
+              "Enum": [
+                "Common",
+                "Rare",
+                "Epic",
+                "Legendary",
+                "Unique",
+                "Mythical",
+                "Fabled"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "defeats",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "drafted_active",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "recruited",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "62e95e0cf741371d6ed82f9997e2beefc630c4d61934f0bd9e491bd0f90e8993"
+}

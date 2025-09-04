@@ -70,11 +70,9 @@ pub fn create_tasks_embed(tasks: &[PlayerTaskDetails]) -> (CreateEmbed, Vec<Crea
     }
 
     // Build action row with claim buttons (using enum variant since `from_buttons` is unavailable).
-    let components = if claim_buttons.is_empty() {
-        vec![]
-    } else {
-        vec![CreateActionRow::Buttons(claim_buttons)]
-    };
+    let mut rows: Vec<CreateActionRow> = Vec::new();
+    rows.push(crate::commands::saga::ui::play_button_row("Play / Menu"));
+    if !claim_buttons.is_empty() { rows.push(CreateActionRow::Buttons(claim_buttons)); }
 
     let embed = CreateEmbed::new()
         .title("Your Tasks")
@@ -85,5 +83,5 @@ pub fn create_tasks_embed(tasks: &[PlayerTaskDetails]) -> (CreateEmbed, Vec<Crea
             "Daily tasks reset at 00:00 UTC. Weekly tasks reset on Monday.",
         ));
 
-    (embed, components)
+    (embed, rows)
 }

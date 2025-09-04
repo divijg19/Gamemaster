@@ -24,7 +24,8 @@ pub fn register() -> CreateCommand {
 
 pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
     interaction.defer_ephemeral(&ctx.http).await.ok();
-    let pool = { ctx.data.read().await.get::<AppState>().unwrap().db.clone() };
+    let Some(app_state) = AppState::from_ctx(ctx).await else { return };
+    let pool = app_state.db.clone();
 
     let user_to_fetch = if let Some(option) = interaction.data.options.first() {
         if let Some(user_id) = option.value.as_user_id() {
@@ -46,7 +47,8 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
 
 /// (✓) ADDED: Entry point for the `$inventory` prefix command.
 pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
-    let pool = { ctx.data.read().await.get::<AppState>().unwrap().db.clone() };
+    let Some(app_state) = AppState::from_ctx(ctx).await else { return };
+    let pool = app_state.db.clone();
 
     // Default to the message author if no one is mentioned.
     let user_to_fetch = msg.mentions.first().unwrap_or(&msg.author).clone();

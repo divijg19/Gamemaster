@@ -1,7 +1,7 @@
 //! Contains all database functions related to core saga progression.
 //! This includes AP, TP, and story progress.
 
-use super::models::{PlayerPet, SagaProfile};
+use super::models::{PlayerUnit, SagaProfile, UnitRarity};
 use crate::saga;
 use serenity::model::id::UserId;
 use sqlx::PgPool;
@@ -17,22 +17,27 @@ pub async fn update_and_get_saga_profile(
     let now = Utc::now();
 
     // First, check for and apply any completed training sessions.
-    let completed_pets = sqlx::query_as!(PlayerPet, "SELECT pp.*, p.name FROM player_pets pp JOIN pets p ON pp.pet_id = p.pet_id WHERE pp.user_id = $1 AND pp.is_training = TRUE AND pp.training_ends_at <= $2", user_id_i64, now).fetch_all(pool).await?;
-    if !completed_pets.is_empty() {
+    let completed_units = sqlx::query_as!(PlayerUnit, r#"SELECT 
+        pu.player_unit_id, pu.user_id, pu.unit_id, pu.nickname, pu.current_level, pu.current_xp,
+        pu.current_attack, pu.current_defense, pu.current_health, pu.is_in_party, pu.is_training,
+        pu.training_stat, pu.training_ends_at, u.name, pu.rarity as "rarity: UnitRarity"
+        FROM player_units pu JOIN units u ON pu.unit_id = u.unit_id 
+        WHERE pu.user_id = $1 AND pu.is_training = TRUE AND pu.training_ends_at <= $2"#, user_id_i64, now).fetch_all(pool).await?;
+    if !completed_units.is_empty() {
         let mut tx = pool.begin().await?;
-        for pet in completed_pets {
-            let (stat_column, stat_gain) = match pet.training_stat.as_deref() {
+        for unit in completed_units {
+            let (stat_column, stat_gain) = match unit.training_stat.as_deref() {
                 Some("attack") => ("current_attack", 1),
                 Some("defense") => ("current_defense", 1),
                 _ => continue,
             };
             let query_str = format!(
-                "UPDATE player_pets SET is_training = FALSE, training_stat = NULL, training_ends_at = NULL, {} = {} + $1 WHERE player_pet_id = $2",
+                "UPDATE player_units SET is_training = FALSE, training_stat = NULL, training_ends_at = NULL, {} = {} + $1 WHERE player_unit_id = $2",
                 stat_column, stat_column
             );
             sqlx::query(&query_str)
                 .bind(stat_gain)
-                .bind(pet.player_pet_id)
+                .bind(unit.player_unit_id)
                 .execute(&mut *tx)
                 .await?;
         }

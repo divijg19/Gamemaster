@@ -82,12 +82,8 @@ pub fn create_quest_board_embed(quests: &[QuestBoardEntry]) -> (CreateEmbed, Vec
         }
     }
 
-    let components = if buttons.is_empty() {
-        vec![]
-    } else {
-        // Use the enum variant to create an action row containing all buttons.
-        vec![CreateActionRow::Buttons(buttons)]
-    };
-
-    (embed, components)
+    let mut rows: Vec<CreateActionRow> = Vec::new();
+    rows.push(crate::commands::saga::ui::play_button_row("Play / Menu"));
+    if !buttons.is_empty() { rows.push(CreateActionRow::Buttons(buttons)); }
+    (embed, rows)
 }

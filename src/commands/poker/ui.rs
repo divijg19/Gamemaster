@@ -24,14 +24,12 @@ impl PokerGame {
             )
         };
 
+        let player_count = self.players.len();
         let embed = CreateEmbed::new()
             .title("♦️ Poker Lobby ♥️")
-            .description(desc)
-            .field("Players Joined", players_list, false)
-            .color(0x71368A) // Purple
-            .footer(CreateEmbedFooter::new(
-                "Lobby expires in 2 minutes. Max 5 players.",
-            ));
+            .description(format!("{}\n\n**Players ({}):**\n{}", desc, player_count, players_list))
+            .color(0x71368A)
+            .footer(CreateEmbedFooter::new("Lobby expires in 2 minutes. Max 5 players."));
 
         let buttons = vec![
             CreateButton::new("poker_join")
@@ -64,10 +62,10 @@ impl PokerGame {
 
         let embed = CreateEmbed::new()
             .title("♦️ Place Your Antes ♠️")
-            .description(format!("The ante for this table is **💰{}**. Click the button to confirm your ante and ready up.", self.min_bet))
+            .description(format!("Ante: **💰{}**\nPress the button to lock in.", self.min_bet))
             .field("Player Status", ante_status, false)
-            .color(0xFFA500) // Orange
-            .footer(CreateEmbedFooter::new("The round will begin once all players have placed their ante. | Timer: 60s"));
+            .color(0xFFA500)
+            .footer(CreateEmbedFooter::new("Round begins when all are ready (60s timeout)."));
 
         let buttons = vec![
             CreateButton::new("poker_ante")
@@ -169,7 +167,7 @@ impl PokerGame {
 
         if self.phase == GamePhase::GameOver {
             let (results_str, _) = self.calculate_payouts();
-            embed = embed.description(format!("**--- Final Results ---**\n\n{}", results_str));
+            embed = embed.description(format!("**Final Results**\n\n{}", results_str));
             if self.min_bet > 0 {
                 components.push(CreateActionRow::Buttons(vec![
                     CreateButton::new("poker_next_round")

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT 1 FROM drafted_human_contracts WHERE user_id=$1 AND unit_id=$2 AND consumed=FALSE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "?column?",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "92163a3aad5109d1099bd30182435fd75c4ec8128270e44e8e63f607c2a1825e"
+}
