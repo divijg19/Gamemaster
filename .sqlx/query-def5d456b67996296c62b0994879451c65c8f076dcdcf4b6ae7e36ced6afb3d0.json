@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH updated AS (\n            UPDATE player_tasks pt SET progress = LEAST(t.objective_goal, pt.progress + $3)\n            FROM tasks t WHERE pt.task_id = t.task_id AND pt.user_id = $1\n              AND t.objective_key = $2 AND pt.is_completed = FALSE\n            RETURNING pt.player_task_id, pt.progress, t.objective_goal\n        )\n        UPDATE player_tasks SET is_completed = TRUE, completed_at = NOW()\n        WHERE player_task_id = (SELECT player_task_id FROM updated)\n          AND (SELECT progress FROM updated) >= (SELECT objective_goal FROM updated)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "def5d456b67996296c62b0994879451c65c8f076dcdcf4b6ae7e36ced6afb3d0"
+}

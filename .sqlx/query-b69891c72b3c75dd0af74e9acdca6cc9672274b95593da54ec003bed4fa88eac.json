@@ -1,0 +1,69 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT quest_id, title, description,\n        COALESCE(giver_name,'Unknown') AS \"giver_name!\",\n        COALESCE(difficulty,'Normal') AS \"difficulty!\",\n                quest_type as \"quest_type: _\", objective_key\n            FROM quests WHERE quest_id NOT IN (SELECT quest_id FROM player_quests WHERE user_id = $1)\n            ORDER BY random() LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "quest_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "giver_name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "difficulty!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "quest_type: _",
+        "type_info": {
+          "Custom": {
+            "name": "quest_type_enum",
+            "kind": {
+              "Enum": [
+                "Battle",
+                "Riddle"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "objective_key",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null,
+      false,
+      false
+    ]
+  },
+  "hash": "b69891c72b3c75dd0af74e9acdca6cc9672274b95593da54ec003bed4fa88eac"
+}

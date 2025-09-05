@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM map_nodes WHERE node_id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "node_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "area_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "story_progress_required",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "reward_coins",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "reward_unit_xp",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "45da26538f626d1ae1266b139180e414c225b7e9b744b145535e0d5e70623c52"
+}

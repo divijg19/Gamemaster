@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE inventories SET quantity = quantity + $3 WHERE user_id = $1 AND item_id = $2 AND quantity + $3 >= 0",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2a083f408e14d0a8c74c156721c661740b6e35e3711d67bfcdb3545dac4123fc"
+}

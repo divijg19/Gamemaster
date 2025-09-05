@@ -1,0 +1,121 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n        pu.player_unit_id, pu.user_id, pu.unit_id, pu.nickname, pu.current_level, pu.current_xp,\n        pu.current_attack, pu.current_defense, pu.current_health, pu.is_in_party, pu.is_training,\n        pu.training_stat, pu.training_ends_at, u.name, pu.rarity as \"rarity: UnitRarity\"\n        FROM player_units pu JOIN units u ON pu.unit_id = u.unit_id\n        WHERE pu.user_id = $1 AND pu.is_in_party = TRUE\n        ORDER BY pu.player_unit_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "player_unit_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "unit_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "nickname",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "current_level",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "current_xp",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "current_attack",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "current_defense",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "current_health",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "is_in_party",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "is_training",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 11,
+        "name": "training_stat",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "training_ends_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "rarity: UnitRarity",
+        "type_info": {
+          "Custom": {
+            "name": "unit_rarity",
+            "kind": {
+              "Enum": [
+                "Common",
+                "Rare",
+                "Epic",
+                "Legendary",
+                "Unique",
+                "Mythical",
+                "Fabled"
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "3273c5ead2cb29985b44dd7af7fbf070b82968b9c1bd48a153dff629d0eee945"
+}

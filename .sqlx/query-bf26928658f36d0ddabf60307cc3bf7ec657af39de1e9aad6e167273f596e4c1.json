@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO player_units (user_id, unit_id, nickname, current_attack, current_defense, current_health, rarity, is_in_party) VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Text",
+        "Int4",
+        "Int4",
+        "Int4",
+        {
+          "Custom": {
+            "name": "unit_rarity",
+            "kind": {
+              "Enum": [
+                "Common",
+                "Rare",
+                "Epic",
+                "Legendary",
+                "Unique",
+                "Mythical",
+                "Fabled"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bf26928658f36d0ddabf60307cc3bf7ec657af39de1e9aad6e167273f596e4c1"
+}
