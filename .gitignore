@@ -1,0 +1,46 @@
+#############################
+# Core
+#############################
+.gitignore
+/target/
+
+#############################
+# Environment / Secrets
+#############################
+.env
+Secrets.toml
+Secrets*.toml
+.shuttle*
+
+#############################
+# SQLx offline metadata
+#############################
+# Keep .sqlx directory tracked (do NOT ignore it). Ensure nothing here is excluded.
+# (No ignore pattern needed; removing incorrect negation.)
+
+#############################
+# Docker local dev artifacts
+#############################
+docker-data/
+docker-compose.override.yml
+*.env.local
+
+#############################
+# Logs & dumps
+#############################
+*.log
+*.rpt
+
+#############################
+# IDE / Editor
+#############################
+.vscode/
+.idea/
+*.swp
+*.swo
+
+#############################
+# Misc
+#############################
+**/*.rs.bk
+/target

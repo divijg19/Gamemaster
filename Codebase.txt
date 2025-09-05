@@ -1,4 +1,6 @@
+.cargo/config.toml
 .github/workflows/deploy.yml
+.gitignore
 CHANGELOG.md
 Cargo.lock
 Cargo.toml
