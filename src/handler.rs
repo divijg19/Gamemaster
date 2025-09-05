@@ -64,12 +64,12 @@ impl FromStr for Command {
             "blackjack" | "bj" => Ok(Command::Blackjack),
             "poker" | "pk" => Ok(Command::Poker),
             "bond" => Ok(Command::Bond),
-            "config" => Ok(Command::Config),
+            "config" | "cfg" => Ok(Command::Config),
             "contracts" => Ok(Command::Contracts),
             "bestiary" => Ok(Command::Bestiary),
             "research" => Ok(Command::Research),
             "progress" => Ok(Command::Progress),
-            "adminutil" => Ok(Command::AdminUtil),
+            "adminutil" | "admin" => Ok(Command::AdminUtil),
             _ => Ok(Command::Unknown),
         }
     }

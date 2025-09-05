@@ -44,9 +44,10 @@ async fn execute_saga(
             _ => msg.push_str(&format!("Unexpected error: {e}")),
         }
         println!(
-            "[SAGA CMD] base profile ensure failed user={} err={:?}",
+            "[SAGA CMD] base profile ensure failed user={} err={:?} type={}",
             user_id.get(),
-            e
+            e,
+            std::any::type_name::<sqlx::Error>()
         );
         return Err(msg);
     }
@@ -63,9 +64,13 @@ async fn execute_saga(
         Err(e) => {
             use sqlx::Error::*;
             println!(
-                "[SAGA CMD] retrieval failed user={} err={:?}",
+                "[SAGA CMD] retrieval failed user={} err={:?} code_hint={:?}",
                 user_id.get(),
-                e
+                e,
+                match &e {
+                    sqlx::Error::Database(db) => db.code(),
+                    _ => None,
+                }
             );
             let mut msg = String::from("Could not retrieve your game profile. ");
             match &e {
@@ -83,9 +88,10 @@ async fn execute_saga(
                 Io(_) | PoolTimedOut | Tls(_) => {
                     msg.push_str("Database connectivity issue (check DATABASE_URL / network).")
                 }
-                RowNotFound => msg.push_str("Profile row not found right after creation attempt."),
+                RowNotFound => msg.push_str("Profile row not found right after creation attempt. Run /adminutil sagainit or ensure migrations applied."),
                 _ => msg.push_str(&format!("Unexpected error: {e}")),
             }
+            msg.push_str(" If this persists, provide this code to admin: SAGA-RNF-1");
             Err(msg)
         }
     }
