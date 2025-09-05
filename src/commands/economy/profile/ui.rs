@@ -12,6 +12,21 @@ pub fn create_profile_embed(
     inventory_result: Result<Vec<database::models::InventoryItem>, sqlx::Error>,
     saga_result: Result<SagaProfile, sqlx::Error>,
 ) -> CreateEmbed {
+    fn xp_bar(current: i64, needed: i64) -> String {
+        let total_raw = if needed <= 0 { 1 } else { needed } as i64;
+        let ratio = (current as f64 / total_raw as f64).clamp(0.0, 1.0);
+        let segments = 10;
+        let filled = (ratio * segments as f64).floor() as i32;
+        let mut bar = String::with_capacity(segments as usize);
+        for i in 0..segments {
+            if i < filled {
+                bar.push('█');
+            } else {
+                bar.push('░');
+            }
+        }
+        format!("{} {:.0}%", bar, ratio * 100.0)
+    }
     let mut embed = CreateEmbed::new()
         .title(format!("{}'s Profile", user.name))
         .thumbnail(user.face());
@@ -64,8 +79,11 @@ pub fn create_profile_embed(
             embed = embed.field(
                 "🎣 Fishing",
                 format!(
-                    "Level {} (`{}/{}` XP)",
-                    profile.fishing_level, profile.fishing_xp, fishing_xp_needed
+                    "Level {} ({} `{}/{}`)",
+                    profile.fishing_level,
+                    xp_bar(profile.fishing_xp, fishing_xp_needed),
+                    profile.fishing_xp,
+                    fishing_xp_needed
                 ),
                 true,
             );
@@ -74,8 +92,11 @@ pub fn create_profile_embed(
             embed = embed.field(
                 "⛏️ Mining",
                 format!(
-                    "Level {} (`{}/{}` XP)",
-                    profile.mining_level, profile.mining_xp, mining_xp_needed
+                    "Level {} ({} `{}/{}`)",
+                    profile.mining_level,
+                    xp_bar(profile.mining_xp, mining_xp_needed),
+                    profile.mining_xp,
+                    mining_xp_needed
                 ),
                 true,
             );
@@ -84,8 +105,11 @@ pub fn create_profile_embed(
             embed = embed.field(
                 "💻 Coding",
                 format!(
-                    "Level {} (`{}/{}` XP)",
-                    profile.coding_level, profile.coding_xp, coding_xp_needed
+                    "Level {} ({} `{}/{}`)",
+                    profile.coding_level,
+                    xp_bar(profile.coding_xp, coding_xp_needed),
+                    profile.coding_xp,
+                    coding_xp_needed
                 ),
                 true,
             );
