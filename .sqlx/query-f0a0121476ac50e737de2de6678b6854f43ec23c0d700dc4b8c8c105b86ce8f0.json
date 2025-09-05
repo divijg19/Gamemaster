@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT user_id, unit_id, drafted_at, consumed FROM drafted_human_contracts WHERE user_id = $1 AND consumed = FALSE ORDER BY drafted_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "unit_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "drafted_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "consumed",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f0a0121476ac50e737de2de6678b6854f43ec23c0d700dc4b8c8c105b86ce8f0"
+}

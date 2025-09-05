@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE player_tasks SET claimed_at = NOW() WHERE player_task_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "45a37a4e356c471087d853580c22681f2d645f3f709744edad53b384db42e797"
+}

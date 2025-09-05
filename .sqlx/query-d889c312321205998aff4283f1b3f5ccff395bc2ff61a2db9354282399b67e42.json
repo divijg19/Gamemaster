@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.reward_coins, t.reward_item_id, t.reward_item_quantity\n        FROM player_tasks pt JOIN tasks t ON pt.task_id = t.task_id\n        WHERE pt.player_task_id = $1 AND pt.user_id = $2\n          AND pt.is_completed = TRUE AND pt.claimed_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "reward_coins",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "reward_item_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "reward_item_quantity",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "d889c312321205998aff4283f1b3f5ccff395bc2ff61a2db9354282399b67e42"
+}

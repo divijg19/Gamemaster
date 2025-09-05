@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pu.player_unit_id, pu.rarity::text as rarity_text, pu.is_in_party, u.kind::text as eq_kind FROM player_units pu JOIN units u ON u.unit_id = pu.unit_id WHERE pu.player_unit_id = $1 AND pu.user_id = $2 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "player_unit_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "rarity_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "is_in_party",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
+        "name": "eq_kind",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false,
+      null
+    ]
+  },
+  "hash": "44663db375705e3d0f9a8108a553ce8491568ee100bee198d65ee6faf0bf0e6a"
+}

@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT user_id, unit_id, defeats, last_defeated_at FROM human_encounters WHERE user_id=$1 AND unit_id=$2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "unit_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "defeats",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "last_defeated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "90cff0208f778bfe44d572e2fe948aef30366637e00932b5eb3c3d6dfa284fc0"
+}
