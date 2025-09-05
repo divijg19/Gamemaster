@@ -13,7 +13,7 @@ pub fn create_profile_embed(
     saga_result: Result<SagaProfile, sqlx::Error>,
 ) -> CreateEmbed {
     fn xp_bar(current: i64, needed: i64) -> String {
-        let total_raw = if needed <= 0 { 1 } else { needed } as i64;
+        let total_raw = if needed <= 0 { 1 } else { needed };
         let ratio = (current as f64 / total_raw as f64).clamp(0.0, 1.0);
         let segments = 10;
         let filled = (ratio * segments as f64).floor() as i32;
