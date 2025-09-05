@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE profiles SET balance = balance + $2 WHERE user_id = $1 AND balance + $2 >= 0",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d7d8cad3c2d507a5114a2a46010e5a848db88533c328994089a7a1c6de04b2fa"
+}

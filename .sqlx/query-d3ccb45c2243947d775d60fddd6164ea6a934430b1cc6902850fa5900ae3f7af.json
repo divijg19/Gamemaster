@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO inventories (user_id, item_id, quantity)\n            VALUES ($1, $2, $3)\n            ON CONFLICT (user_id, item_id) DO UPDATE SET quantity = inventories.quantity + EXCLUDED.quantity",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d3ccb45c2243947d775d60fddd6164ea6a934430b1cc6902850fa5900ae3f7af"
+}
