@@ -45,6 +45,11 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
     {
         Ok((profile, units)) => (profile, units.iter().any(|u| u.is_in_party)),
         Err(e) => {
+            println!(
+                "[SAGA CMD] debug retrieval failed user={} error={:?}",
+                interaction.user.id.get(),
+                e
+            );
             // Provide targeted guidance based on error category
             let mut msg = String::from("Could not retrieve your game profile. ");
             use sqlx::Error::*;
@@ -104,6 +109,11 @@ pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
         match services::saga::get_profile_and_units_debug(&app_state, msg.author.id).await {
             Ok((profile, units)) => (profile, units.iter().any(|u| u.is_in_party)),
             Err(e) => {
+                println!(
+                    "[SAGA CMD][prefix] debug retrieval failed user={} error={:?}",
+                    msg.author.id.get(),
+                    e
+                );
                 let mut content = String::from("Could not retrieve your game profile. ");
                 use sqlx::Error::*;
                 match &e {
