@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16
+    container_name: gm-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: gm
+  # Uncomment the next line temporarily if password auth issues persist (local only!)
+  # POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      # Map to a non-default host port (5433) to avoid conflicts with any local Postgres installation
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # Optional: pgAdmin for visual access (http://localhost:5050)
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: gm-pgadmin
+    depends_on:
+      - db
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    restart: unless-stopped
+    # Note: Use host: db, user: postgres, pass: dev, db: gm
+
+volumes:
+  pgdata:
