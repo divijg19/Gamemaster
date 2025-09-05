@@ -220,8 +220,17 @@ impl EventHandler for Handler {
             Command::Bestiary => commands::bestiary::run::run_prefix(&ctx, &msg, args_vec).await,
             Command::Research => commands::research::run::run_prefix(&ctx, &msg, args_vec).await,
             Command::Progress => commands::progress::run::run_prefix(&ctx, &msg, args_vec).await,
-            Command::AdminUtil => {}
-            Command::Config => {}
+            Command::AdminUtil => {
+                msg.reply(&ctx.http, "Use /adminutil (slash command only). Optional: right-click > Apps if not visible.").await.ok();
+            }
+            Command::Config => {
+                msg.reply(
+                    &ctx.http,
+                    "Use /config (slash command only; restricted to admin).",
+                )
+                .await
+                .ok();
+            }
             Command::Unknown => {}
         }
     }
