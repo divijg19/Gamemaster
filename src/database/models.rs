@@ -148,6 +148,7 @@ pub struct WorkRewards {
     pub xp: i64,
     pub items: Vec<(Item, i64)>,
 }
+#[allow(dead_code)]
 pub struct ProgressionUpdate {
     pub job_name: String,
     pub new_level: i32,

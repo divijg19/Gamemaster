@@ -48,7 +48,7 @@ pub async fn perform_work(pool: &PgPool, user: &User, job_name: &str) -> CreateE
     let (new_level, new_xp, level_up_info) =
         core::profile::handle_leveling(current_level, current_xp, rewards.xp);
 
-    let progression_update = if level_up_info.is_some() || rewards.xp > 0 {
+    let _progression_update = if level_up_info.is_some() || rewards.xp > 0 {
         Some(database::models::ProgressionUpdate {
             job_name: chosen_job.name.to_string(),
             new_level,
@@ -65,25 +65,9 @@ pub async fn perform_work(pool: &PgPool, user: &User, job_name: &str) -> CreateE
             Err(_) => return ui::create_error_embed("Failed to start database transaction."),
         };
 
-        for (item, quantity) in &rewards.items {
-            if database::economy::add_to_inventory(&mut tx, user.id, *item, *quantity)
-                .await
-                .is_err()
-            {
-                tx.rollback().await.ok();
-                return ui::create_error_embed("Failed to update your inventory.");
-            }
-        }
-
-        if database::economy::update_work_stats(
-            &mut tx,
-            user.id,
-            &rewards,
-            streak,
-            progression_update,
-        )
-        .await
-        .is_err()
+        if database::economy::update_work_stats(&mut tx, user.id, &rewards)
+            .await
+            .is_err()
         {
             tx.rollback().await.ok();
             return ui::create_error_embed("Failed to save your work stats.");

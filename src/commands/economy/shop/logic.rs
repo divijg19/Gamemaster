@@ -32,7 +32,7 @@ pub async fn buy_item(pool: &PgPool, user: &User, item: Item, quantity: i64) -> 
 
     // (✓) FIXED: Dereference the transaction `tx` to get an executor `&mut *tx`.
     // This passes the underlying connection to the function, which satisfies the trait bound.
-    let profile = match database::economy::get_or_create_profile(&mut *tx, user.id).await {
+    let profile = match database::economy::get_or_create_profile(pool, user.id).await {
         Ok(p) => p,
         Err(_) => {
             tx.rollback().await.ok();
