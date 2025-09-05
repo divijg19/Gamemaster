@@ -26,11 +26,29 @@ async fn execute_saga(
 ) -> Result<(CreateEmbed, Vec<serenity::builder::CreateActionRow>), String> {
     // Ensure base profile (economy) exists (FK for saga profile).
     if let Err(e) = database::economy::get_or_create_profile(&app_state.db, user_id).await {
+        use sqlx::Error::*;
+        let mut msg = format!("Failed to create base profile (user {}). ", user_id.get());
+        match &e {
+            Database(db_err) => {
+                let code_cow = db_err.code().unwrap_or(std::borrow::Cow::Borrowed("?"));
+                let code = code_cow.as_ref();
+                if code == "42P01" {
+                    msg.push_str("Missing tables. Run migrations: `sqlx migrate run`.");
+                } else {
+                    msg.push_str(&format!("Database error ({}): {}", code, db_err));
+                }
+            }
+            Io(_) | PoolTimedOut | Tls(_) => {
+                msg.push_str("Connectivity issue (check DATABASE_URL).")
+            }
+            _ => msg.push_str(&format!("Unexpected error: {e}")),
+        }
         println!(
             "[SAGA CMD] base profile ensure failed user={} err={:?}",
             user_id.get(),
             e
         );
+        return Err(msg);
     }
     match services::saga::get_profile_and_units_debug(app_state, user_id).await {
         Ok((profile, units)) => {
