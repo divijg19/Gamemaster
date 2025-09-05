@@ -52,6 +52,11 @@ pub fn register() -> CreateCommand {
             "cachestats",
             "Show global in-memory cache hit/miss counters",
         ))
+        .add_option(CreateCommandOption::new(
+            CommandOptionType::SubCommand,
+            "sagainit",
+            "Bootstrap base + saga profile and starter unit if absent",
+        ))
 }
 
 pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
@@ -67,9 +72,11 @@ pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
     let mut research_unit: Option<i32> = None;
     let mut show_cache = false;
     let mut diag_user: Option<i64> = None;
+    let mut saga_init = false;
     for opt in &interaction.data.options {
         match opt.name.as_str() {
             "cachestats" => show_cache = true,
+            "sagainit" => saga_init = true,
             "markhuman" => {
                 if let Some(v) = opt.value.as_i64() {
                     mark_ids.push(v as i32);
@@ -125,6 +132,42 @@ pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
             database::units::get_research_progress(db, interaction.user.id, uid).await
         {
             notes.push(format!("Research progress unit {} = {}", uid, count));
+        }
+    }
+    // Saga bootstrap before diagnostics so results show updated state
+    if saga_init {
+        let user_id = interaction.user.id;
+        match database::economy::get_or_create_profile(db, user_id).await {
+            Ok(_) => notes.push("Base profile ensured.".into()),
+            Err(e) => notes.push(format!("Base profile error: {e}")),
+        }
+        match crate::database::saga::update_and_get_saga_profile(db, user_id).await {
+            Ok(_) => notes.push("Saga profile ensured.".into()),
+            Err(e) => notes.push(format!("Saga profile error: {e}")),
+        }
+        let starter_id = *state.starter_unit_id.read().await;
+        let user_id_i64 = user_id.get() as i64;
+        let owned: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM player_units WHERE user_id = $1")
+            .bind(user_id_i64)
+            .fetch_one(db)
+            .await
+            .unwrap_or(0);
+        if owned == 0 {
+            match sqlx::query!("INSERT INTO player_units (user_id, unit_id, nickname, current_level, current_xp, current_attack, current_defense, current_health, is_in_party, rarity) SELECT $1, u.unit_id, u.name, 1, 0, u.base_attack, u.base_defense, u.base_health, TRUE, u.rarity FROM units u WHERE u.unit_id = $2 ON CONFLICT DO NOTHING", user_id_i64, starter_id).execute(db).await {
+                Ok(r) => {
+                    if r.rows_affected() > 0 {
+                        notes.push(format!("Starter unit {} granted.", starter_id));
+                    } else {
+                        notes.push("Starter unit already present or invalid starter id.".into());
+                    }
+                }
+                Err(e) => notes.push(format!("Starter grant error: {e}")),
+            }
+        } else {
+            notes.push(format!(
+                "Units already owned: {} (no starter grant).",
+                owned
+            ));
         }
     }
     if notes.is_empty() {
