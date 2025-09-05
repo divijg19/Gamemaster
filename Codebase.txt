@@ -103,6 +103,7 @@ Cargo.lock
 Cargo.toml
 Codebase.txt
 README.md
+migrations/20250818213840_legacy_placeholder.sql
 migrations/20250828003809_populate_base_pets.sql
 migrations/20250903140000_rename_pets_to_units.sql
 migrations/20250903183000_add_unit_rarity_and_bonding.sql
