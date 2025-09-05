@@ -1,0 +1,6 @@
+[env]
+# Force SQLx macros to use the offline cache in all build contexts (including Shuttle CI build image)
+SQLX_OFFLINE = "true"
+
+# Optionally ensure RUST_LOG defaults (can be overridden by runtime env)
+RUST_LOG = "info"
