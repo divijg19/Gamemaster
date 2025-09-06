@@ -1,7 +1,7 @@
 //! Handles the UI creation for the `/train` command.
 
 use crate::database::models::{PlayerUnit, SagaProfile};
-use crate::ui::style::pad_label;
+use crate::ui::style::pad_narrow;
 use serenity::builder::{
     CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter, CreateSelectMenu,
     CreateSelectMenuKind, CreateSelectMenuOption,
@@ -85,12 +85,12 @@ pub fn create_stat_selection_menu(player_unit_id: i32) -> (CreateEmbed, Vec<Crea
 
     let components = vec![CreateActionRow::Buttons(vec![
         CreateButton::new(format!("train_stat_attack_{}", player_unit_id))
-            .label(pad_label("⚔️ Attack", 12))
+            .label(pad_narrow("⚔️ Attack"))
             .style(ButtonStyle::Danger)
             // (✓) FIXED: Use a single `char` for the emoji as required by the builder.
             .emoji('⚔'),
         CreateButton::new(format!("train_stat_defense_{}", player_unit_id))
-            .label(pad_label("🛡️ Defense", 12))
+            .label(pad_narrow("🛡️ Defense"))
             .style(ButtonStyle::Primary)
             // (✓) FIXED: Use a single `char` for the emoji as required by the builder.
             .emoji('🛡'),

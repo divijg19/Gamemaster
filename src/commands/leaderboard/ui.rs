@@ -3,6 +3,7 @@
 // (✓) FIXED: Corrected the path to the LeaderboardType enum.
 use crate::database::leaderboard::LeaderboardEntry;
 use crate::saga::leaderboard::LeaderboardType;
+use crate::ui::style::pad_std;
 use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed};
 use serenity::model::application::ButtonStyle;
 use serenity::prelude::Context;
@@ -55,21 +56,21 @@ pub async fn create_leaderboard_embed(
 pub fn create_leaderboard_buttons(current_board: LeaderboardType) -> CreateActionRow {
     CreateActionRow::Buttons(vec![
         CreateButton::new("leaderboard_gamemaster")
-            .label("Gamemaster")
+            .label(pad_std("Gamemaster"))
             .style(if current_board == LeaderboardType::Gamemaster {
                 ButtonStyle::Primary
             } else {
                 ButtonStyle::Secondary
             }),
         CreateButton::new("leaderboard_wealth")
-            .label("Wealth")
+            .label(pad_std("Wealth"))
             .style(if current_board == LeaderboardType::Wealth {
                 ButtonStyle::Primary
             } else {
                 ButtonStyle::Secondary
             }),
         CreateButton::new("leaderboard_streak")
-            .label("Work Streak")
+            .label(pad_std("Work Streak"))
             .style(if current_board == LeaderboardType::WorkStreak {
                 ButtonStyle::Primary
             } else {

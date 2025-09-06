@@ -1,5 +1,5 @@
 use crate::database;
-use crate::ui::style::pad_label;
+use crate::ui::style::pad_std;
 use serenity::builder::{CreateActionRow, CreateButton, CreateCommand, CreateEmbed};
 use serenity::model::application::CommandInteraction;
 use serenity::model::channel::Message;
@@ -68,14 +68,11 @@ pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
     let embed = build_view_cached(&state, interaction.user.id).await;
     let row = CreateActionRow::Buttons(vec![
         CreateButton::new("bestiary_refresh")
-            .label("Bestiary")
+            .label(pad_std("📚 Bestiary"))
             .style(serenity::model::application::ButtonStyle::Secondary),
         CreateButton::new("contracts_refresh")
-            .label("Contracts")
+            .label(pad_std("📜 Contracts"))
             .style(serenity::model::application::ButtonStyle::Secondary),
-        CreateButton::new("saga_play")
-            .label(pad_label("Play / Menu", 14))
-            .style(serenity::model::application::ButtonStyle::Primary),
     ]);
     let resp = serenity::builder::CreateInteractionResponseMessage::new()
         .embed(embed)
@@ -95,14 +92,11 @@ pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
     let embed = build_view_cached(&state, msg.author.id).await;
     let row = CreateActionRow::Buttons(vec![
         CreateButton::new("bestiary_refresh")
-            .label("Bestiary")
+            .label(pad_std("📚 Bestiary"))
             .style(serenity::model::application::ButtonStyle::Secondary),
         CreateButton::new("contracts_refresh")
-            .label("Contracts")
+            .label(pad_std("📜 Contracts"))
             .style(serenity::model::application::ButtonStyle::Secondary),
-        CreateButton::new("saga_play")
-            .label(pad_label("Play / Menu", 14))
-            .style(serenity::model::application::ButtonStyle::Primary),
     ]);
     let _ = msg
         .channel_id
