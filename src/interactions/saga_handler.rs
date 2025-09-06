@@ -735,7 +735,6 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             }
         }
         _ => {
-            // Gracefully ignore but surface minimal feedback once (ephemeral)
             component.defer_ephemeral(&ctx.http).await.ok();
             let builder = EditInteractionResponse::new().content("Unknown saga interaction.");
             component.edit_response(&ctx.http, builder).await.ok();

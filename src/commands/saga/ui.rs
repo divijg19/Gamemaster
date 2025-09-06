@@ -152,7 +152,6 @@ pub fn create_world_map_view(
                 .label(label)
                 .style(ButtonStyle::Secondary)
                 .emoji('🗺')
-                .custom_id(format!("saga_node_{}", node.node_id))
                 .disabled(false)
         })
         .collect();

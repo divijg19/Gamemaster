@@ -128,7 +128,14 @@ impl EventHandler for Handler {
                 _ => {}
             }
         } else if let Interaction::Component(component) = &mut interaction {
-            let command_family = component.data.custom_id.split('_').next().unwrap_or("");
+            let original_id = component.data.custom_id.clone();
+            let mut command_family = original_id.split('_').next().unwrap_or("");
+            // Map navigation bar custom ids (nav_*) to their target families so buttons work.
+            if command_family == "nav" {
+                if let Some(target) = original_id.strip_prefix("nav_") {
+                    command_family = target; // e.g. saga / party / train
+                }
+            }
             match command_family {
                 "rps" | "bj" | "poker" | "shop" | "battle" => {
                     interactions::game_handler::handle(&ctx, component, app_state).await
@@ -156,7 +163,9 @@ impl EventHandler for Handler {
                 "research" => {
                     interactions::research_handler::handle(&ctx, component, app_state).await
                 }
-                _ => {}
+                other => {
+                    tracing::debug!(target="component.unhandled", id=%original_id, family=%other, "No handler mapped for component family");
+                }
             }
         }
     }
