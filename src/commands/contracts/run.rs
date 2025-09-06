@@ -1,4 +1,5 @@
 use crate::database;
+use crate::ui::style::pad_label;
 use chrono::{DateTime, Utc};
 use serenity::builder::{
     CreateActionRow, CreateButton, CreateCommand, CreateEmbed, CreateEmbedFooter, CreateSelectMenu,
@@ -195,26 +196,26 @@ pub fn build_contracts_embed(
     // Refresh + pagination + Play buttons row
     let mut nav_buttons = vec![
         CreateButton::new("contracts_refresh")
-            .label("Refresh")
+            .label(pad_label("🔄 Refresh", 14))
             .style(serenity::model::application::ButtonStyle::Secondary),
     ];
     if total_pages > 1 && page > 0 {
         nav_buttons.push(
             CreateButton::new(format!("contracts_page_{}", page - 1))
-                .label("Prev")
+                .label(pad_label("◀ Prev", 10))
                 .style(serenity::model::application::ButtonStyle::Secondary),
         );
     }
     if total_pages > 1 && page + 1 < total_pages {
         nav_buttons.push(
             CreateButton::new(format!("contracts_page_{}", page + 1))
-                .label("Next")
+                .label(pad_label("Next ▶", 10))
                 .style(serenity::model::application::ButtonStyle::Secondary),
         );
     }
     nav_buttons.push(
         CreateButton::new("saga_play")
-            .label("Play / Menu")
+            .label(pad_label("Play / Menu", 14))
             .style(serenity::model::application::ButtonStyle::Primary),
     );
     rows.push(CreateActionRow::Buttons(nav_buttons));

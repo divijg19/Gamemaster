@@ -83,7 +83,7 @@ pub fn create_quest_board_embed(quests: &[QuestBoardEntry]) -> (CreateEmbed, Vec
     }
 
     let mut rows: Vec<CreateActionRow> = Vec::new();
-    rows.push(crate::commands::saga::ui::play_button_row("Play / Menu"));
+    rows.push(crate::commands::saga::ui::play_button_row(&crate::ui::style::pad_label("Play / Menu", 14)));
     if !buttons.is_empty() {
         rows.push(CreateActionRow::Buttons(buttons));
     }

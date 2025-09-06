@@ -7,7 +7,7 @@ use crate::commands::saga::ui::back_refresh_row;
 use crate::constants::EQUIP_BONUS_CACHE_TTL_SECS;
 use crate::saga::battle::state::{BattleSession, BattleUnit};
 use crate::services::{cache as cache_service, saga as saga_service};
-use crate::ui::style::{error_embed, success_embed};
+use crate::ui::style::error_embed;
 use crate::ui::{ContextBag, NavState};
 use crate::{AppState, commands, database, saga};
 use serenity::builder::EditInteractionResponse;
@@ -135,6 +135,8 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
     let db = &app_state.db;
     let custom_id_parts: Vec<&str> = component.data.custom_id.split('_').collect();
 
+    const MAX_NAV_DEPTH: usize = 15;
+
     match custom_id_parts.get(1) {
         // (Removed duplicate early tutorial handler; consolidated later in file around line ~630)
         // Global navigation buttons (handled here for saga context)
@@ -203,18 +205,20 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     };
                     {
                         let mut stacks = app_state.nav_stacks.write().await;
-                        let entry = stacks.entry(component.user.id.get()).or_default();
-                        if entry.stack.len() > 14 {
-                            entry.stack.remove(0);
-                        }
-                        entry.push(Box::new(SagaMenuState {
-                            has_party,
-                            ap: profile.current_ap,
-                            max_ap: profile.max_ap,
-                            tp: profile.current_tp,
-                            max_tp: profile.max_tp,
-                        }));
-                        debug!(target: "nav", user_id = component.user.id.get(), depth = entry.stack.len(), state = "saga_menu", action = "push");
+                        stacks
+                            .entry(component.user.id.get())
+                            .or_default()
+                            .push_capped(
+                                Box::new(SagaMenuState {
+                                    has_party,
+                                    ap: profile.current_ap,
+                                    max_ap: profile.max_ap,
+                                    tp: profile.current_tp,
+                                    max_tp: profile.max_tp,
+                                }),
+                                MAX_NAV_DEPTH,
+                            );
+                        debug!(target: "nav", user_id = component.user.id.get(), state = "saga_menu", action = "push");
                     }
                     let builder = EditInteractionResponse::new()
                         .embed(embed)
@@ -233,6 +237,17 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             if let Ok(saga_profile) =
                 database::saga::update_and_get_saga_profile(db, component.user.id).await
             {
+                // Server-side guard (UI already disables) against AP exhaustion or no party.
+                let has_party = database::units::get_user_party(db, component.user.id)
+                    .await
+                    .map(|p| !p.is_empty())
+                    .unwrap_or(false);
+                if saga_profile.current_ap < 1 || !has_party {
+                    let builder = EditInteractionResponse::new()
+                        .content("You can't open the World Map right now (need party and 1+ AP).");
+                    component.edit_response(&ctx.http, builder).await.ok();
+                    return;
+                }
                 let node_ids = saga::map::get_available_nodes(saga_profile.story_progress);
                 if let Ok(nodes) = database::world::get_map_nodes_by_ids(db, &node_ids).await {
                     let state = SagaWorldMapState {
@@ -241,13 +256,11 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                         max_ap: saga_profile.max_ap,
                         story_progress: saga_profile.story_progress,
                     };
-                    {
-                        let mut stacks = app_state.nav_stacks.write().await;
-                        stacks
-                            .entry(component.user.id.get())
-                            .or_default()
-                            .push(Box::new(state));
-                    }
+                    let mut stacks = app_state.nav_stacks.write().await;
+                    stacks
+                        .entry(component.user.id.get())
+                        .or_default()
+                        .push_capped(Box::new(state), MAX_NAV_DEPTH);
                     let ctxbag = ContextBag::new(db.clone(), component.user.id);
                     if let Some(top) = app_state
                         .nav_stacks
@@ -277,7 +290,6 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
         }
         Some(&"tavern") => {
             component.defer(&ctx.http).await.ok();
-            // Ensure economy profile for balance
             let profile =
                 match database::economy::get_or_create_profile(db, component.user.id).await {
                     Ok(p) => p,
@@ -296,13 +308,62 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 recruits,
                 balance: profile.balance,
             };
+            let mut stacks = app_state.nav_stacks.write().await;
+            stacks
+                .entry(component.user.id.get())
+                .or_default()
+                .push_capped(Box::new(state), MAX_NAV_DEPTH);
+            let ctxbag = ContextBag::new(db.clone(), component.user.id);
+            if let Some(top) = app_state
+                .nav_stacks
+                .read()
+                .await
+                .get(&component.user.id.get())
+                .and_then(|s| s.stack.last())
             {
-                let mut stacks = app_state.nav_stacks.write().await;
-                stacks
-                    .entry(component.user.id.get())
-                    .or_default()
-                    .push(Box::new(state));
+                let (embed, mut components) = top.render(&ctxbag).await;
+                let depth = app_state
+                    .nav_stacks
+                    .read()
+                    .await
+                    .get(&component.user.id.get())
+                    .map(|s| s.stack.len())
+                    .unwrap_or(1);
+                if let Some(row) = back_refresh_row(depth) {
+                    components.push(row);
+                }
+                let builder = EditInteractionResponse::new()
+                    .embed(embed)
+                    .components(components);
+                component.edit_response(&ctx.http, builder).await.ok();
             }
+        }
+        Some(&"recruit") => {
+            // Shortcut button functions just like tavern
+            component.defer(&ctx.http).await.ok();
+            let profile =
+                match database::economy::get_or_create_profile(db, component.user.id).await {
+                    Ok(p) => p,
+                    Err(_) => {
+                        let builder = EditInteractionResponse::new()
+                            .content("Error: Could not load your profile.");
+                        component.edit_response(&ctx.http, builder).await.ok();
+                        return;
+                    }
+                };
+            let recruits =
+                database::units::get_units_by_ids(db, &commands::saga::tavern::TAVERN_RECRUITS)
+                    .await
+                    .unwrap_or_default();
+            let state = SagaTavernState {
+                recruits,
+                balance: profile.balance,
+            };
+            let mut stacks = app_state.nav_stacks.write().await;
+            stacks
+                .entry(component.user.id.get())
+                .or_default()
+                .push_capped(Box::new(state), MAX_NAV_DEPTH);
             let ctxbag = ContextBag::new(db.clone(), component.user.id);
             if let Some(top) = app_state
                 .nav_stacks
@@ -337,13 +398,11 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 embed: embed.clone(),
                 components: components.clone(),
             };
-            {
-                let mut stacks = app_state.nav_stacks.write().await;
-                stacks
-                    .entry(component.user.id.get())
-                    .or_default()
-                    .push(Box::new(state));
-            }
+            let mut stacks = app_state.nav_stacks.write().await;
+            stacks
+                .entry(component.user.id.get())
+                .or_default()
+                .push_capped(Box::new(state), MAX_NAV_DEPTH);
             let depth = app_state
                 .nav_stacks
                 .read()
@@ -491,17 +550,17 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             )
             .await;
             let builder = match result {
-                Ok(pet_name) => EditInteractionResponse::new().embed(
-                    success_embed(
-                        "Recruit Hired",
-                        format!("**{}** joins your forces!", pet_name),
+                Ok(pet_name) => {
+                    // Fetch remaining balance for richer feedback (ignore failure quietly)
+                    let balance_after =
+                        database::economy::get_or_create_profile(db, component.user.id)
+                            .await
+                            .map(|p| p.balance)
+                            .unwrap_or_default();
+                    EditInteractionResponse::new().embed(
+                        commands::saga::tavern::recruit_success_embed(&pet_name, balance_after),
                     )
-                    .field(
-                        "Cost",
-                        format!("{} coins", commands::saga::tavern::HIRE_COST),
-                        true,
-                    ),
-                ),
+                }
                 Err(e) => EditInteractionResponse::new().embed(error_embed(
                     "Recruit Failed",
                     format!("Hiring failed: {}", e),

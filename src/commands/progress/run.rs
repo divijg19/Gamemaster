@@ -1,4 +1,5 @@
 use crate::database::models::UnitRarity;
+use crate::ui::style::pad_label;
 use crate::{AppState, database};
 use serenity::builder::{CreateActionRow, CreateButton, CreateCommand, CreateEmbed};
 use serenity::model::application::CommandInteraction;
@@ -129,7 +130,7 @@ pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
             .label("Bestiary")
             .style(serenity::model::application::ButtonStyle::Secondary),
         CreateButton::new("saga_play")
-            .label("Play / Menu")
+            .label(pad_label("Play / Menu", 14))
             .style(serenity::model::application::ButtonStyle::Primary),
     ]);
     let resp = serenity::builder::CreateInteractionResponseMessage::new()
@@ -259,7 +260,7 @@ pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
             .label("Bestiary")
             .style(serenity::model::application::ButtonStyle::Secondary),
         CreateButton::new("saga_play")
-            .label("Play / Menu")
+            .label(pad_label("Play / Menu", 14))
             .style(serenity::model::application::ButtonStyle::Primary),
     ]);
     let _ = msg

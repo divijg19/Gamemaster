@@ -2,6 +2,7 @@
 
 use crate::{AppState, database};
 use serenity::builder::{CreateActionRow, CreateButton, EditInteractionResponse};
+use crate::ui::style::pad_label;
 use serenity::model::application::ComponentInteraction;
 use serenity::prelude::Context;
 use std::sync::Arc;
@@ -140,7 +141,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     app_state.invalidate_user_caches(user_id).await;
                     // Provide Unequip button (not yet wired to DB toggle) placeholder.
                     let unequip_button =
-                        CreateButton::new(format!("bond_unequip:{}", host_id)).label("Unequip");
+                        CreateButton::new(format!("bond_unequip:{}", host_id)).label(pad_label("🗑 Unequip", 14));
                     component
                         .edit_response(
                             &ctx.http,

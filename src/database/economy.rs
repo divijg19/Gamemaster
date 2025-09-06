@@ -109,6 +109,7 @@ pub async fn update_work_stats(
     tx: &mut Transaction<'_, Postgres>,
     user_id: UserId,
     rewards: &WorkRewards,
+    job_name: &str,
 ) -> Result<(Profile, Vec<ProgressionUpdate>), sqlx::Error> {
     let user_id_i64 = user_id.get() as i64;
     if rewards.coins != 0 {
@@ -152,24 +153,35 @@ pub async fn update_work_stats(
             });
         }
     };
-    apply_xp(
-        "Fishing",
-        &mut profile.fishing_xp,
-        &mut profile.fishing_level,
-        rewards.xp,
-    );
-    apply_xp(
-        "Mining",
-        &mut profile.mining_xp,
-        &mut profile.mining_level,
-        0,
-    ); // placeholder if needed
-    apply_xp(
-        "Coding",
-        &mut profile.coding_xp,
-        &mut profile.coding_level,
-        0,
-    );
+    match job_name {
+        "fishing" => apply_xp(
+            "Fishing",
+            &mut profile.fishing_xp,
+            &mut profile.fishing_level,
+            rewards.xp,
+        ),
+        "mining" => apply_xp(
+            "Mining",
+            &mut profile.mining_xp,
+            &mut profile.mining_level,
+            rewards.xp,
+        ),
+        "coding" => apply_xp(
+            "Coding",
+            &mut profile.coding_xp,
+            &mut profile.coding_level,
+            rewards.xp,
+        ),
+        other => {
+            tracing::warn!(target="economy.work", job=%other, "Unknown job name passed to update_work_stats; defaulting xp to fishing");
+            apply_xp(
+                "Fishing",
+                &mut profile.fishing_xp,
+                &mut profile.fishing_level,
+                rewards.xp,
+            );
+        }
+    };
 
     // Update streak and timestamp.
     sqlx::query!(

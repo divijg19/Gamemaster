@@ -2,6 +2,7 @@
 
 use crate::database::models::{MapNode, SagaProfile};
 use crate::ui::style::*;
+use chrono::{Duration, Utc};
 use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed};
 use serenity::model::application::ButtonStyle;
 
@@ -19,9 +20,31 @@ pub fn create_saga_menu(
     saga_profile: &SagaProfile,
     has_party: bool,
 ) -> (CreateEmbed, Vec<CreateActionRow>) {
+    let mut desc = String::from("Your daily adventure awaits. Choose your action wisely.");
+    if !has_party {
+        desc.push_str("\n\nYou don't have a party yet. Recruit units in the Tavern first.");
+    } else if saga_profile.current_ap == 0 {
+        // Provide a rough ETA assuming full daily reset at UTC day boundary for AP (since AP model currently resets daily)
+        let now = Utc::now();
+        let midnight = (now + Duration::days(1))
+            .date_naive()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let secs = (midnight - now.naive_utc()).num_seconds();
+        if secs > 0 {
+            let hrs = secs / 3600;
+            let mins = (secs % 3600) / 60;
+            desc.push_str(&format!(
+                "\n\nYou are out of Action Points. Daily reset in ~{}h {}m.",
+                hrs, mins
+            ));
+        } else {
+            desc.push_str("\n\nYou are out of Action Points. They replenish on daily reset.");
+        }
+    }
     let embed = CreateEmbed::new()
         .title("The Gamemaster Saga")
-        .description("Your daily adventure awaits. Choose your action wisely.")
+        .description(desc)
         .field(
             format!("{} Action Points", EMOJI_AP),
             stat_pair(saga_profile.current_ap, saga_profile.max_ap),
@@ -32,24 +55,47 @@ pub fn create_saga_menu(
             stat_pair(saga_profile.current_tp, saga_profile.max_tp),
             true,
         )
-        .color(COLOR_SAGA_MAIN);
+        .color(COLOR_SAGA_MAIN)
+        .footer(serenity::builder::CreateEmbedFooter::new(
+            "Use Refresh to update AP/TP • Manage Party before exploring",
+        ));
 
     // Primary action row
     let mut components: Vec<CreateActionRow> = Vec::new();
-    components.push(CreateActionRow::Buttons(vec![
-        CreateButton::new("saga_map")
-            .label("World Map (1 AP)")
-            .style(ButtonStyle::Primary)
-            .disabled(saga_profile.current_ap < 1 || !has_party),
-        CreateButton::new("saga_tavern")
-            .label("Tavern")
-            .style(ButtonStyle::Success),
+    let mut primary_buttons = Vec::new();
+    if has_party {
+        primary_buttons.push(
+            CreateButton::new("saga_map")
+                .label(pad_label("🗺 World Map (1 AP)", 18))
+                .style(ButtonStyle::Primary)
+                .disabled(saga_profile.current_ap < 1),
+        );
+        primary_buttons.push(
+            CreateButton::new("saga_tavern")
+                .label(pad_label("🍺 Tavern", 14))
+                .style(ButtonStyle::Success),
+        );
+    } else {
+        primary_buttons.push(
+            CreateButton::new("saga_map_locked")
+                .label(pad_label("🗺 World Map (Need Party)", 24))
+                .style(ButtonStyle::Secondary)
+                .disabled(true),
+        );
+        primary_buttons.push(
+            CreateButton::new("saga_recruit")
+                .label(pad_label("➕ Recruit", 14))
+                .style(ButtonStyle::Success),
+        );
+    }
+    primary_buttons.push(
         CreateButton::new("saga_team")
-            .label("Manage Party")
+            .label(pad_label("👥 Manage Party", 18))
             .style(ButtonStyle::Secondary),
-    ]));
+    );
+    components.push(CreateActionRow::Buttons(primary_buttons));
 
-    // Navigation / utility row: Back (disabled at root) + Refresh.
+    // Navigation / utility row: Back (disabled at root) + Refresh. Removed redundant Play Alias button.
     components.push(CreateActionRow::Buttons(vec![
         CreateButton::new("saga_back")
             .label(format!("{} Back", EMOJI_BACK))
@@ -57,9 +103,6 @@ pub fn create_saga_menu(
             .disabled(true), // root menu has no back target
         CreateButton::new("saga_refresh")
             .label(format!("{} Refresh", EMOJI_REFRESH))
-            .style(ButtonStyle::Secondary),
-        CreateButton::new("saga_play")
-            .label("Play Alias")
             .style(ButtonStyle::Secondary),
     ]));
 
@@ -81,7 +124,10 @@ pub fn create_world_map_view(
             format!("`{}/{}`", saga_profile.current_ap, saga_profile.max_ap),
             false,
         )
-        .color(COLOR_SAGA_MAP); // Styled constant
+        .color(COLOR_SAGA_MAP)
+        .footer(serenity::builder::CreateEmbedFooter::new(
+            "Spend AP to battle nodes • Back + Refresh available",
+        )); // Styled constant
 
     if nodes.is_empty() {
         embed = embed.description("There are no available locations for you to explore right now. Come back after you've made more progress in the story!");
@@ -111,19 +157,11 @@ pub fn create_world_map_view(
         })
         .collect();
 
-    let mut components = vec![play_button_row("Play / Menu")];
+    let mut components: Vec<CreateActionRow> = Vec::new();
     for chunk in buttons.chunks(5) {
         components.push(CreateActionRow::Buttons(chunk.to_vec()));
     }
-
-    // Add a final action row with a Back button to return to the main saga menu.
-    components.push(CreateActionRow::Buttons(vec![
-        CreateButton::new("saga_main")
-            .label("⬅ Back")
-            .style(ButtonStyle::Danger),
-    ]));
-
-    // Append global nav row for consistency
+    // Append global nav row; back/refresh row injected by interaction handler based on stack depth.
     components.push(global_nav_row("saga"));
     (embed, components)
 }
@@ -136,24 +174,19 @@ pub fn create_first_time_tutorial() -> (CreateEmbed, Vec<CreateActionRow>) {
         .field("Step 1","Recruit a starter unit (free).", false)
         .field("Step 2","Use 'Manage Party' later to adjust your lineup.", false)
         .field("Step 3","Spend Action Points on the World Map to battle and earn rewards.", false)
-    .color(COLOR_SAGA_TUTORIAL); // Styled constant
+    .color(COLOR_SAGA_TUTORIAL)
+    .footer(serenity::builder::CreateEmbedFooter::new("Choose Get Starter Unit to begin your adventure")); // Styled constant
 
     let row = CreateActionRow::Buttons(vec![
         CreateButton::new("saga_tutorial_hire")
-            .label("Get Starter Unit")
+            .label(pad_label("➕ Get Starter Unit", 22))
             .style(ButtonStyle::Success),
         CreateButton::new("saga_tutorial_skip")
-            .label("Skip Tutorial")
+            .label(pad_label("⏭ Skip Tutorial", 20))
             .style(ButtonStyle::Secondary),
     ]);
     // Add a play button so user can always refresh to the main menu easily.
-    let play_row = CreateActionRow::Buttons(vec![
-        CreateButton::new("saga_play")
-            .label("Open Main Menu")
-            .style(ButtonStyle::Primary),
-    ]);
-
-    let mut v = vec![row, play_row];
+    let mut v = vec![row];
     v.push(global_nav_row("saga"));
     (embed, v)
 }

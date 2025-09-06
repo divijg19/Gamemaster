@@ -274,8 +274,9 @@ impl EventHandler for Handler {
             .set_commands(&ctx.http, commands_to_register)
             .await
         {
-            println!("[HANDLER] Error creating guild commands: {:?}", e);
+            tracing::error!(target="handler.commands", error=?e, "guild command registration failed");
+        } else {
+            tracing::info!(target = "handler.commands", "guild commands registered");
         }
-        println!("[HANDLER] Successfully registered guild commands.");
     }
 }
