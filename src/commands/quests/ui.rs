@@ -4,6 +4,7 @@ use crate::commands::economy::core::item::Item;
 use crate::database::models::PlayerQuestStatus;
 use crate::database::quests::QuestBoardEntry;
 use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter};
+use crate::ui::style::pad_primary;
 use serenity::model::Colour;
 use serenity::model::prelude::ButtonStyle;
 
@@ -76,14 +77,14 @@ pub fn create_quest_board_embed(quests: &[QuestBoardEntry]) -> (CreateEmbed, Vec
 
             buttons.push(
                 CreateButton::new(format!("quest_accept_{}", entry.details.player_quest_id))
-                    .label(format!("Accept: {}", entry.details.title))
+                    .label(pad_primary("🆗 Accept"))
                     .style(ButtonStyle::Primary),
             );
         }
     }
 
     let mut rows: Vec<CreateActionRow> = Vec::new();
-    rows.push(crate::commands::saga::ui::play_button_row(&crate::ui::style::pad_label("Play / Menu", 14)));
+    rows.push(crate::commands::saga::ui::global_nav_row("saga"));
     if !buttons.is_empty() {
         rows.push(CreateActionRow::Buttons(buttons));
     }

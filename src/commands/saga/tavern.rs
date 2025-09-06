@@ -1,7 +1,7 @@
 //! Contains the UI and logic for the Tavern.
 
 use crate::database::models::Unit;
-use crate::ui::style::*;
+use crate::ui::style::{COLOR_SAGA_TAVERN, EMOJI_COIN, pad_primary};
 use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed};
 use serenity::model::application::ButtonStyle;
 
@@ -55,19 +55,17 @@ pub fn create_tavern_menu(
         );
         components.push(
             CreateButton::new(format!("saga_hire_{}", unit.unit_id))
-                .label(format!("➕ Hire {}", unit.name))
+                .label(pad_primary(&format!("➕ Hire {}", unit.name)))
                 .style(ButtonStyle::Success)
                 .disabled(player_balance < HIRE_COST),
         );
     }
 
     let action_row = CreateActionRow::Buttons(components);
-    // Prepend Play row for consistent navigation.
-    let mut rows = vec![crate::commands::saga::ui::play_button_row(
-        &crate::ui::style::pad_label("Play / Menu", 14),
-    )];
-    rows.push(action_row);
-    // Append global cross-command nav row (active = saga)
-    crate::commands::saga::ui::add_nav(&mut rows, "saga");
+    // Include global nav row and action buttons.
+    let rows = vec![
+        crate::commands::saga::ui::global_nav_row("saga"),
+        action_row,
+    ];
     (embed, rows)
 }

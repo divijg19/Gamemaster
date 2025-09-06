@@ -1,5 +1,5 @@
 use crate::database::models::Unit;
-use crate::ui::style::pad_label;
+use crate::ui::style::pad_std;
 use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed};
 use serenity::model::application::ButtonStyle;
 
@@ -29,19 +29,16 @@ pub fn create_bestiary_embed(entries: &[BestiaryEntry]) -> (CreateEmbed, Vec<Cre
     (
         embed,
         vec![
-            crate::commands::saga::ui::play_button_row(&crate::ui::style::pad_label(
-                "Play / Menu",
-                14,
-            )),
+            crate::commands::saga::ui::global_nav_row("saga"),
             CreateActionRow::Buttons(vec![
                 CreateButton::new("bestiary_refresh")
-                    .label(pad_label("🔄 Refresh", 14))
+                    .label(pad_std("🔄 Refresh"))
                     .style(ButtonStyle::Secondary),
                 CreateButton::new("contracts_refresh")
-                    .label(pad_label("📜 Contracts", 16))
+                    .label(pad_std("📜 Contracts"))
                     .style(ButtonStyle::Secondary),
                 CreateButton::new("research_refresh")
-                    .label(pad_label("🔬 Research", 16))
+                    .label(pad_std("🔬 Research"))
                     .style(ButtonStyle::Secondary),
             ]),
         ],

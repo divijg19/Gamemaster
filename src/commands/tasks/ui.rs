@@ -2,7 +2,7 @@
 
 use crate::commands::economy::core::item::Item;
 use crate::database::models::{PlayerTaskDetails, TaskType};
-use crate::ui::style::pad_label;
+use crate::ui::style::pad_primary;
 use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter};
 use serenity::model::Colour;
 use serenity::model::prelude::ButtonStyle;
@@ -57,7 +57,7 @@ pub fn create_tasks_embed(tasks: &[PlayerTaskDetails]) -> (CreateEmbed, Vec<Crea
 
         if task.is_completed {
             let button = CreateButton::new(format!("task_claim_{}", task.player_task_id))
-                .label(pad_label(&format!("🎁 Claim {}", task.title), 24))
+                .label(pad_primary("🎁 Claim"))
                 .style(ButtonStyle::Success);
             claim_buttons.push(button);
         }
@@ -72,9 +72,7 @@ pub fn create_tasks_embed(tasks: &[PlayerTaskDetails]) -> (CreateEmbed, Vec<Crea
 
     // Build action row with claim buttons (using enum variant since `from_buttons` is unavailable).
     let mut rows: Vec<CreateActionRow> = Vec::new();
-    rows.push(crate::commands::saga::ui::play_button_row(
-        &crate::ui::style::pad_label("Play / Menu", 14),
-    ));
+    rows.push(crate::commands::saga::ui::global_nav_row("saga"));
     if !claim_buttons.is_empty() {
         rows.push(CreateActionRow::Buttons(claim_buttons));
     }

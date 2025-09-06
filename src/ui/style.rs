@@ -12,6 +12,11 @@ pub const EMOJI_REFRESH: &str = "🔄";
 pub const EMOJI_BACK: &str = "⬅";
 pub const EMOJI_COIN: &str = "💰";
 
+// Standard target widths for padded button labels (approx char counts before Discord trimming)
+pub const BTN_W_NARROW: usize = 12;   // short actions (Rock, Fold, Claim)
+pub const BTN_W_STD: usize = 16;      // common secondary buttons (Refresh, Research)
+pub const BTN_W_PRIMARY: usize = 22;  // primary saga/world/nav actions
+
 pub fn stat_pair(current: i32, max: i32) -> String {
     format!("`{}/{}`", current, max)
 }
@@ -21,8 +26,15 @@ pub fn stat_pair(current: i32, max: i32) -> String {
 /// We keep this conservative (max pad 2) to avoid discord collapsing them entirely.
 pub fn pad_label(label: &str, target_min: usize) -> String {
     let len = label.chars().count();
-    if len >= target_min { label.to_string() } else { format!("{label}{pad}", pad=" ".repeat((target_min - len).min(2))) }
+    if len >= target_min { return label.to_string(); }
+    // Provide trailing spaces but clamp to 2 to avoid Discord trimming collapse.
+    format!("{label}{pad}", pad=" ".repeat((target_min - len).min(2)))
 }
+
+/// Convenience wrapper picking a standard category width.
+pub fn pad_primary(label: &str) -> String { pad_label(label, BTN_W_PRIMARY) }
+pub fn pad_std(label: &str) -> String { pad_label(label, BTN_W_STD) }
+pub fn pad_narrow(label: &str) -> String { pad_label(label, BTN_W_NARROW) }
 
 use serenity::builder::CreateEmbed;
 

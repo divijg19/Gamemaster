@@ -3,8 +3,8 @@
 use crate::commands::economy::core::item::Item;
 use crate::database::models::PlayerQuestStatus;
 use crate::database::quests::QuestBoardEntry;
+use crate::ui::style::pad_primary;
 use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed};
-use crate::ui::style::pad_label;
 use serenity::model::Colour;
 use serenity::model::prelude::ButtonStyle;
 
@@ -71,16 +71,16 @@ pub fn create_questlog_embed(
 
     // Create the view-switcher buttons
     let active_button = CreateButton::new("questlog_view_Accepted")
-        .label(pad_label("📖 View Active", 18))
+        .label(pad_primary("📖 Active"))
         .style(ButtonStyle::Primary)
         .disabled(current_view == PlayerQuestStatus::Accepted);
 
     let completed_button = CreateButton::new("questlog_view_Completed")
-        .label(pad_label("✅ View Completed", 20))
+        .label(pad_primary("✅ Completed"))
         .style(ButtonStyle::Secondary)
         .disabled(current_view == PlayerQuestStatus::Completed);
 
-    let mut rows = vec![crate::commands::saga::ui::play_button_row(&crate::ui::style::pad_label("Play / Menu", 14))];
+    let mut rows = vec![crate::commands::saga::ui::global_nav_row("saga")];
     rows.push(CreateActionRow::Buttons(vec![
         active_button,
         completed_button,

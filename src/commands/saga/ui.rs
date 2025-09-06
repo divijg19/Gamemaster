@@ -1,20 +1,14 @@
 //! Handles the UI creation for the `/saga` command menu.
 
 use crate::database::models::{MapNode, SagaProfile};
-use crate::ui::style::*;
+use crate::ui::style::{
+    COLOR_SAGA_MAIN, COLOR_SAGA_MAP, COLOR_SAGA_TUTORIAL, EMOJI_AP, EMOJI_BACK, EMOJI_REFRESH,
+    EMOJI_TP, pad_primary, stat_pair,
+};
 use chrono::{Duration, Utc};
 use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed};
 use serenity::model::application::ButtonStyle;
 
-/// Reusable first-row Play button to ensure consistent navigation back to main Saga menu.
-pub fn play_button_row(label: &str) -> CreateActionRow {
-    CreateActionRow::Buttons(vec![
-        CreateButton::new("saga_play")
-            .label(label)
-            .style(ButtonStyle::Primary),
-    ])
-}
-// End of play_button_row function
 /// Creates the embed and components for the main saga menu.
 pub fn create_saga_menu(
     saga_profile: &SagaProfile,
@@ -62,35 +56,37 @@ pub fn create_saga_menu(
 
     // Primary action row
     let mut components: Vec<CreateActionRow> = Vec::new();
+    // Unified width target for primary saga buttons
+    // Use global BTN_W_PRIMARY width via helper
     let mut primary_buttons = Vec::new();
     if has_party {
         primary_buttons.push(
             CreateButton::new("saga_map")
-                .label(pad_label("🗺 World Map (1 AP)", 18))
+                .label(pad_primary("🗺 Map (1 AP)"))
                 .style(ButtonStyle::Primary)
                 .disabled(saga_profile.current_ap < 1),
         );
         primary_buttons.push(
             CreateButton::new("saga_tavern")
-                .label(pad_label("🍺 Tavern", 14))
+                .label(pad_primary("🍺 Tavern"))
                 .style(ButtonStyle::Success),
         );
     } else {
         primary_buttons.push(
             CreateButton::new("saga_map_locked")
-                .label(pad_label("🗺 World Map (Need Party)", 24))
+                .label(pad_primary("🗺 Map (Need Party)"))
                 .style(ButtonStyle::Secondary)
                 .disabled(true),
         );
         primary_buttons.push(
             CreateButton::new("saga_recruit")
-                .label(pad_label("➕ Recruit", 14))
+                .label(pad_primary("➕ Recruit"))
                 .style(ButtonStyle::Success),
         );
     }
     primary_buttons.push(
         CreateButton::new("saga_team")
-            .label(pad_label("👥 Manage Party", 18))
+            .label(pad_primary("👥 Party"))
             .style(ButtonStyle::Secondary),
     );
     components.push(CreateActionRow::Buttons(primary_buttons));
@@ -178,13 +174,13 @@ pub fn create_first_time_tutorial() -> (CreateEmbed, Vec<CreateActionRow>) {
 
     let row = CreateActionRow::Buttons(vec![
         CreateButton::new("saga_tutorial_hire")
-            .label(pad_label("➕ Get Starter Unit", 22))
+            .label(pad_primary("➕ Starter Unit"))
             .style(ButtonStyle::Success),
         CreateButton::new("saga_tutorial_skip")
-            .label(pad_label("⏭ Skip Tutorial", 20))
+            .label(pad_primary("⏭ Skip Tutorial"))
             .style(ButtonStyle::Secondary),
     ]);
-    // Add a play button so user can always refresh to the main menu easily.
+    // Remove legacy play/menu button; global nav row already provides Saga entry.
     let mut v = vec![row];
     v.push(global_nav_row("saga"));
     (embed, v)

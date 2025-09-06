@@ -20,14 +20,6 @@ use tracing::instrument;
 
 // Local cache helpers removed (centralized in services::saga).
 
-struct SagaMenuState {
-    has_party: bool,
-    ap: i32,
-    max_ap: i32,
-    tp: i32,
-    max_tp: i32,
-}
-
 struct SagaWorldMapState {
     nodes: Vec<crate::database::models::MapNode>,
     ap: i32,
@@ -102,38 +94,11 @@ impl NavState for SagaPartyState {
     }
 }
 
-#[async_trait::async_trait]
-impl NavState for SagaMenuState {
-    fn id(&self) -> &'static str {
-        "saga_menu"
-    }
-    async fn render(
-        &self,
-        ctx: &ContextBag,
-    ) -> (
-        serenity::builder::CreateEmbed,
-        Vec<serenity::builder::CreateActionRow>,
-    ) {
-        let _ = (&ctx.db, ctx.user_id);
-        let (embed_final, components) = commands::saga::ui::create_saga_menu(
-            &crate::database::models::SagaProfile {
-                current_ap: self.ap,
-                max_ap: self.max_ap,
-                current_tp: self.tp,
-                max_tp: self.max_tp,
-                last_tp_update: chrono::Utc::now(),
-                story_progress: 0,
-            },
-            self.has_party,
-        );
-        (embed_final, components)
-    }
-}
-
 #[instrument(level="debug", skip(ctx, component, app_state), fields(user_id = component.user.id.get(), cid = %component.data.custom_id))]
 pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_state: Arc<AppState>) {
     let db = &app_state.db;
     let custom_id_parts: Vec<&str> = component.data.custom_id.split('_').collect();
+    tracing::debug!(target="saga.interaction", user_id=%component.user.id, custom_id=%component.data.custom_id, "Saga component received");
 
     const MAX_NAV_DEPTH: usize = 15;
 
@@ -191,47 +156,6 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             }
             return;
         }
-        // saga_play: lightweight alias button that just re-renders the main menu
-        Some(&"play") => {
-            component.defer(&ctx.http).await.ok();
-            let _ = database::economy::get_or_create_profile(db, component.user.id).await;
-            match saga_service::get_profile_and_units_debug(&app_state, component.user.id).await {
-                Ok((profile, units)) => {
-                    let has_party = units.iter().any(|u| u.is_in_party);
-                    let (embed, components) = if !has_party && profile.story_progress == 0 {
-                        commands::saga::ui::create_first_time_tutorial()
-                    } else {
-                        commands::saga::ui::create_saga_menu(&profile, has_party)
-                    };
-                    {
-                        let mut stacks = app_state.nav_stacks.write().await;
-                        stacks
-                            .entry(component.user.id.get())
-                            .or_default()
-                            .push_capped(
-                                Box::new(SagaMenuState {
-                                    has_party,
-                                    ap: profile.current_ap,
-                                    max_ap: profile.max_ap,
-                                    tp: profile.current_tp,
-                                    max_tp: profile.max_tp,
-                                }),
-                                MAX_NAV_DEPTH,
-                            );
-                        debug!(target: "nav", user_id = component.user.id.get(), state = "saga_menu", action = "push");
-                    }
-                    let builder = EditInteractionResponse::new()
-                        .embed(embed)
-                        .components(components);
-                    component.edit_response(&ctx.http, builder).await.ok();
-                }
-                Err(e) => {
-                    let builder = EditInteractionResponse::new()
-                        .content(format!("Error: Could not load saga profile ({e})"));
-                    component.edit_response(&ctx.http, builder).await.ok();
-                }
-            }
-        }
         Some(&"map") => {
             component.defer(&ctx.http).await.ok();
             if let Ok(saga_profile) =
@@ -285,6 +209,12 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                             .components(components);
                         component.edit_response(&ctx.http, builder).await.ok();
                     }
+                } else {
+                    tracing::error!(target="saga.map", user_id=%component.user.id, "Failed to load map nodes");
+                    let builder = EditInteractionResponse::new().content(
+                        "Error: Could not load map nodes (database error). Try again later.",
+                    );
+                    component.edit_response(&ctx.http, builder).await.ok();
                 }
             }
         }

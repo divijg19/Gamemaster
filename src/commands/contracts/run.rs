@@ -1,5 +1,5 @@
 use crate::database;
-use crate::ui::style::pad_label;
+use crate::ui::style::{pad_narrow, pad_std};
 use chrono::{DateTime, Utc};
 use serenity::builder::{
     CreateActionRow, CreateButton, CreateCommand, CreateEmbed, CreateEmbedFooter, CreateSelectMenu,
@@ -196,29 +196,26 @@ pub fn build_contracts_embed(
     // Refresh + pagination + Play buttons row
     let mut nav_buttons = vec![
         CreateButton::new("contracts_refresh")
-            .label(pad_label("🔄 Refresh", 14))
+            .label(pad_std("🔄 Refresh"))
             .style(serenity::model::application::ButtonStyle::Secondary),
     ];
     if total_pages > 1 && page > 0 {
         nav_buttons.push(
             CreateButton::new(format!("contracts_page_{}", page - 1))
-                .label(pad_label("◀ Prev", 10))
+                .label(pad_narrow("◀ Prev"))
                 .style(serenity::model::application::ButtonStyle::Secondary),
         );
     }
     if total_pages > 1 && page + 1 < total_pages {
         nav_buttons.push(
             CreateButton::new(format!("contracts_page_{}", page + 1))
-                .label(pad_label("Next ▶", 10))
+                .label(pad_narrow("Next ▶"))
                 .style(serenity::model::application::ButtonStyle::Secondary),
         );
     }
-    nav_buttons.push(
-        CreateButton::new("saga_play")
-            .label(pad_label("Play / Menu", 14))
-            .style(serenity::model::application::ButtonStyle::Primary),
-    );
+    // Replace legacy Play/Menu button with global nav row appended later if absent.
     rows.push(CreateActionRow::Buttons(nav_buttons));
+    crate::commands::saga::ui::add_nav(&mut rows, "saga");
     ContractsView {
         description: lines.join("\n"),
         embed,
@@ -320,7 +317,7 @@ pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
                     .description(format!("Error loading progress: {}", e)),
                 components: vec![CreateActionRow::Buttons(vec![
                     CreateButton::new("contracts_refresh")
-                        .label("Refresh")
+                        .label(pad_std("🔄 Refresh"))
                         .style(serenity::model::application::ButtonStyle::Secondary),
                 ])],
             },
