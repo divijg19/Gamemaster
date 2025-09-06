@@ -32,17 +32,16 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
         if let Ok(units) = database::units::get_player_units(&db, component.user.id).await
             && let Some(profile) =
                 crate::services::saga::get_saga_profile(&app_state, component.user.id, false).await
-            {
-                let (embed, components) =
-                    commands::train::ui::create_training_menu(&units, &profile);
-                let builder = EditInteractionResponse::new()
-                    .embed(embed)
-                    .components(components);
-                component
-                    .edit_response(ctx.http.clone(), builder)
-                    .await
-                    .ok();
-            }
+        {
+            let (embed, components) = commands::train::ui::create_training_menu(&units, &profile);
+            let builder = EditInteractionResponse::new()
+                .embed(embed)
+                .components(components);
+            component
+                .edit_response(ctx.http.clone(), builder)
+                .await
+                .ok();
+        }
         return;
     } else if component.data.custom_id == "nav_party" {
         // Already within party domain; just fall through to standard re-render logic below (after potential action)

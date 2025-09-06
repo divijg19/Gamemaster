@@ -67,6 +67,7 @@
 .sqlx/query-c16e854c121207c8aaa3990f10febce397fee6f86ecb0220536fc3ff0a2516ed.json
 .sqlx/query-c1915d89f274eb90989fcc4530ce0a3c03429ccb24b2d1a6af5c1c0e15a045c5.json
 .sqlx/query-c2b4bbc7c6539c11bb1be5fc3c28cfeb543ffa663c8358b94b7874d48e6fad98.json
+.sqlx/query-c4c1b06ee469ecf40cf34124e8a4c073c753c7e7d423ade5728857895491da68.json
 .sqlx/query-c4cbb88351d07303050b350b49e86a2db93acc770224188986e5ab303902fef6.json
 .sqlx/query-c57e1ecd1b424e8f69b4ea8dfb8e372a212e7c7e6ee6587435766d4652e22741.json
 .sqlx/query-d2273865c22f3670fc6ecebc7f8b94621e070c38fe2bb745bb9c320c7b3af434.json
@@ -116,6 +117,8 @@ migrations/20250904005000_schema_not_null_fixes.sql
 migrations/20250904011000_perf_indexes_and_constraints.sql
 migrations/20250905000100_baseline_init.sql
 migrations/20250906090000_world_inventory_research.sql
+migrations/20250906093000_perf_indexes.sql
+migrations/20250906110000_saga_ap_tp_rebalance.sql
 scripts/prepare-sqlx.ps1
 src/cache.rs
 src/commands/admin.rs
@@ -263,6 +266,7 @@ src/ui/mod.rs
 src/ui/nav.rs
 src/ui/style.rs
 tests/help_commands.rs
+tests/nav_stack.rs
 tests/saga_first_time.rs
 tests/saga_logic.rs
 tests/unit_basic.rs

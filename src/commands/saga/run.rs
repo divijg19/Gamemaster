@@ -19,8 +19,9 @@ pub fn register_play() -> CreateCommand {
     CreateCommand::new("play").description("Play the Gamemaster Saga (alias of /saga).")
 }
 
-/// Internal shared execution that returns either the unified menu/tutorial or a rich error string.
-async fn execute_saga(
+/// Builds the root Saga UI (tutorial or main menu) ensuring base + saga profile readiness.
+/// Returns embed + components or rich error string describing the failure.
+pub async fn saga_root_ui(
     app_state: &AppState,
     user_id: serenity::model::id::UserId,
 ) -> Result<(CreateEmbed, Vec<serenity::builder::CreateActionRow>), String> {
@@ -43,35 +44,31 @@ async fn execute_saga(
             }
             _ => msg.push_str(&format!("Unexpected error: {e}")),
         }
-        println!(
-            "[SAGA CMD] base profile ensure failed user={} err={:?} type={}",
-            user_id.get(),
-            e,
-            std::any::type_name::<sqlx::Error>()
-        );
+        tracing::error!(target="saga.root", user_id=%user_id.get(), error=?e, "Base profile ensure failed");
         return Err(msg);
     }
     match services::saga::get_profile_and_units_debug(app_state, user_id).await {
         Ok((profile, units)) => {
             let has_party = units.iter().any(|u| u.is_in_party);
-            let (embed, components) = if !has_party && profile.story_progress == 0 {
+            let (mut embed, mut components) = if !has_party && profile.story_progress == 0 {
                 create_first_time_tutorial()
             } else {
                 create_saga_menu(&profile, has_party)
             };
+            if profile.story_progress > 0 {
+                embed = embed.field(
+                    "Story Progress",
+                    format!("`{}` milestone(s) cleared", profile.story_progress),
+                    false,
+                );
+            }
+            // Optionally append nav row if missing (safety in case UI builder changes)
+            crate::commands::saga::ui::add_nav(&mut components, "saga");
             Ok((embed, components))
         }
         Err(e) => {
             use sqlx::Error::*;
-            println!(
-                "[SAGA CMD] retrieval failed user={} err={:?} code_hint={:?}",
-                user_id.get(),
-                e,
-                match &e {
-                    sqlx::Error::Database(db) => db.code(),
-                    _ => None,
-                }
-            );
+            tracing::error!(target="saga.root", user_id=%user_id.get(), error=?e, code_hint=?match &e { sqlx::Error::Database(db)=> db.code(), _=> None }, "Saga profile retrieval failed");
             let mut msg = String::from("Could not retrieve your game profile. ");
             match &e {
                 Database(db_err) => {
@@ -107,7 +104,7 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
     let Some(app_state) = AppState::from_ctx(ctx).await else {
         return;
     };
-    match execute_saga(&app_state, interaction.user.id).await {
+    match saga_root_ui(&app_state, interaction.user.id).await {
         Ok((embed, components)) => {
             let builder = serenity::builder::EditInteractionResponse::new()
                 .embed(embed)
@@ -130,7 +127,7 @@ pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
     let Some(app_state) = AppState::from_ctx(ctx).await else {
         return;
     };
-    match execute_saga(&app_state, msg.author.id).await {
+    match saga_root_ui(&app_state, msg.author.id).await {
         Ok((embed, components)) => {
             let builder = CreateMessage::new()
                 .embed(embed)

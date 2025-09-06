@@ -1,6 +1,7 @@
 //! Handles rendering the battle state into a Discord embed.
 
 use super::state::{BattlePhase, BattleSession, BattleUnit};
+use crate::ui::style::pad_label;
 use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed};
 use serenity::model::application::ButtonStyle;
 
@@ -46,16 +47,16 @@ pub fn render_battle(
 
             let mut buttons = vec![
                 CreateButton::new("battle_attack")
-                    .label("Attack")
+                    .label(pad_label("⚔️ Attack", 14))
                     .style(ButtonStyle::Primary),
                 CreateButton::new("battle_item")
-                    .label("Item")
+                    .label(pad_label("🎒 Item", 14))
                     .style(ButtonStyle::Secondary),
             ];
             if show_tame {
                 buttons.push(
                     CreateButton::new("battle_recruit")
-                        .label("Tame")
+                        .label(pad_label("🪄 Tame", 14))
                         .style(ButtonStyle::Success)
                         .disabled(!tame_enabled),
                 );
@@ -63,14 +64,14 @@ pub fn render_battle(
             if show_contract {
                 buttons.push(
                     CreateButton::new("battle_contract")
-                        .label("Contract")
+                        .label(pad_label("📜 Contract", 14))
                         .style(ButtonStyle::Success)
                         .disabled(!contract_enabled),
                 );
             }
             buttons.push(
                 CreateButton::new("battle_flee")
-                    .label("Flee")
+                    .label(pad_label("🏃 Flee", 14))
                     .style(ButtonStyle::Danger),
             );
             vec![CreateActionRow::Buttons(buttons)]
@@ -79,11 +80,11 @@ pub fn render_battle(
         BattlePhase::EnemyTurn | BattlePhase::PlayerSelectingItem => {
             vec![CreateActionRow::Buttons(vec![
                 CreateButton::new("disabled_attack")
-                    .label("Attack")
+                    .label(pad_label("⚔️ Attack", 14))
                     .style(ButtonStyle::Primary)
                     .disabled(true),
                 CreateButton::new("disabled_item")
-                    .label("Item")
+                    .label(pad_label("🎒 Item", 14))
                     .style(ButtonStyle::Secondary)
                     .disabled(true),
                 CreateButton::new("disabled_placeholder")
@@ -91,7 +92,7 @@ pub fn render_battle(
                     .style(ButtonStyle::Success)
                     .disabled(true),
                 CreateButton::new("disabled_flee")
-                    .label("Flee")
+                    .label(pad_label("🏃 Flee", 14))
                     .style(ButtonStyle::Danger)
                     .disabled(true),
             ])]
@@ -100,7 +101,7 @@ pub fn render_battle(
         BattlePhase::Victory => {
             vec![CreateActionRow::Buttons(vec![
                 CreateButton::new("battle_claim_rewards")
-                    .label("Claim Rewards")
+                    .label(pad_label("🎁 Claim Rewards", 20))
                     .style(ButtonStyle::Success),
             ])]
         }
@@ -108,7 +109,7 @@ pub fn render_battle(
         BattlePhase::Defeat => {
             vec![CreateActionRow::Buttons(vec![
                 CreateButton::new("battle_close")
-                    .label("Close")
+                    .label(pad_label("❌ Close", 14))
                     .style(ButtonStyle::Secondary),
             ])]
         }

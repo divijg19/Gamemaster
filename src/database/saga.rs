@@ -58,7 +58,7 @@ pub async fn update_and_get_saga_profile(
     // SELECT could (rarely) surface RowNotFound under high concurrency if the planner skipped
     // the write path. This pattern guarantees we either obtain the freshly inserted row or
     // lock the existing one.
-    let initial_profile = if let Some(inserted) = sqlx::query_as!(
+    let mut initial_profile = if let Some(inserted) = sqlx::query_as!(
         SagaProfile,
         "INSERT INTO player_saga_profile (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING RETURNING current_ap, max_ap, current_tp, max_tp, last_tp_update, story_progress",
         user_id_i64
@@ -75,6 +75,23 @@ pub async fn update_and_get_saga_profile(
         .fetch_one(&mut *tx)
         .await?
     };
+
+    // Rebalance: if this is a freshly inserted (all zeros) profile, set starting pools.
+    if initial_profile.current_ap == 0
+        && initial_profile.max_ap == 10
+        && initial_profile.current_tp == 0
+        && initial_profile.max_tp == 100
+        && initial_profile.story_progress == 0
+    {
+        let adjusted = sqlx::query_as!(
+            SagaProfile,
+            "UPDATE player_saga_profile SET current_ap = 4, max_ap = 4, current_tp = 10, max_tp = 10 WHERE user_id = $1 RETURNING current_ap, max_ap, current_tp, max_tp, last_tp_update, story_progress",
+            user_id_i64
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        initial_profile = adjusted;
+    }
 
     let (calculated_tp, needs_tp_update) = saga::core::calculate_tp_recharge(&initial_profile);
     let needs_ap_reset = now.date_naive() != initial_profile.last_tp_update.date_naive();

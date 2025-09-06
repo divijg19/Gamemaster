@@ -65,7 +65,7 @@ pub async fn perform_work(pool: &PgPool, user: &User, job_name: &str) -> CreateE
             Err(_) => return ui::create_error_embed("Failed to start database transaction."),
         };
 
-        if database::economy::update_work_stats(&mut tx, user.id, &rewards)
+        if database::economy::update_work_stats(&mut tx, user.id, &rewards, chosen_job.name)
             .await
             .is_err()
         {

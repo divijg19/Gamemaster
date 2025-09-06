@@ -188,6 +188,7 @@ pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
                 ));
             }
             ("sagainit", _) => {
+                tracing::info!(target="adminutil.sagainit", user_id=%interaction.user.id, "Starting saga initialization");
                 let user_id = interaction.user.id;
                 match database::economy::get_or_create_profile(db, user_id).await {
                     Ok(_) => notes.push("Base profile ensured.".into()),
@@ -197,6 +198,7 @@ pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
                     Ok(_) => notes.push("Saga profile ensured.".into()),
                     Err(e) => notes.push(format!("Saga profile error: {e}")),
                 }
+                tracing::info!(target="adminutil.sagainit", user_id=%interaction.user.id, "Completed saga initialization");
             }
             _ => notes.push("Unknown subcommand.".into()),
         }

@@ -24,11 +24,16 @@ pub struct NavStack {
     pub stack: Vec<Box<dyn NavState>>,
 }
 impl NavStack {
-    pub fn push(&mut self, s: Box<dyn NavState>) {
-        self.stack.push(s)
-    }
     pub fn pop(&mut self) -> Option<Box<dyn NavState>> {
         self.stack.pop()
+    }
+    /// Pushes a new state while enforcing a maximum depth (discarding the oldest when exceeded).
+    pub fn push_capped(&mut self, s: Box<dyn NavState>, max_depth: usize) {
+        if self.stack.len() >= max_depth {
+            // Remove oldest (front) to keep recent navigation context.
+            self.stack.remove(0);
+        }
+        self.stack.push(s);
     }
     // (Pruned unused helper methods to avoid dead_code warnings.)
 }

@@ -1,6 +1,7 @@
 //! Handles the UI creation for the `/party` command.
 
 use crate::constants::rarity_icon;
+use crate::ui::style::pad_label;
 use crate::constants::{BOND_MAP_CACHE_TTL_SECS, EQUIP_BONUS_CACHE_TTL_SECS};
 use crate::database::models::{PlayerUnit, UnitRarity};
 use crate::model::AppState;
@@ -34,7 +35,7 @@ pub fn create_party_view(units: &[PlayerUnit]) -> (CreateEmbed, Vec<CreateAction
         );
         return (
             embed,
-            vec![crate::commands::saga::ui::play_button_row("Play / Menu")],
+            vec![crate::commands::saga::ui::play_button_row(&pad_label("Play / Menu", 14))],
         );
     }
 
@@ -128,13 +129,13 @@ pub fn create_party_view(units: &[PlayerUnit]) -> (CreateEmbed, Vec<CreateAction
         // Add a bond management button row (links to /bond command UI via interaction custom id route)
         components.push(CreateActionRow::Buttons(vec![
             serenity::builder::CreateButton::new("bond_open")
-                .label("Manage Bonds")
+                .label(pad_label("🔗 Manage Bonds", 20))
                 .style(serenity::model::application::ButtonStyle::Secondary),
         ]));
     }
 
     // Prepend Play row
-    let mut rows = vec![crate::commands::saga::ui::play_button_row("Play / Menu")];
+    let mut rows = vec![crate::commands::saga::ui::play_button_row(&pad_label("Play / Menu", 14))];
     // Global navigation row (active = party)
     crate::commands::saga::ui::add_nav(&mut rows, "party");
     rows.extend(components);

@@ -11,7 +11,7 @@ use serenity::all::ComponentInteractionDataKind;
 use serenity::builder::{
     CreateActionRow, CreateCommand, CreateCommandOption, CreateEmbed, CreateEmbedFooter,
     CreateInteractionResponseMessage, CreateMessage, CreateSelectMenu, CreateSelectMenuKind,
-    CreateSelectMenuOption, EditInteractionResponse,
+    CreateSelectMenuOption,
 };
 use serenity::model::application::{CommandInteraction, CommandOptionType, ComponentInteraction};
 use serenity::model::channel::Message;
@@ -406,18 +406,43 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
 }
 
 pub async fn handle_interaction(ctx: &Context, interaction: &mut ComponentInteraction) {
-    let selected_command =
-        if let ComponentInteractionDataKind::StringSelect { values } = &interaction.data.kind {
-            &values[0]
-        } else {
+    use serenity::builder::CreateInteractionResponse;
+    if interaction.data.custom_id != "help_select_command" {
+        tracing::debug!(target="help.interaction", id=%interaction.data.custom_id, "Ignoring non-help component in help handler");
+        return;
+    }
+    let selected_command = match &interaction.data.kind {
+        ComponentInteractionDataKind::StringSelect { values } if !values.is_empty() => {
+            values[0].as_str()
+        }
+        other => {
+            tracing::warn!(target="help.interaction", kind=?other, "Unexpected component kind for help handler");
+            let _ = interaction
+                .create_response(
+                    &ctx.http,
+                    CreateInteractionResponse::Message(
+                        CreateInteractionResponseMessage::new()
+                            .content(
+                                "Unable to process that selection (unexpected component type).",
+                            )
+                            .ephemeral(true),
+                    ),
+                )
+                .await;
             return;
-        };
+        }
+    };
+    tracing::info!(target="help.interaction", command=%selected_command, user_id=%interaction.user.id, "Help selection processed");
     let embed = create_help_embed(ctx, Some(selected_command)).await;
-    interaction.defer(&ctx.http).await.ok();
-    let builder = EditInteractionResponse::new()
-        .embed(embed)
-        .components(vec![]);
-    interaction.edit_response(&ctx.http, builder).await.ok();
+    // Update the original help message (clear components so dropdown disappears after selection).
+    let update = CreateInteractionResponse::UpdateMessage(
+        CreateInteractionResponseMessage::new()
+            .embed(embed)
+            .components(vec![]),
+    );
+    if let Err(e) = interaction.create_response(&ctx.http, update).await {
+        tracing::error!(target="help.interaction", error=?e, "Failed to update help message");
+    }
 }
 
 pub async fn run_prefix(ctx: &Context, msg: &Message, args: Vec<&str>) {

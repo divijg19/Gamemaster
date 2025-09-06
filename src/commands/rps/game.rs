@@ -8,6 +8,7 @@ use serenity::builder::{
     CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter, CreateInteractionResponse,
     CreateInteractionResponseMessage,
 };
+use crate::ui::style::pad_label;
 use serenity::model::application::{ButtonStyle, ComponentInteraction};
 use serenity::model::id::UserId;
 use serenity::prelude::Context;
@@ -283,11 +284,11 @@ impl RpsGame {
         }
         let disabled_buttons = vec![
             CreateButton::new("rps_disabled_accept")
-                .label("Accept")
+                .label(pad_label("✅ Accept", 14))
                 .style(ButtonStyle::Success)
                 .disabled(true),
             CreateButton::new("rps_disabled_decline")
-                .label("Decline")
+                .label(pad_label("❌ Decline", 14))
                 .style(ButtonStyle::Danger)
                 .disabled(true),
         ];
@@ -324,13 +325,13 @@ impl RpsGame {
                 "rps_accept_{}_{}",
                 self.state.player1.id, self.state.player2.id
             ))
-            .label("Accept")
+            .label(pad_label("✅ Accept", 14))
             .style(ButtonStyle::Success),
             CreateButton::new(format!(
                 "rps_decline_{}_{}",
                 self.state.player1.id, self.state.player2.id
             ))
-            .label("Decline")
+            .label(pad_label("❌ Decline", 14))
             .style(ButtonStyle::Danger),
         ];
         (content, embed, vec![CreateActionRow::Buttons(buttons)])
@@ -376,15 +377,15 @@ impl RpsGame {
         } else {
             vec![CreateActionRow::Buttons(vec![
                 CreateButton::new("rps_move_rock")
-                    .label("Rock")
+                    .label(pad_label("✊ Rock", 12))
                     .emoji('✊')
                     .style(ButtonStyle::Secondary),
                 CreateButton::new("rps_move_paper")
-                    .label("Paper")
+                    .label(pad_label("✋ Paper", 12))
                     .emoji('✋')
                     .style(ButtonStyle::Secondary),
                 CreateButton::new("rps_move_scissors")
-                    .label("Scissors")
+                    .label(pad_label("✌ Scissors", 14))
                     .emoji('✌')
                     .style(ButtonStyle::Secondary),
             ])]

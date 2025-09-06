@@ -45,12 +45,13 @@ impl Game for BattleGame {
                 .log
                 .iter()
                 .any(|l| l.contains("Vitality mitigated"))
-            && session_clone.vitality_mitigated > 0 {
-                session_clone.log.push(format!(
-                    "✨ Vitality mitigated a total of {} damage this battle.",
-                    session_clone.vitality_mitigated
-                ));
-            }
+            && session_clone.vitality_mitigated > 0
+        {
+            session_clone.log.push(format!(
+                "✨ Vitality mitigated a total of {} damage this battle.",
+                session_clone.vitality_mitigated
+            ));
+        }
         let (embed, mut components) = ui::render_battle(&session_clone, self.can_afford_recruit);
         // Append global nav row for cross-command navigation (Saga active).
         if matches!(
