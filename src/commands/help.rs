@@ -273,17 +273,23 @@ pub fn all_command_names() -> Vec<&'static str> {
 }
 
 pub fn register() -> CreateCommand {
-    let command = CreateCommand::new("help").description("Shows information about commands");
-    let mut option = CreateCommandOption::new(
-        CommandOptionType::String,
-        "command",
-        "The specific command you want help with",
-    )
-    .required(false);
-    for cmd in COMMANDS {
-        option = option.add_string_choice(cmd.name, cmd.name);
-    }
-    command.add_option(option)
+    // NOTE: Previously we enumerated every command name as a String choice ( >25 ),
+    // which violated Discord's max 25 choices per option and caused a 400 INVALID FORM BODY.
+    // We now expose a free-form string (no predefined choices) and rely on the
+    // interactive select menu already implemented for discovery. This fixes the
+    // BASE_TYPE_MAX_LENGTH / choices validation error while preserving UX.
+    // Bump description with a lightweight version tag when schema changes to force
+    // Discord to invalidate any stale cached command definition.
+    CreateCommand::new("help")
+        .description("Shows information about commands (v2)")
+        .add_option(
+            CreateCommandOption::new(
+                CommandOptionType::String,
+                "command",
+                "The specific command you want help with (free text)",
+            )
+            .required(false),
+        )
 }
 
 fn create_command_select_menu() -> CreateActionRow {

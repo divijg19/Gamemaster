@@ -5,47 +5,72 @@ use serenity::prelude::Context;
 
 // Lightweight admin utility to exercise maintenance helpers so they stay active.
 pub fn register() -> CreateCommand {
+    // Previous definition mixed primitive integer options alongside subcommands, which
+    // triggers Discord validation errors (APPLICATION_COMMAND_OPTIONS_TYPE_INVALID).
+    // We restructure as a pure subcommand interface for clarity & compliance:
+    // /adminutil markhuman <unit_id>
+    // /adminutil diaguser <user_id>
+    // /adminutil bondtest <host_id> <equip_id>
+    // /adminutil researchunit <unit_id>
+    // /adminutil cachestats
+    // /adminutil sagainit
     CreateCommand::new("adminutil")
         .description("Maintenance utilities (owner-only)")
         .add_option(
             CreateCommandOption::new(
-                CommandOptionType::Integer,
+                CommandOptionType::SubCommand,
                 "markhuman",
                 "Mark a unit id as Human",
             )
-            .required(false),
+            .add_sub_option(
+                CreateCommandOption::new(CommandOptionType::Integer, "unit_id", "Unit id to mark")
+                    .required(true),
+            ),
         )
         .add_option(
             CreateCommandOption::new(
-                CommandOptionType::Integer,
+                CommandOptionType::SubCommand,
                 "diaguser",
                 "Diagnose saga state for a user id (default: invoking user)",
             )
-            .required(false),
+            .add_sub_option(
+                CreateCommandOption::new(CommandOptionType::Integer, "user_id", "Target user id")
+                    .required(false),
+            ),
         )
         .add_option(
             CreateCommandOption::new(
-                CommandOptionType::Integer,
-                "bondhost",
-                "Host player_unit_id for bonding test",
+                CommandOptionType::SubCommand,
+                "bondtest",
+                "Bond host + equipped player_unit_ids",
             )
-            .required(false),
-        )
-        .add_option(
-            CreateCommandOption::new(
-                CommandOptionType::Integer,
-                "bondequip",
-                "Equipped player_unit_id for bonding test",
+            .add_sub_option(
+                CreateCommandOption::new(CommandOptionType::Integer, "host", "Host player_unit_id")
+                    .required(true),
             )
-            .required(false),
+            .add_sub_option(
+                CreateCommandOption::new(
+                    CommandOptionType::Integer,
+                    "equip",
+                    "Equipped player_unit_id",
+                )
+                .required(true),
+            ),
         )
         .add_option(
             CreateCommandOption::new(
-                CommandOptionType::Integer,
+                CommandOptionType::SubCommand,
                 "researchunit",
-                "Unit id to fetch raw research progress",
+                "Fetch raw research progress for a unit id",
             )
-            .required(false),
+            .add_sub_option(
+                CreateCommandOption::new(
+                    CommandOptionType::Integer,
+                    "unit_id",
+                    "Unit id to inspect",
+                )
+                .required(true),
+            ),
         )
         .add_option(CreateCommandOption::new(
             CommandOptionType::SubCommand,
@@ -67,173 +92,117 @@ pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
     let db = &state.db;
     let mut embed = CreateEmbed::new().title("Admin Util");
     let mut notes = Vec::new();
-    let mut mark_ids: Vec<i32> = Vec::new();
-    let mut bond_pair: Option<(i32, i32)> = None;
-    let mut research_unit: Option<i32> = None;
-    let mut show_cache = false;
-    let mut diag_user: Option<i64> = None;
-    let mut saga_init = false;
-    for opt in &interaction.data.options {
-        match opt.name.as_str() {
-            "cachestats" => show_cache = true,
-            "sagainit" => saga_init = true,
-            "markhuman" => {
-                if let Some(v) = opt.value.as_i64() {
-                    mark_ids.push(v as i32);
-                }
-            }
-            "diaguser" => {
-                if let Some(v) = opt.value.as_i64() {
-                    diag_user = Some(v);
-                }
-            }
-            "bondhost" => {
-                let host = opt.value.as_i64().unwrap_or(0) as i32;
-                if let Some(existing) = bond_pair {
-                    bond_pair = Some((host, existing.1));
-                } else {
-                    bond_pair = Some((host, 0));
-                }
-            }
-            "bondequip" => {
-                let eq = opt.value.as_i64().unwrap_or(0) as i32;
-                if let Some(existing) = bond_pair {
-                    bond_pair = Some((existing.0, eq));
-                } else {
-                    bond_pair = Some((0, eq));
-                }
-            }
-            "researchunit" => research_unit = opt.value.as_i64().map(|v| v as i32),
-            _ => {}
-        }
-    }
-    if !mark_ids.is_empty() {
-        match database::units::mark_units_as_human(db, &mark_ids).await {
-            Ok(n) => notes.push(format!("Marked {} units as Human", n)),
-            Err(e) => notes.push(format!("Mark error: {}", e)),
-        }
-    }
-    if let Some((host, equip)) = bond_pair
-        && host > 0
-        && equip > 0
-    {
-        if let Err(e) = database::units::bond_units(db, interaction.user.id, host, equip).await {
-            notes.push(format!("Bond error: {}", e));
-        } else {
-            notes.push("Bond attempted (see logs if constraints)".into());
-        }
-    }
-    if let Some(uid) = research_unit {
-        // Also touch list_research_progress to keep bulk path active
-        let _ = database::units::list_research_progress(db, interaction.user.id)
-            .await
-            .ok();
-        if let Ok(count) =
-            database::units::get_research_progress(db, interaction.user.id, uid).await
-        {
-            notes.push(format!("Research progress unit {} = {}", uid, count));
-        }
-    }
-    // Saga bootstrap before diagnostics so results show updated state
-    if saga_init {
-        let user_id = interaction.user.id;
-        match database::economy::get_or_create_profile(db, user_id).await {
-            Ok(_) => notes.push("Base profile ensured.".into()),
-            Err(e) => notes.push(format!("Base profile error: {e}")),
-        }
-        match crate::database::saga::update_and_get_saga_profile(db, user_id).await {
-            Ok(_) => notes.push("Saga profile ensured.".into()),
-            Err(e) => notes.push(format!("Saga profile error: {e}")),
-        }
-        let starter_id = *state.starter_unit_id.read().await;
-        let user_id_i64 = user_id.get() as i64;
-        let owned: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM player_units WHERE user_id = $1")
-            .bind(user_id_i64)
-            .fetch_one(db)
-            .await
-            .unwrap_or(0);
-        if owned == 0 {
-            match sqlx::query!("INSERT INTO player_units (user_id, unit_id, nickname, current_level, current_xp, current_attack, current_defense, current_health, is_in_party, rarity) SELECT $1, u.unit_id, u.name, 1, 0, u.base_attack, u.base_defense, u.base_health, TRUE, u.rarity FROM units u WHERE u.unit_id = $2 ON CONFLICT DO NOTHING", user_id_i64, starter_id).execute(db).await {
-                Ok(r) => {
-                    if r.rows_affected() > 0 {
-                        notes.push(format!("Starter unit {} granted.", starter_id));
-                    } else {
-                        notes.push("Starter unit already present or invalid starter id.".into());
+    use serenity::model::application::CommandDataOptionValue as Val;
+
+    // Expect exactly one top-level subcommand.
+    if let Some(sub) = interaction.data.options.first() {
+        match (&sub.name[..], &sub.value) {
+            ("markhuman", Val::SubCommand(nested)) => {
+                if let Some(arg) = nested.iter().find(|o| o.name == "unit_id") {
+                    if let Val::Integer(unit_id_ref) = &arg.value {
+                        let unit_id = *unit_id_ref;
+                        if unit_id > 0 {
+                            match database::units::mark_units_as_human(db, &[unit_id as i32]).await
+                            {
+                                Ok(n) => notes.push(format!("Marked {} unit(s) as Human", n)),
+                                Err(e) => notes.push(format!("Mark error: {}", e)),
+                            }
+                        }
                     }
                 }
-                Err(e) => notes.push(format!("Starter grant error: {e}")),
             }
-        } else {
-            notes.push(format!(
-                "Units already owned: {} (no starter grant).",
-                owned
-            ));
+            ("diaguser", Val::SubCommand(nested)) => {
+                let mut target: i64 = interaction.user.id.get() as i64; // base user id
+                if let Some(arg) = nested.iter().find(|o| o.name == "user_id") {
+                    if let Val::Integer(user_id_val) = &arg.value {
+                        target = *user_id_val;
+                    }
+                }
+                notes.push(format!("-- Saga Diagnostics for user {} --", target));
+                use sqlx::Error;
+                use sqlx::Row;
+                match sqlx::query_scalar::<_, i64>("SELECT 1 FROM profiles WHERE user_id = $1")
+                    .bind(target)
+                    .fetch_optional(db)
+                    .await
+                {
+                    Ok(Some(_)) => notes.push("Base profile: PRESENT".into()),
+                    Ok(None) => notes.push("Base profile: MISSING".into()),
+                    Err(e) => notes.push(format!("Base profile query error: {e}")),
+                }
+                match sqlx::query("SELECT current_ap, max_ap, current_tp, max_tp, story_progress FROM player_saga_profile WHERE user_id = $1").bind(target).fetch_optional(db).await {
+                    Ok(Some(row)) => notes.push(format!("Saga profile: PRESENT (AP {}/{} | TP {}/{} | Story {})", row.get::<i32,_>(0), row.get::<i32,_>(1), row.get::<i32,_>(2), row.get::<i32,_>(3), row.get::<i32,_>(4))),
+                    Ok(None) => notes.push("Saga profile: MISSING".into()),
+                    Err(Error::Database(db_err)) if db_err.code().map(|c| c=="42P01").unwrap_or(false) => notes.push("Saga profile: TABLE MISSING".into()),
+                    Err(e) => notes.push(format!("Saga profile query error: {e}")),
+                }
+            }
+            ("bondtest", Val::SubCommand(nested)) => {
+                let mut host: i32 = 0;
+                let mut equip: i32 = 0;
+                for o in nested {
+                    if o.name == "host" {
+                        if let Val::Integer(v) = &o.value {
+                            host = *v as i32;
+                        }
+                    } else if o.name == "equip" {
+                        if let Val::Integer(v) = &o.value {
+                            equip = *v as i32;
+                        }
+                    }
+                }
+                if host > 0 && equip > 0 {
+                    match database::units::bond_units(db, interaction.user.id, host, equip).await {
+                        Ok(_) => notes.push("Bond attempted (see logs if constraints)".into()),
+                        Err(e) => notes.push(format!("Bond error: {e}")),
+                    }
+                }
+            }
+            ("researchunit", Val::SubCommand(nested)) => {
+                if let Some(arg) = nested.iter().find(|o| o.name == "unit_id") {
+                    if let Val::Integer(uid_ref) = &arg.value {
+                        let uid = *uid_ref;
+                        if let Ok(count) = database::units::get_research_progress(
+                            db,
+                            interaction.user.id,
+                            uid as i32,
+                        )
+                        .await
+                        {
+                            notes.push(format!("Research progress unit {} = {}", uid, count));
+                        }
+                    }
+                }
+            }
+            ("cachestats", _) => {
+                let (hits, misses) = crate::services::cache::cache_stats().await;
+                let total = hits + misses;
+                let pct = if total > 0 {
+                    (hits as f64 / total as f64) * 100.0
+                } else {
+                    0.0
+                };
+                notes.push(format!(
+                    "Cache Stats => hits: {}, misses: {}, hit_rate: {:.1}%",
+                    hits, misses, pct
+                ));
+            }
+            ("sagainit", _) => {
+                let user_id = interaction.user.id;
+                match database::economy::get_or_create_profile(db, user_id).await {
+                    Ok(_) => notes.push("Base profile ensured.".into()),
+                    Err(e) => notes.push(format!("Base profile error: {e}")),
+                }
+                match crate::database::saga::update_and_get_saga_profile(db, user_id).await {
+                    Ok(_) => notes.push("Saga profile ensured.".into()),
+                    Err(e) => notes.push(format!("Saga profile error: {e}")),
+                }
+            }
+            _ => notes.push("Unknown subcommand.".into()),
         }
     }
     if notes.is_empty() {
-        notes.push("No actions performed.".into());
-    }
-    // Saga diagnostics (performed after mutation actions so they don't overwrite earlier notes)
-    if let Some(target) = diag_user {
-        use sqlx::{Error, Row};
-        notes.push(format!("-- Saga Diagnostics for user {} --", target));
-        // Base profile presence
-        match sqlx::query_scalar::<_, i64>("SELECT 1 FROM profiles WHERE user_id = $1")
-            .bind(target)
-            .fetch_optional(db)
-            .await
-        {
-            Ok(Some(_)) => notes.push("Base profile: PRESENT".into()),
-            Ok(None) => {
-                notes.push("Base profile: MISSING (run an economy command like /profile)".into())
-            }
-            Err(e) => notes.push(format!("Base profile query error: {e}")),
-        }
-        // Saga profile row
-        match sqlx::query("SELECT current_ap, max_ap, current_tp, max_tp, story_progress FROM player_saga_profile WHERE user_id = $1")
-            .bind(target)
-            .fetch_optional(db)
-            .await
-        {
-            Ok(Some(row)) => {
-                notes.push(format!(
-                    "Saga profile: PRESENT (AP {}/{} | TP {}/{} | Story {})",
-                    row.get::<i32,_>(0),
-                    row.get::<i32,_>(1),
-                    row.get::<i32,_>(2),
-                    row.get::<i32,_>(3),
-                    row.get::<i32,_>(4)
-                ));
-            }
-            Ok(None) => notes.push("Saga profile: MISSING (first /saga run should auto-create)".into()),
-            Err(Error::Database(db_err)) if db_err.code().map(|c| c == "42P01").unwrap_or(false) => {
-                notes.push("Saga profile: TABLE MISSING (run migrations: sqlx migrate run)".into());
-            }
-            Err(e) => notes.push(format!("Saga profile query error: {e}")),
-        }
-        // Unit count
-        match sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM player_units WHERE user_id = $1")
-            .bind(target)
-            .fetch_one(db)
-            .await
-        {
-            Ok(count) => notes.push(format!("Units owned: {}", count)),
-            Err(e) => notes.push(format!("Unit count error: {e}")),
-        }
-        notes.push("Diagnostic hints: if Saga profile missing but base present, invoke /saga again; if table missing, run migrations; if connection errors persist, verify DATABASE_URL.".into());
-    }
-    if show_cache {
-        let (hits, misses) = crate::services::cache::cache_stats().await;
-        let total = hits + misses;
-        let hit_rate = if total > 0 {
-            (hits as f64 / total as f64) * 100.0
-        } else {
-            0.0
-        };
-        notes.push(format!(
-            "Cache Stats => hits: {}, misses: {}, hit_rate: {:.1}%",
-            hits, misses, hit_rate
-        ));
+        notes.push("No subcommand provided. Available: markhuman, diaguser, bondtest, researchunit, cachestats, sagainit".into());
     }
     embed = embed.description(notes.join("\n"));
     let resp = serenity::builder::CreateInteractionResponseMessage::new().embed(embed);
