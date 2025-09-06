@@ -292,9 +292,12 @@ pub fn register() -> CreateCommand {
         )
 }
 
+const MAX_SELECT_OPTIONS: usize = 25; // Discord limit per select menu
+
 fn create_command_select_menu() -> CreateActionRow {
     let options = COMMANDS
         .iter()
+        .take(MAX_SELECT_OPTIONS) // avoid HTTP 400 from exceeding option count limit
         .map(|cmd| {
             let mut opt =
                 CreateSelectMenuOption::new(cmd.name, cmd.name).description(cmd.description);
@@ -356,7 +359,7 @@ async fn create_help_embed(ctx: &Context, command_name_opt: Option<&str>) -> Cre
             }
         }
         None => {
-            embed = embed.title("Help Menu").description(format!("Here are my available commands. For more details, use `{}help <command>` or select an option from the dropdown below.", prefix));
+            embed = embed.title("Help Menu").description(format!("Here are my available commands. For more details, use `{}help <command>` or select an option from the dropdown below. The selector shows a subset (max 25).", prefix));
             let categories = [
                 CommandCategory::General,
                 CommandCategory::Economy,
@@ -372,6 +375,17 @@ async fn create_help_embed(ctx: &Context, command_name_opt: Option<&str>) -> Cre
                         command_list,
                         false,
                     );
+                }
+            }
+            if COMMANDS.len() > MAX_SELECT_OPTIONS {
+                let extra = COMMANDS
+                    .iter()
+                    .skip(MAX_SELECT_OPTIONS)
+                    .map(|c| format!("`{}`", c.name))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if !extra.is_empty() {
+                    embed = embed.field("Additional Commands (use /help <name>)", extra, false);
                 }
             }
             embed = embed.field("Rarity Legend", "Common < Rare < Epic < Legendary < Unique < Mythical < Fabled", false)
