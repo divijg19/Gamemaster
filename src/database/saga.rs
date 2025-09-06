@@ -53,7 +53,28 @@ pub async fn update_and_get_saga_profile(
 
     // Next, update AP and TP in a single transaction.
     let mut tx = pool.begin().await?;
-    let initial_profile = sqlx::query_as!(SagaProfile, "WITH ins AS (INSERT INTO player_saga_profile (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING) SELECT current_ap, max_ap, current_tp, max_tp, last_tp_update, story_progress FROM player_saga_profile WHERE user_id = $1 FOR UPDATE", user_id_i64).fetch_one(&mut *tx).await?;
+    // (✓) Robust UPSERT pattern: attempt insert and capture row with RETURNING. If the row
+    // already exists, fall back to SELECT .. FOR UPDATE. The previous pattern using a CTE +
+    // SELECT could (rarely) surface RowNotFound under high concurrency if the planner skipped
+    // the write path. This pattern guarantees we either obtain the freshly inserted row or
+    // lock the existing one.
+    let initial_profile = if let Some(inserted) = sqlx::query_as!(
+        SagaProfile,
+        "INSERT INTO player_saga_profile (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING RETURNING current_ap, max_ap, current_tp, max_tp, last_tp_update, story_progress",
+        user_id_i64
+    )
+    .fetch_optional(&mut *tx)
+    .await? {
+        inserted
+    } else {
+        sqlx::query_as!(
+            SagaProfile,
+            "SELECT current_ap, max_ap, current_tp, max_tp, last_tp_update, story_progress FROM player_saga_profile WHERE user_id = $1 FOR UPDATE",
+            user_id_i64
+        )
+        .fetch_one(&mut *tx)
+        .await?
+    };
 
     let (calculated_tp, needs_tp_update) = saga::core::calculate_tp_recharge(&initial_profile);
     let needs_ap_reset = now.date_naive() != initial_profile.last_tp_update.date_naive();
