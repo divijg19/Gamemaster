@@ -1,5 +1,5 @@
 use crate::{AppState, database};
-use serenity::builder::{CreateCommand, CreateCommandOption, CreateEmbed};
+use serenity::builder::{CreateCommand, CreateCommandOption, CreateEmbed, EditInteractionResponse};
 use serenity::model::application::{CommandInteraction, CommandOptionType};
 use serenity::prelude::Context;
 
@@ -85,8 +85,13 @@ pub fn register() -> CreateCommand {
 }
 
 pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
-    interaction.defer_ephemeral(&ctx.http).await.ok();
+    // Defer ephemerally so we have more than 3s for DB diagnostics.
+    if let Err(e) = interaction.defer_ephemeral(&ctx.http).await {
+        tracing::error!(target="adminutil", error=?e, "Failed to defer adminutil interaction");
+        return;
+    }
     let Some(state) = AppState::from_ctx(ctx).await else {
+        tracing::error!(target = "adminutil", "AppState missing in context");
         return;
     };
     let db = &state.db;
@@ -207,11 +212,8 @@ pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
         notes.push("No subcommand provided. Available: markhuman, diaguser, bondtest, researchunit, cachestats, sagainit".into());
     }
     embed = embed.description(notes.join("\n"));
-    let resp = serenity::builder::CreateInteractionResponseMessage::new().embed(embed);
-    let _ = interaction
-        .create_response(
-            &ctx.http,
-            serenity::builder::CreateInteractionResponse::Message(resp),
-        )
-        .await;
+    let builder = EditInteractionResponse::new().embed(embed);
+    if let Err(e) = interaction.edit_response(&ctx.http, builder).await {
+        tracing::error!(target="adminutil", error=?e, "Failed editing adminutil response");
+    }
 }
