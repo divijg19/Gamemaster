@@ -53,7 +53,7 @@ pub fn create_saga_menu(
         )
         .color(COLOR_SAGA_MAIN)
         .footer(serenity::builder::CreateEmbedFooter::new(
-            "Use Refresh to update AP/TP • Manage Party before exploring",
+            "Use Refresh to update AP/TP • Manage your Party via the nav row",
         ));
 
     // Primary action row
@@ -62,14 +62,19 @@ pub fn create_saga_menu(
     // Use global BTN_W_PRIMARY width via helper
     let mut primary_buttons = Vec::new();
     if has_party {
+        let map_label = if saga_profile.current_ap < 1 {
+            "🗺 Map (No AP)"
+        } else {
+            "🗺 Map (1 AP)"
+        };
         primary_buttons
-            .push(Btn::primary(SAGA_MAP, "🗺 Map (1 AP)").disabled(saga_profile.current_ap < 1));
+            .push(Btn::primary(SAGA_MAP, map_label).disabled(saga_profile.current_ap < 1));
         primary_buttons.push(Btn::success(SAGA_TAVERN, "🍺 Tavern"));
     } else {
         primary_buttons.push(Btn::secondary(SAGA_MAP_LOCKED, "🗺 Map (Need Party)").disabled(true));
         primary_buttons.push(Btn::success(SAGA_RECRUIT, "➕ Recruit"));
     }
-    primary_buttons.push(Btn::secondary(SAGA_TEAM, "👥 Party"));
+    // Removed duplicate Party button (accessible via global nav row) to reduce clutter.
     components.push(CreateActionRow::Buttons(primary_buttons));
 
     // Navigation / utility row: Back (disabled at root) + Refresh. Removed redundant Play Alias button.

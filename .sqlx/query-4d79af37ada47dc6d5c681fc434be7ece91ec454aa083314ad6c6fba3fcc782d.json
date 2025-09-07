@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT daily_rerolls, COALESCE(last_reroll::date, CURRENT_DATE - INTERVAL '1 day') as d FROM tavern_favor WHERE user_id=$1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "daily_rerolls",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "d",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "4d79af37ada47dc6d5c681fc434be7ece91ec454aa083314ad6c6fba3fcc782d"
+}

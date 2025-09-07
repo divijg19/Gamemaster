@@ -14,5 +14,6 @@ pub mod quests;
 pub mod saga;
 pub mod settings;
 pub mod tasks;
+pub mod tavern;
 pub mod units; // final home
 pub mod world;

@@ -6,7 +6,6 @@ pub const SAGA_MAP: &str = "saga_map";
 pub const SAGA_MAP_LOCKED: &str = "saga_map_locked"; // disabled placeholder when no party
 pub const SAGA_TAVERN: &str = "saga_tavern";
 pub const SAGA_RECRUIT: &str = "saga_recruit";
-pub const SAGA_TEAM: &str = "saga_team";
 pub const SAGA_BACK: &str = "saga_back";
 pub const SAGA_REFRESH: &str = "saga_refresh";
 pub const SAGA_NODE_PREFIX: &str = "saga_node_"; // followed by node id

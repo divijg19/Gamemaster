@@ -42,17 +42,31 @@ impl SagaView {
                     .unwrap_or_default();
                 Ok(commands::saga::ui::create_world_map_view(&nodes, &profile))
             }
-            SagaView::Tavern | SagaView::Recruit => {
-                let profile = database::economy::get_or_create_profile(&state.db, user).await?;
-                let recruits = database::units::get_units_by_ids(
-                    &state.db,
-                    &commands::saga::tavern::TAVERN_RECRUITS,
-                )
-                .await
-                .unwrap_or_default();
+            SagaView::Tavern => {
+                let (recruits, mut meta) =
+                    commands::saga::tavern::build_tavern_state_cached(state, user).await?;
+                let (page, filter) = {
+                    let sessions = state.tavern_sessions.read().await;
+                    sessions
+                        .get(&user.get())
+                        .map(|s| (s.page, s.filter))
+                        .unwrap_or((0, commands::saga::tavern::TavernFilter::All))
+                };
+                meta.filter = filter;
+                let filtered = commands::saga::tavern::filter_units(&recruits, filter);
                 Ok(commands::saga::tavern::create_tavern_menu(
-                    &recruits,
-                    profile.balance,
+                    &filtered,
+                    &meta,
+                    page.min(
+                        filtered.len().saturating_sub(1) / commands::saga::tavern::TAVERN_PAGE_SIZE,
+                    ),
+                ))
+            }
+            SagaView::Recruit => {
+                let (recruits, meta) =
+                    commands::saga::tavern::build_tavern_state_cached(state, user).await?;
+                Ok(commands::saga::tavern::create_tavern_menu(
+                    &recruits, &meta, 0,
                 ))
             }
             SagaView::Party => {
