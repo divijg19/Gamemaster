@@ -1,9 +1,11 @@
 //! Handles the UI creation for the `/saga` command menu.
 
 use crate::database::models::{MapNode, SagaProfile};
+use crate::interactions::ids::*;
+use crate::ui::buttons::Btn;
 use crate::ui::style::{
     COLOR_SAGA_MAIN, COLOR_SAGA_MAP, COLOR_SAGA_TUTORIAL, EMOJI_AP, EMOJI_BACK, EMOJI_REFRESH,
-    EMOJI_TP, pad_primary, stat_pair,
+    EMOJI_TP, stat_pair,
 };
 use chrono::{Duration, Utc};
 use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed};
@@ -60,46 +62,20 @@ pub fn create_saga_menu(
     // Use global BTN_W_PRIMARY width via helper
     let mut primary_buttons = Vec::new();
     if has_party {
-        primary_buttons.push(
-            CreateButton::new("saga_map")
-                .label(pad_primary("🗺 Map (1 AP)"))
-                .style(ButtonStyle::Primary)
-                .disabled(saga_profile.current_ap < 1),
-        );
-        primary_buttons.push(
-            CreateButton::new("saga_tavern")
-                .label(pad_primary("🍺 Tavern"))
-                .style(ButtonStyle::Success),
-        );
+        primary_buttons
+            .push(Btn::primary(SAGA_MAP, "🗺 Map (1 AP)").disabled(saga_profile.current_ap < 1));
+        primary_buttons.push(Btn::success(SAGA_TAVERN, "🍺 Tavern"));
     } else {
-        primary_buttons.push(
-            CreateButton::new("saga_map_locked")
-                .label(pad_primary("🗺 Map (Need Party)"))
-                .style(ButtonStyle::Secondary)
-                .disabled(true),
-        );
-        primary_buttons.push(
-            CreateButton::new("saga_recruit")
-                .label(pad_primary("➕ Recruit"))
-                .style(ButtonStyle::Success),
-        );
+        primary_buttons.push(Btn::secondary(SAGA_MAP_LOCKED, "🗺 Map (Need Party)").disabled(true));
+        primary_buttons.push(Btn::success(SAGA_RECRUIT, "➕ Recruit"));
     }
-    primary_buttons.push(
-        CreateButton::new("saga_team")
-            .label(pad_primary("👥 Party"))
-            .style(ButtonStyle::Secondary),
-    );
+    primary_buttons.push(Btn::secondary(SAGA_TEAM, "👥 Party"));
     components.push(CreateActionRow::Buttons(primary_buttons));
 
     // Navigation / utility row: Back (disabled at root) + Refresh. Removed redundant Play Alias button.
     components.push(CreateActionRow::Buttons(vec![
-        CreateButton::new("saga_back")
-            .label(format!("{} Back", EMOJI_BACK))
-            .style(ButtonStyle::Danger)
-            .disabled(true),
-        CreateButton::new("saga_refresh")
-            .label(format!("{} Refresh", EMOJI_REFRESH))
-            .style(ButtonStyle::Secondary),
+        Btn::danger(SAGA_BACK, &format!("{} Back", EMOJI_BACK)).disabled(true),
+        Btn::secondary(SAGA_REFRESH, &format!("{} Refresh", EMOJI_REFRESH)),
     ]));
 
     // Append global nav row (active = saga) at end.
@@ -131,30 +107,64 @@ pub fn create_world_map_view(
     }
 
     // Build descriptive labels including area id & required story progress (activates previously unused fields)
-    let buttons: Vec<_> = nodes
-        .iter()
-        .map(|node| {
-            let mut label = format!(
-                "[A{}|SP{}] {}",
-                node.area_id, node.story_progress_required, node.name
-            );
-            label.truncate(20);
-            let _desc_snippet = node
-                .description
-                .as_ref()
-                .map(|d| d.chars().take(25).collect::<String>())
-                .unwrap_or_else(|| "No description".into());
-            CreateButton::new(format!("saga_node_{}", node.node_id))
-                .label(label)
-                .style(ButtonStyle::Secondary)
-                .emoji('🗺')
-                .disabled(false)
-        })
-        .collect();
+    // Also surface node description + rewards (coins/xp) in a single consolidated field.
+
+    // Compose a compact locations listing; truncate to avoid exceeding field limits (<= 1024 chars).
+    let mut lines = Vec::new();
+    let mut total_len = 0usize;
+    for node in nodes {
+        let desc_snip = node
+            .description
+            .as_deref()
+            .map(|d| {
+                if d.len() > 40 {
+                    format!("{}…", &d[..40])
+                } else {
+                    d.to_string()
+                }
+            })
+            .unwrap_or_else(|| "No details".to_string());
+        let rewards_part = if node.reward_coins > 0 || node.reward_unit_xp > 0 {
+            format!(" (💰{} / XP {})", node.reward_coins, node.reward_unit_xp)
+        } else {
+            String::new()
+        };
+        let line = format!(
+            "[#{:02}] {} (SP {}){} - {}",
+            node.node_id, node.name, node.story_progress_required, rewards_part, desc_snip
+        );
+        // Stop if adding would exceed ~950 chars (leave headroom for formatting).
+        if total_len + line.len() > 950 {
+            break;
+        }
+        total_len += line.len();
+        lines.push(line);
+    }
+    if lines.len() < nodes.len() {
+        lines.push("… more locations available".to_string());
+    }
+    if !lines.is_empty() {
+        embed = embed.field("Locations", lines.join("\n"), false);
+    }
 
     let mut components: Vec<CreateActionRow> = Vec::new();
-    for chunk in buttons.chunks(5) {
-        components.push(CreateActionRow::Buttons(chunk.to_vec()));
+    // Build rows with main node buttons and a paired preview row beneath each.
+    components.clear();
+    for chunk_nodes in nodes.chunks(5) {
+        let main: Vec<CreateButton> = chunk_nodes.iter().map(map_node_button).collect();
+        components.push(CreateActionRow::Buttons(main));
+        let preview: Vec<CreateButton> = chunk_nodes
+            .iter()
+            .map(|n| {
+                CreateButton::new(format!("saga_preview_{}", n.node_id))
+                    .label(format!(
+                        "👁 {}",
+                        &n.name.chars().take(10).collect::<String>()
+                    ))
+                    .style(ButtonStyle::Secondary)
+            })
+            .collect();
+        components.push(CreateActionRow::Buttons(preview));
     }
     // Append global nav row; back/refresh row injected by interaction handler based on stack depth.
     components.push(global_nav_row("saga"));
@@ -173,12 +183,8 @@ pub fn create_first_time_tutorial() -> (CreateEmbed, Vec<CreateActionRow>) {
     .footer(serenity::builder::CreateEmbedFooter::new("Choose Get Starter Unit to begin your adventure")); // Styled constant
 
     let row = CreateActionRow::Buttons(vec![
-        CreateButton::new("saga_tutorial_hire")
-            .label(pad_primary("➕ Starter Unit"))
-            .style(ButtonStyle::Success),
-        CreateButton::new("saga_tutorial_skip")
-            .label(pad_primary("⏭ Skip Tutorial"))
-            .style(ButtonStyle::Secondary),
+        Btn::success(SAGA_TUTORIAL_HIRE, "➕ Starter Unit"),
+        Btn::secondary(SAGA_TUTORIAL_SKIP, "⏭ Skip Tutorial"),
     ]);
     // Remove legacy play/menu button; global nav row already provides Saga entry.
     let mut v = vec![row];
@@ -186,16 +192,26 @@ pub fn create_first_time_tutorial() -> (CreateEmbed, Vec<CreateActionRow>) {
     (embed, v)
 }
 
+// --- helpers ---
+fn map_node_button(node: &MapNode) -> CreateButton {
+    let mut label = format!(
+        "[A{}|SP{}] {}",
+        node.area_id, node.story_progress_required, node.name
+    );
+    label.truncate(20);
+    CreateButton::new(format!("{}{}", SAGA_NODE_PREFIX, node.node_id))
+        .label(label)
+        .style(ButtonStyle::Secondary)
+        .emoji('🗺')
+        .disabled(false)
+}
+
 /// Builds a Back + Refresh control row when depth > 1 (navigation inside a stack).
 pub fn back_refresh_row(depth: usize) -> Option<CreateActionRow> {
     if depth > 1 {
         Some(CreateActionRow::Buttons(vec![
-            CreateButton::new("saga_back")
-                .label(format!("{} Back", EMOJI_BACK))
-                .style(serenity::model::application::ButtonStyle::Danger),
-            CreateButton::new("saga_refresh")
-                .label(format!("{} Refresh", EMOJI_REFRESH))
-                .style(serenity::model::application::ButtonStyle::Secondary),
+            Btn::danger(SAGA_BACK, &format!("{} Back", EMOJI_BACK)),
+            Btn::secondary(SAGA_REFRESH, &format!("{} Refresh", EMOJI_REFRESH)),
         ]))
     } else {
         None
@@ -206,28 +222,19 @@ pub fn back_refresh_row(depth: usize) -> Option<CreateActionRow> {
 /// To be appended by other command UIs (party, train, etc.).
 pub fn global_nav_row(active: &'static str) -> CreateActionRow {
     // helper closure for consistency
-    let mk = |id: &str, label: &str, style: ButtonStyle, on: bool| {
-        let mut b = CreateButton::new(id).label(label).style(style);
-        if on {
-            b = b.disabled(true);
-        }
-        b
-    };
-    CreateActionRow::Buttons(vec![
-        mk("nav_saga", "Saga", ButtonStyle::Primary, active == "saga"),
-        mk(
-            "nav_party",
-            "Party",
-            ButtonStyle::Secondary,
-            active == "party",
-        ),
-        mk(
-            "nav_train",
-            "Train",
-            ButtonStyle::Secondary,
-            active == "train",
-        ),
-    ])
+    let mut saga_btn = Btn::primary(NAV_SAGA, "Saga");
+    if active == "saga" {
+        saga_btn = saga_btn.disabled(true);
+    }
+    let mut party_btn = Btn::secondary(NAV_PARTY, "Party");
+    if active == "party" {
+        party_btn = party_btn.disabled(true);
+    }
+    let mut train_btn = Btn::secondary(NAV_TRAIN, "Train");
+    if active == "train" {
+        train_btn = train_btn.disabled(true);
+    }
+    CreateActionRow::Buttons(vec![saga_btn, party_btn, train_btn])
 }
 
 /// Convenience helper to append the global nav row if not already present.

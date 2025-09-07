@@ -7,6 +7,8 @@ use serenity::model::id::UserId;
 pub trait NavState: Send + Sync {
     fn id(&self) -> &'static str;
     async fn render(&self, ctx: &ContextBag) -> (CreateEmbed, Vec<CreateActionRow>);
+    fn as_any(&self) -> &dyn std::any::Any;
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
 
 pub struct ContextBag {

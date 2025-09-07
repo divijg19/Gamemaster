@@ -1,9 +1,8 @@
 //! Handles rendering the battle state into a Discord embed.
 
 use super::state::{BattlePhase, BattleSession, BattleUnit};
-use crate::ui::style::pad_label;
-use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed};
-use serenity::model::application::ButtonStyle;
+use crate::ui::buttons::Btn;
+use serenity::builder::{CreateActionRow, CreateEmbed};
 
 pub fn render_battle(
     session: &BattleSession,
@@ -46,72 +45,42 @@ pub fn render_battle(
                 };
 
             let mut buttons = vec![
-                CreateButton::new("battle_attack")
-                    .label(pad_label("⚔️ Attack", 14))
-                    .style(ButtonStyle::Primary),
-                CreateButton::new("battle_item")
-                    .label(pad_label("🎒 Item", 14))
-                    .style(ButtonStyle::Secondary),
+                Btn::primary("battle_attack", "⚔️ Attack"),
+                Btn::secondary("battle_item", "🎒 Item"),
             ];
             if show_tame {
-                buttons.push(
-                    CreateButton::new("battle_recruit")
-                        .label(pad_label("🪄 Tame", 14))
-                        .style(ButtonStyle::Success)
-                        .disabled(!tame_enabled),
-                );
+                buttons.push(Btn::success("battle_recruit", "🪄 Tame").disabled(!tame_enabled));
             }
             if show_contract {
                 buttons.push(
-                    CreateButton::new("battle_contract")
-                        .label(pad_label("📜 Contract", 14))
-                        .style(ButtonStyle::Success)
-                        .disabled(!contract_enabled),
+                    Btn::success("battle_contract", "📜 Contract").disabled(!contract_enabled),
                 );
             }
-            buttons.push(
-                CreateButton::new("battle_flee")
-                    .label(pad_label("🏃 Flee", 14))
-                    .style(ButtonStyle::Danger),
-            );
+            buttons.push(Btn::danger("battle_flee", "🏃 Flee"));
             vec![CreateActionRow::Buttons(buttons)]
         }
         // (✓) MODIFIED: In these phases, show the buttons but disable them so the user knows what's available.
         BattlePhase::EnemyTurn | BattlePhase::PlayerSelectingItem => {
             vec![CreateActionRow::Buttons(vec![
-                CreateButton::new("disabled_attack")
-                    .label(pad_label("⚔️ Attack", 14))
-                    .style(ButtonStyle::Primary)
-                    .disabled(true),
-                CreateButton::new("disabled_item")
-                    .label(pad_label("🎒 Item", 14))
-                    .style(ButtonStyle::Secondary)
-                    .disabled(true),
-                CreateButton::new("disabled_placeholder")
-                    .label("...")
-                    .style(ButtonStyle::Success)
-                    .disabled(true),
-                CreateButton::new("disabled_flee")
-                    .label(pad_label("🏃 Flee", 14))
-                    .style(ButtonStyle::Danger)
-                    .disabled(true),
+                Btn::primary("disabled_attack", "⚔️ Attack").disabled(true),
+                Btn::secondary("disabled_item", "🎒 Item").disabled(true),
+                Btn::success("disabled_placeholder", "...").disabled(true),
+                Btn::danger("disabled_flee", "🏃 Flee").disabled(true),
             ])]
         }
         // (✓) MODIFIED: When the battle is won, show a "Claim Rewards" button.
         BattlePhase::Victory => {
-            vec![CreateActionRow::Buttons(vec![
-                CreateButton::new("battle_claim_rewards")
-                    .label(pad_label("🎁 Claim Rewards", 20))
-                    .style(ButtonStyle::Success),
-            ])]
+            vec![CreateActionRow::Buttons(vec![Btn::success(
+                "battle_claim_rewards",
+                "🎁 Claim Rewards",
+            )])]
         }
         // (✓) MODIFIED: When the battle is lost, show a simple "Close" button.
         BattlePhase::Defeat => {
-            vec![CreateActionRow::Buttons(vec![
-                CreateButton::new("battle_close")
-                    .label(pad_label("❌ Close", 14))
-                    .style(ButtonStyle::Secondary),
-            ])]
+            vec![CreateActionRow::Buttons(vec![Btn::secondary(
+                "battle_close",
+                "❌ Close",
+            )])]
         }
     };
 

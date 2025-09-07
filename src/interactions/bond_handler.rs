@@ -1,8 +1,9 @@
 //! Handles bonding component interactions.
 
+use super::util::{defer_component, edit_component, handle_global_nav};
 use crate::{AppState, database};
-use serenity::builder::{CreateActionRow, CreateButton, EditInteractionResponse};
-use crate::ui::style::pad_label;
+use serenity::builder::{CreateActionRow, EditInteractionResponse};
+use crate::ui::buttons::Btn;
 use serenity::model::application::ComponentInteraction;
 use serenity::prelude::Context;
 use std::sync::Arc;
@@ -10,7 +11,10 @@ use tracing::{instrument, warn};
 
 #[instrument(level = "info", skip(ctx, component, app_state), fields(user_id = component.user.id.get(), custom_id = %component.data.custom_id))]
 pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_state: Arc<AppState>) {
-    component.defer_ephemeral(&ctx.http).await.ok();
+    defer_component(ctx, component).await;
+    if handle_global_nav(ctx, component, &app_state, "saga").await {
+        return;
+    }
     let pool = app_state.db.clone();
     let custom_id = component.data.custom_id.clone();
     let user_id = component.user.id;
@@ -116,13 +120,13 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
         let host_id: i32 = match host_part.parse() {
             Ok(v) => v,
             Err(_) => {
-                component
-                    .edit_response(
-                        &ctx.http,
-                        EditInteractionResponse::new().content("Invalid host id."),
-                    )
-                    .await
-                    .ok();
+                edit_component(
+                    ctx,
+                    component,
+                    "bond.invalid_host",
+                    EditInteractionResponse::new().content("Invalid host id."),
+                )
+                .await;
                 return;
             }
         };
@@ -140,38 +144,36 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     // Invalidate caches for this user so next battle/party view recalculates bonuses.
                     app_state.invalidate_user_caches(user_id).await;
                     // Provide Unequip button (not yet wired to DB toggle) placeholder.
-                    let unequip_button =
-                        CreateButton::new(format!("bond_unequip:{}", host_id)).label(pad_label("🗑 Unequip", 14));
-                    component
-                        .edit_response(
-                            &ctx.http,
-                            EditInteractionResponse::new()
-                                .content("Bond created successfully.")
-                                .components(vec![CreateActionRow::Buttons(vec![unequip_button])]),
-                        )
-                        .await
-                        .ok();
+                    let unequip_button = Btn::danger(&format!("bond_unequip:{}", host_id), "🗑 Unequip");
+                    edit_component(
+                        ctx,
+                        component,
+                        "bond.created",
+                        EditInteractionResponse::new()
+                            .content("Bond created successfully.")
+                            .components(vec![CreateActionRow::Buttons(vec![unequip_button])]),
+                    )
+                    .await;
                 }
                 Err(e) => {
                     warn!(error = %e, "bond_failed");
-                    component
-                        .edit_response(
-                            &ctx.http,
-                            EditInteractionResponse::new()
-                                .content(format!("Failed to bond: {}", e)),
-                        )
-                        .await
-                        .ok();
+                    edit_component(
+                        ctx,
+                        component,
+                        "bond.failed",
+                        EditInteractionResponse::new().content(format!("Failed to bond: {}", e)),
+                    )
+                    .await;
                 }
             }
         } else {
-            component
-                .edit_response(
-                    &ctx.http,
-                    EditInteractionResponse::new().content("No unit selected to equip."),
-                )
-                .await
-                .ok();
+            edit_component(
+                ctx,
+                component,
+                "bond.no_equip_selected",
+                EditInteractionResponse::new().content("No unit selected to equip."),
+            )
+            .await;
         }
         return;
     }
@@ -181,33 +183,32 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
         match database::units::unequip_equippable(&pool, user_id, host_id).await {
             Ok(true) => {
                 app_state.invalidate_user_caches(user_id).await;
-                component
-                    .edit_response(
-                        &ctx.http,
-                        EditInteractionResponse::new().content("Unit unequipped."),
-                    )
-                    .await
-                    .ok();
+                edit_component(
+                    ctx,
+                    component,
+                    "bond.unequipped",
+                    EditInteractionResponse::new().content("Unit unequipped."),
+                )
+                .await;
             }
             Ok(false) => {
-                component
-                    .edit_response(
-                        &ctx.http,
-                        EditInteractionResponse::new()
-                            .content("No equipped unit found for that host."),
-                    )
-                    .await
-                    .ok();
+                edit_component(
+                    ctx,
+                    component,
+                    "bond.unequip_none",
+                    EditInteractionResponse::new().content("No equipped unit found for that host."),
+                )
+                .await;
             }
             Err(e) => {
                 warn!(error = %e, "unequip_failed");
-                component
-                    .edit_response(
-                        &ctx.http,
-                        EditInteractionResponse::new().content(format!("Error: {}", e)),
-                    )
-                    .await
-                    .ok();
+                edit_component(
+                    ctx,
+                    component,
+                    "bond.unequip_err",
+                    EditInteractionResponse::new().content(format!("Error: {}", e)),
+                )
+                .await;
             }
         }
     }

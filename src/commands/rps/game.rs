@@ -5,11 +5,12 @@ use super::state::{GameState, Move, RoundOutcome};
 use crate::commands::games::engine::{Game, GamePayout, GameUpdate};
 use serenity::async_trait;
 use serenity::builder::{
-    CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter, CreateInteractionResponse,
+    CreateActionRow, CreateEmbed, CreateEmbedFooter, CreateInteractionResponse,
     CreateInteractionResponseMessage,
 };
-use crate::ui::style::{pad_narrow, pad_std};
-use serenity::model::application::{ButtonStyle, ComponentInteraction};
+// narrow padding supplied by Btn::narrow
+use serenity::model::application::ComponentInteraction;
+use crate::ui::buttons::Btn;
 use serenity::model::id::UserId;
 use serenity::prelude::Context;
 use sqlx::PgPool;
@@ -283,14 +284,8 @@ impl RpsGame {
             embed = embed.field("Bet Amount (Returned)", format!("💰 {}", state.bet), false);
         }
         let disabled_buttons = vec![
-            CreateButton::new("rps_disabled_accept")
-                .label(pad_std("✅ Accept"))
-                .style(ButtonStyle::Success)
-                .disabled(true),
-            CreateButton::new("rps_disabled_decline")
-                .label(pad_std("❌ Decline"))
-                .style(ButtonStyle::Danger)
-                .disabled(true),
+            Btn::success("rps_disabled_accept", "✅ Accept").disabled(true),
+            Btn::danger("rps_disabled_decline", "❌ Decline").disabled(true),
         ];
         (
             content,
@@ -321,18 +316,14 @@ impl RpsGame {
         };
         embed = embed.field("\u{200B}", challenge_text, false);
         let buttons = vec![
-            CreateButton::new(format!(
-                "rps_accept_{}_{}",
-                self.state.player1.id, self.state.player2.id
-            ))
-            .label(pad_std("✅ Accept"))
-            .style(ButtonStyle::Success),
-            CreateButton::new(format!(
-                "rps_decline_{}_{}",
-                self.state.player1.id, self.state.player2.id
-            ))
-            .label(pad_std("❌ Decline"))
-            .style(ButtonStyle::Danger),
+            Btn::success(
+                &format!("rps_accept_{}_{}", self.state.player1.id, self.state.player2.id),
+                "✅ Accept",
+            ),
+            Btn::danger(
+                &format!("rps_decline_{}_{}", self.state.player1.id, self.state.player2.id),
+                "❌ Decline",
+            ),
         ];
         (content, embed, vec![CreateActionRow::Buttons(buttons)])
     }
@@ -376,18 +367,9 @@ impl RpsGame {
             vec![]
         } else {
             vec![CreateActionRow::Buttons(vec![
-                CreateButton::new("rps_move_rock")
-                    .label(pad_narrow("✊ Rock"))
-                    .emoji('✊')
-                    .style(ButtonStyle::Secondary),
-                CreateButton::new("rps_move_paper")
-                    .label(pad_narrow("✋ Paper"))
-                    .emoji('✋')
-                    .style(ButtonStyle::Secondary),
-                CreateButton::new("rps_move_scissors")
-                    .label(pad_narrow("✌ Scissors"))
-                    .emoji('✌')
-                    .style(ButtonStyle::Secondary),
+                Btn::narrow("rps_move_rock", "✊ Rock").emoji('✊'),
+                Btn::narrow("rps_move_paper", "✋ Paper").emoji('✋'),
+                Btn::narrow("rps_move_scissors", "✌ Scissors").emoji('✌'),
             ])]
         };
         (content, embed, components)

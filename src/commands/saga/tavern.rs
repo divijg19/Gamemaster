@@ -1,9 +1,9 @@
 //! Contains the UI and logic for the Tavern.
 
 use crate::database::models::Unit;
-use crate::ui::style::{COLOR_SAGA_TAVERN, EMOJI_COIN, pad_primary};
-use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed};
-use serenity::model::application::ButtonStyle;
+use crate::ui::buttons::Btn;
+use crate::ui::style::{COLOR_SAGA_TAVERN, EMOJI_COIN};
+use serenity::builder::{CreateActionRow, CreateEmbed};
 
 // For now, the tavern has a static list of recruits.
 // These IDs MUST match the unit_ids from your migration.
@@ -54,10 +54,11 @@ pub fn create_tavern_menu(
             false,
         );
         components.push(
-            CreateButton::new(format!("saga_hire_{}", unit.unit_id))
-                .label(pad_primary(&format!("➕ Hire {}", unit.name)))
-                .style(ButtonStyle::Success)
-                .disabled(player_balance < HIRE_COST),
+            Btn::success(
+                &format!("saga_hire_{}", unit.unit_id),
+                &format!("➕ Hire {}", unit.name),
+            )
+            .disabled(player_balance < HIRE_COST),
         );
     }
 

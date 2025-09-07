@@ -9,6 +9,7 @@ pub mod model;
 pub mod saga;
 pub mod services; // service layer (cached profile etc.)
 pub mod ui;
+pub mod util; // shared small utilities
 
 // Convenient re-exports for frequently used types (optional expansion later).
 pub use model::AppState;

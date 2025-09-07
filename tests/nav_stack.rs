@@ -1,11 +1,19 @@
 //! Tests for capped navigation stack behavior.
 use gamemaster_bot::ui::NavStack;
+use std::marker::PhantomData;
+use std::sync::Arc;
 
-struct DummyState(&'static str);
+struct DummyState(&'static str, PhantomData<Arc<()>>);
 #[async_trait::async_trait]
 impl gamemaster_bot::ui::NavState for DummyState {
     fn id(&self) -> &'static str {
         self.0
+    }
+    fn as_any(&self) -> &(dyn std::any::Any + Send + Sync) {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut (dyn std::any::Any + Send + Sync) {
+        self
     }
     async fn render(
         &self,
@@ -22,9 +30,11 @@ impl gamemaster_bot::ui::NavState for DummyState {
 fn capped_push_discards_oldest() {
     let mut stack = NavStack::default();
     for i in 0..20 {
-        // exceed cap
         stack.push_capped(
-            Box::new(DummyState(Box::leak(format!("s{}", i).into_boxed_str()))),
+            Box::new(DummyState(
+                Box::leak(format!("s{}", i).into_boxed_str()),
+                PhantomData,
+            )),
             15,
         );
     }

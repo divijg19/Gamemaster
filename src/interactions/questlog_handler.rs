@@ -7,6 +7,7 @@ use serenity::builder::EditInteractionResponse;
 use serenity::model::application::ComponentInteraction;
 use serenity::prelude::Context;
 use std::sync::Arc;
+use super::util::{defer_component, handle_global_nav};
 
 /// The main entry point for questlog-related component interactions.
 pub async fn handle(
@@ -14,6 +15,8 @@ pub async fn handle(
     component: &mut ComponentInteraction,
     _app_state: Arc<AppState>, // _app_state is kept for signature consistency with other handlers
 ) {
+    defer_component(ctx, component).await;
+    if handle_global_nav(ctx, component, &_app_state, "saga").await { return; }
     // The custom_id is expected to be "questlog_view_{Status}"
     let custom_id = &component.data.custom_id;
     let view_status_str = match custom_id.strip_prefix("questlog_view_") {
@@ -34,8 +37,7 @@ pub async fn handle(
         }
     };
 
-    // Defer the interaction to show a loading state.
-    component.defer_ephemeral(&ctx.http).await.ok();
+    // Already deferred globally above.
 
     // We can reuse the exact same response logic from the main command.
     // This is a great example of well-architected, reusable code.

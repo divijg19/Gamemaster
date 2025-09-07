@@ -3,10 +3,9 @@
 use crate::commands::economy::core::item::Item;
 use crate::database::models::PlayerQuestStatus;
 use crate::database::quests::QuestBoardEntry;
-use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter};
-use crate::ui::style::pad_primary;
+use serenity::builder::{CreateActionRow, CreateEmbed, CreateEmbedFooter};
 use serenity::model::Colour;
-use serenity::model::prelude::ButtonStyle;
+use crate::ui::buttons::Btn;
 
 /// Creates the embed and interactive components for the Quest Board.
 /// # Returns
@@ -75,11 +74,10 @@ pub fn create_quest_board_embed(quests: &[QuestBoardEntry]) -> (CreateEmbed, Vec
                 false,
             );
 
-            buttons.push(
-                CreateButton::new(format!("quest_accept_{}", entry.details.player_quest_id))
-                    .label(pad_primary("🆗 Accept"))
-                    .style(ButtonStyle::Primary),
-            );
+            buttons.push(Btn::primary(
+                &format!("quest_accept_{}", entry.details.player_quest_id),
+                "🆗 Accept",
+            ));
         }
     }
 

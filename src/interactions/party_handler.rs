@@ -1,6 +1,7 @@
 //! Handles all component interactions for the `party` command family.
 
-use crate::{AppState, commands, database};
+use super::util::{defer_component, edit_component, handle_global_nav};
+use crate::{AppState, commands, database}; // commands still used for final party view render
 use serenity::builder::EditInteractionResponse;
 use serenity::model::application::ComponentInteraction;
 use serenity::prelude::Context;
@@ -8,43 +9,9 @@ use std::sync::Arc;
 
 pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_state: Arc<AppState>) {
     let db = app_state.db.clone();
-    component.defer_ephemeral(ctx.http.clone()).await.ok();
-    // Global navigation buttons short-circuit
-    if component.data.custom_id == "nav_saga" {
-        if let Some(profile) =
-            crate::services::saga::get_saga_profile(&app_state, component.user.id, false).await
-        {
-            let has_party = database::units::get_user_party(&db, component.user.id)
-                .await
-                .map(|p| !p.is_empty())
-                .unwrap_or(false);
-            let (embed, components) = commands::saga::ui::create_saga_menu(&profile, has_party);
-            let builder = EditInteractionResponse::new()
-                .embed(embed)
-                .components(components);
-            component
-                .edit_response(ctx.http.clone(), builder)
-                .await
-                .ok();
-        }
+    defer_component(ctx, component).await;
+    if handle_global_nav(ctx, component, &app_state, "party").await {
         return;
-    } else if component.data.custom_id == "nav_train" {
-        if let Ok(units) = database::units::get_player_units(&db, component.user.id).await
-            && let Some(profile) =
-                crate::services::saga::get_saga_profile(&app_state, component.user.id, false).await
-        {
-            let (embed, components) = commands::train::ui::create_training_menu(&units, &profile);
-            let builder = EditInteractionResponse::new()
-                .embed(embed)
-                .components(components);
-            component
-                .edit_response(ctx.http.clone(), builder)
-                .await
-                .ok();
-        }
-        return;
-    } else if component.data.custom_id == "nav_party" {
-        // Already within party domain; just fall through to standard re-render logic below (after potential action)
     }
 
     let action = component.data.custom_id.split('_').nth(1).unwrap_or("");
@@ -60,11 +27,13 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
     let unit_id = match unit_id_str.parse::<i32>() {
         Ok(id) => id,
         Err(_) => {
-            let builder = EditInteractionResponse::new().content("Invalid unit selected.");
-            component
-                .edit_response(ctx.http.clone(), builder)
-                .await
-                .ok();
+            edit_component(
+                ctx,
+                component,
+                "party.invalid_unit",
+                EditInteractionResponse::new().content("Invalid unit selected."),
+            )
+            .await;
             return;
         }
     };
@@ -107,13 +76,14 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
     let (embed, components) =
         commands::party::ui::create_party_view_with_bonds(&app_state, component.user.id).await;
 
-    let builder = EditInteractionResponse::new()
-        .embed(embed)
-        .components(components)
-        .content(confirmation_message); // Display the confirmation message.
-
-    component
-        .edit_response(ctx.http.clone(), builder)
-        .await
-        .ok();
+    edit_component(
+        ctx,
+        component,
+        "party.render",
+        EditInteractionResponse::new()
+            .embed(embed)
+            .components(components)
+            .content(confirmation_message),
+    )
+    .await;
 }
