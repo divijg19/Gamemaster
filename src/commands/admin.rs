@@ -126,10 +126,13 @@ pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
                 notes.push(format!("-- Saga Diagnostics for user {} --", target));
                 use sqlx::Error;
                 use sqlx::Row;
-                match sqlx::query_scalar::<_, i64>("SELECT 1 FROM profiles WHERE user_id = $1")
-                    .bind(target)
-                    .fetch_optional(db)
-                    .await
+                // Cast the literal to BIGINT so it matches the expected i64 Rust type (avoids int4 vs int8 mismatch)
+                match sqlx::query_scalar::<_, i64>(
+                    "SELECT 1::BIGINT FROM profiles WHERE user_id = $1",
+                )
+                .bind(target)
+                .fetch_optional(db)
+                .await
                 {
                     Ok(Some(_)) => notes.push("Base profile: PRESENT".into()),
                     Ok(None) => notes.push("Base profile: MISSING".into()),

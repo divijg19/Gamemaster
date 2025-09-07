@@ -96,7 +96,7 @@ pub fn create_saga_menu(
         CreateButton::new("saga_back")
             .label(format!("{} Back", EMOJI_BACK))
             .style(ButtonStyle::Danger)
-            .disabled(true), // root menu has no back target
+            .disabled(true),
         CreateButton::new("saga_refresh")
             .label(format!("{} Refresh", EMOJI_REFRESH))
             .style(ButtonStyle::Secondary),
