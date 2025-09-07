@@ -102,6 +102,74 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
 
     const MAX_NAV_DEPTH: usize = 15;
 
+    // Some buttons like saga_back/saga_refresh have only one underscore-less segment after prefix; handle explicitly.
+    if component.data.custom_id == "saga_back" {
+        component.defer(&ctx.http).await.ok();
+        {
+            let mut stacks = app_state.nav_stacks.write().await;
+            if let Some(s) = stacks.get_mut(&component.user.id.get())
+                && let Some(old) = s.pop()
+            {
+                debug!(target: "nav", user_id = component.user.id.get(), state = old.id(), action = "pop", depth = s.stack.len());
+            }
+        }
+        let has_party = database::units::get_user_party(db, component.user.id)
+            .await
+            .map(|p| !p.is_empty())
+            .unwrap_or(false);
+        let saga_profile =
+            saga_service::get_saga_profile(&app_state, component.user.id, false).await;
+        if let Some(nav) = app_state
+            .nav_stacks
+            .read()
+            .await
+            .get(&component.user.id.get())
+            .and_then(|s| s.stack.last())
+        {
+            let ctxbag = ContextBag::new(db.clone(), component.user.id);
+            let (embed, components) = nav.render(&ctxbag).await;
+            let builder = EditInteractionResponse::new()
+                .embed(embed)
+                .components(components);
+            component.edit_response(&ctx.http, builder).await.ok();
+        } else if let Some(profile) = saga_profile {
+            let (embed, components) = commands::saga::ui::create_saga_menu(&profile, has_party);
+            let builder = EditInteractionResponse::new()
+                .embed(embed)
+                .components(components);
+            component.edit_response(&ctx.http, builder).await.ok();
+        }
+        return;
+    } else if component.data.custom_id == "saga_refresh" {
+        component.defer(&ctx.http).await.ok();
+        let _ = saga_service::get_saga_profile(&app_state, component.user.id, true).await;
+        let ctxbag = ContextBag::new(db.clone(), component.user.id);
+        if let Some(nav) = app_state
+            .nav_stacks
+            .read()
+            .await
+            .get(&component.user.id.get())
+            .and_then(|s| s.stack.last())
+        {
+            let (embed, mut components) = nav.render(&ctxbag).await;
+            let depth = app_state
+                .nav_stacks
+                .read()
+                .await
+                .get(&component.user.id.get())
+                .map(|s| s.stack.len())
+                .unwrap_or(1);
+            if let Some(row) = back_refresh_row(depth) {
+                components.push(row);
+            }
+            let builder = EditInteractionResponse::new()
+                .embed(embed)
+                .components(components);
+            component.edit_response(&ctx.http, builder).await.ok();
+        }
+        return;
+    }
+
     match custom_id_parts.get(1) {
         // (Removed duplicate early tutorial handler; consolidated later in file around line ~630)
         // Global navigation buttons (handled here for saga context)
@@ -501,73 +569,6 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             };
             if let Err(e) = component.edit_response(&ctx.http, builder).await {
                 tracing::error!(target="saga.interaction", user_id=%component.user.id, cid=%component.data.custom_id, error=?e, "Failed to edit hire interaction response");
-            }
-        }
-        Some(&"back") => {
-            component.defer(&ctx.http).await.ok();
-            {
-                let mut stacks = app_state.nav_stacks.write().await;
-                if let Some(s) = stacks.get_mut(&component.user.id.get())
-                    && let Some(old) = s.pop()
-                {
-                    debug!(target: "nav", user_id = component.user.id.get(), state = old.id(), action = "pop", depth = s.stack.len());
-                }
-            }
-            // Re-render new top (or fallback main saga menu)
-            let has_party = database::units::get_user_party(db, component.user.id)
-                .await
-                .map(|p| !p.is_empty())
-                .unwrap_or(false);
-            let saga_profile =
-                saga_service::get_saga_profile(&app_state, component.user.id, false).await;
-            if let Some(nav) = app_state
-                .nav_stacks
-                .read()
-                .await
-                .get(&component.user.id.get())
-                .and_then(|s| s.stack.last())
-            {
-                let ctxbag = ContextBag::new(db.clone(), component.user.id);
-                let (embed, components) = nav.render(&ctxbag).await;
-                let builder = EditInteractionResponse::new()
-                    .embed(embed)
-                    .components(components);
-                component.edit_response(&ctx.http, builder).await.ok();
-            } else if let Some(profile) = saga_profile {
-                let (embed, components) = commands::saga::ui::create_saga_menu(&profile, has_party);
-                let builder = EditInteractionResponse::new()
-                    .embed(embed)
-                    .components(components);
-                component.edit_response(&ctx.http, builder).await.ok();
-            }
-        }
-        Some(&"refresh") => {
-            component.defer(&ctx.http).await.ok();
-            // Force refresh: bypass cache by always fetching then writing (refresh semantics)
-            let _ = saga_service::get_saga_profile(&app_state, component.user.id, true).await;
-            let ctxbag = ContextBag::new(db.clone(), component.user.id);
-            if let Some(nav) = app_state
-                .nav_stacks
-                .read()
-                .await
-                .get(&component.user.id.get())
-                .and_then(|s| s.stack.last())
-            {
-                let (embed, mut components) = nav.render(&ctxbag).await;
-                let depth = app_state
-                    .nav_stacks
-                    .read()
-                    .await
-                    .get(&component.user.id.get())
-                    .map(|s| s.stack.len())
-                    .unwrap_or(1);
-                if let Some(row) = back_refresh_row(depth) {
-                    components.push(row);
-                }
-                let builder = EditInteractionResponse::new()
-                    .embed(embed)
-                    .components(components);
-                component.edit_response(&ctx.http, builder).await.ok();
             }
         }
         Some(&"main") => {
