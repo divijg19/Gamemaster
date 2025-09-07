@@ -470,7 +470,10 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             }
         }
         Some(&"hire") => {
-            component.defer_ephemeral(&ctx.http).await.ok();
+            // Use standard defer (update original message) instead of ephemeral to avoid hanging interactions
+            if let Err(e) = component.defer(&ctx.http).await {
+                tracing::error!(target="saga.interaction", user_id=%component.user.id, cid=%component.data.custom_id, error=?e, "Failed to defer hire interaction");
+            }
             let pet_id_to_hire = custom_id_parts[2].parse::<i32>().unwrap_or(0);
             let result = database::units::hire_unit(
                 db,
@@ -496,7 +499,9 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     format!("Hiring failed: {}", e),
                 )),
             };
-            component.edit_response(&ctx.http, builder).await.ok();
+            if let Err(e) = component.edit_response(&ctx.http, builder).await {
+                tracing::error!(target="saga.interaction", user_id=%component.user.id, cid=%component.data.custom_id, error=?e, "Failed to edit hire interaction response");
+            }
         }
         Some(&"back") => {
             component.defer(&ctx.http).await.ok();
@@ -588,7 +593,9 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             }
         }
         Some(&"tutorial") => {
-            component.defer_ephemeral(&ctx.http).await.ok();
+            if let Err(e) = component.defer(&ctx.http).await {
+                tracing::error!(target="saga.interaction", user_id=%component.user.id, cid=%component.data.custom_id, error=?e, "Failed to defer tutorial interaction");
+            }
             match custom_id_parts.get(2) {
                 Some(&"hire") => {
                     // Give a free starter unit (unit_id 1 assumed) if player has none
@@ -629,7 +636,9 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                         .content("Starter unit recruited and added to your party!")
                         .embed(embed)
                         .components(components);
-                    component.edit_response(&ctx.http, builder).await.ok();
+                    if let Err(e) = component.edit_response(&ctx.http, builder).await {
+                        tracing::error!(target="saga.interaction", user_id=%component.user.id, cid=%component.data.custom_id, error=?e, "Failed to edit tutorial hire response");
+                    }
                 }
                 Some(&"skip") => {
                     // Just show main menu (will still be disabled map until a recruit happens)
@@ -655,19 +664,27 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                         .content("Tutorial skipped.")
                         .embed(embed)
                         .components(components);
-                    component.edit_response(&ctx.http, builder).await.ok();
+                    if let Err(e) = component.edit_response(&ctx.http, builder).await {
+                        tracing::error!(target="saga.interaction", user_id=%component.user.id, cid=%component.data.custom_id, error=?e, "Failed to edit tutorial skip response");
+                    }
                 }
                 _ => {
                     let builder =
                         EditInteractionResponse::new().content("Unknown tutorial action.");
-                    component.edit_response(&ctx.http, builder).await.ok();
+                    if let Err(e) = component.edit_response(&ctx.http, builder).await {
+                        tracing::error!(target="saga.interaction", user_id=%component.user.id, cid=%component.data.custom_id, error=?e, "Failed to edit unknown tutorial action response");
+                    }
                 }
             }
         }
         _ => {
-            component.defer_ephemeral(&ctx.http).await.ok();
+            if let Err(e) = component.defer(&ctx.http).await {
+                tracing::error!(target="saga.interaction", user_id=%component.user.id, cid=%component.data.custom_id, error=?e, "Failed to defer unknown interaction");
+            }
             let builder = EditInteractionResponse::new().content("Unknown saga interaction.");
-            component.edit_response(&ctx.http, builder).await.ok();
+            if let Err(e) = component.edit_response(&ctx.http, builder).await {
+                tracing::error!(target="saga.interaction", user_id=%component.user.id, cid=%component.data.custom_id, error=?e, "Failed to edit unknown interaction response");
+            }
         }
     }
 }
