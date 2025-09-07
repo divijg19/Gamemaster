@@ -74,6 +74,12 @@ pub struct AppState {
     pub nav_stacks: Arc<RwLock<HashMap<u64, NavStack>>>,
     /// Short TTL cache for saga profiles to smooth rapid refresh interaction bursts.
     pub saga_profile_cache: Arc<RwLock<SagaProfileCache>>,
+    /// Cached global tavern rotation (date, units) to avoid re-sorting each request.
+    pub tavern_daily_cache:
+        Arc<RwLock<Option<(chrono::NaiveDate, Vec<crate::database::models::Unit>)>>>,
+    /// Per-user ephemeral tavern session state (page/filter persistence).
+    pub tavern_sessions:
+        Arc<RwLock<HashMap<u64, crate::commands::saga::tavern::TavernSessionState>>>,
 }
 
 impl AppState {

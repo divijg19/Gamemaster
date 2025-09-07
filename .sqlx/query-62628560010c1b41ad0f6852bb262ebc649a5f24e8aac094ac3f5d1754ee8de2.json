@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO tavern_favor (user_id, daily_rerolls, last_reroll) VALUES ($1,1,$2) ON CONFLICT (user_id) DO UPDATE SET daily_rerolls = CASE WHEN tavern_favor.last_reroll::date = CURRENT_DATE THEN tavern_favor.daily_rerolls + 1 ELSE 1 END, last_reroll = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "62628560010c1b41ad0f6852bb262ebc649a5f24e8aac094ac3f5d1754ee8de2"
+}

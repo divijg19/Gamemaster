@@ -1,9 +1,10 @@
 # Gamemaster Bot
 
-A feature-rich Discord game bot written in Rust (Serenity + SQLx + Tokio) featuring an evolving RPG mode (The Gamemaster Saga), economy, research & bonding systems, and several mini‑games.
+A feature-rich Discord game bot written in Rust (Serenity + SQLx + Tokio) featuring an evolving RPG mode (The Gamemaster Saga), a deterministic daily Tavern recruitment system, economy, research & bonding systems, and several mini‑games.
 
 ## ✨ Key Features
 - **Gamemaster Saga**: Turn-based progression with Action Points (AP), Training Points (TP), world map nodes, quests, and battles.
+- **Tavern Recruitment**: Deterministic daily rotation (date‑seeded), per‑user rotation persistence, unit favor tiers & progress bar, rarity filters (All / Rare+ / Epic+ / Legendary+), two‑step reroll confirmations with cost & remaining count, and session persistence (page + filter) across hires/rerolls.
 - **Party & Army Management**: Maintain a 5‑unit active party plus a larger army roster; rarity & leveling determine power.
 - **Bonding System**: Equip (bond) one unit onto another for stat augment bonuses; cached & summarized in the party UI.
 - **Research System**: Passive bonuses unlocked by collecting research data drops (TTL caches for performance).
@@ -13,7 +14,8 @@ A feature-rich Discord game bot written in Rust (Serenity + SQLx + Tokio) featur
 - **Battle Engine**: Turn-based, logs actions, supports vitality mitigation and bonded equipment bonuses.
 - **Mini-Games**: Blackjack, Poker, Rock/Paper/Scissors with modular game trait architecture.
 - **Caching Layer**: Short TTL layer for saga profiles, bonds, equipment bonuses, research, and party mapping (hit/miss stats exposed via `/adminutil cachestats`).
-- **Global Navigation**: Consistent cross-command navigation row (Saga / Party / Train) with capped nav stack depth.
+- **Global Navigation**: Consistent cross-command navigation row (Saga / Party / Train / Tavern) with capped nav stack depth and per-user stack.
+- **View System**: Distinct `SagaView::Tavern` vs legacy `Recruit` path for clearer lifecycle & future extensibility.
 - **Migrations**: SQLx migrations include performance indexes and data integrity constraints.
 
 ## 🗂 Project Structure
@@ -59,10 +61,11 @@ cargo test --tests
 Current coverage includes leveling, TP recharge, cache stats, and first‑time tutorial flow. Add integration tests (battle snapshots, quest completion) as the saga expands.
 
 ## 🏗 Architecture Notes
-- **Navigation**: Per-user stack of `NavState` objects; capped depth to avoid unbounded memory growth.
-- **Caching Strategy**: Micro‑caches (TTL 2–5s) smooth out bursty interaction spam without risking stale long-term state.
+- **Navigation**: Per-user stack of `NavState` objects; capped depth prevents unbounded memory growth; Tavern integrated as first-class view.
+- **Caching Strategy**: Micro‑caches (TTL 2–5s) plus a stabilized daily Tavern rotation cache (date-keyed) reduce redundant deterministic recompute.
 - **Battle Bonuses**: Equipment & bond bonuses are pre-applied before the first render; mitigation summary appended on victory.
 - **Consistency**: All cross-domain menus append a global nav row; saga battle only shows it on terminal phases to reduce clutter.
+- **Filtering**: Tavern rarity filters applied via a centralized `filter_units` helper to avoid inconsistent threshold logic.
 
 ## 🔐 Data Integrity & Performance
 - Unique constraints on equipped bonds and host/equipped pairs.
@@ -72,10 +75,12 @@ Current coverage includes leveling, TP recharge, cache stats, and first‑time t
 ## 🗺 Roadmap (Short-Term)
 - Unified per-interaction context cache (profile + party + bonuses)
 - Party snapshot caching for faster battle initialization
-- Rate limiting across all handlers (saga implemented first)
-- Expanded map node progression & procedural encounter generation
+- Extended world map progression & procedural encounter generation
+- Battle snapshot integration tests (vitality / mitigation assertions)
+- Rate limiting across remaining non-saga handlers
 - Quest reward variety & scaling
 - Admin telemetry & live metrics command
+- Additional Tavern UX polish (highlight newest rotation changes, richer favor tiers)
 
 ## 🧩 Contributing
 1. Fork or branch from `test` (staging) then open PR.
@@ -83,9 +88,10 @@ Current coverage includes leveling, TP recharge, cache stats, and first‑time t
 3. Run `cargo fmt` / `cargo clippy` if added (not yet enforced, but recommended).
 
 ## 📦 Releasing
-1. Update `CHANGELOG.md`.
+1. Update `CHANGELOG.md` (categories: Added / Changed / Deprecated / Removed / Fixed / Security).
 2. Bump version in `Cargo.toml`.
-3. Tag & push.
+3. Commit with `release: vX.Y.Z` conventional style (pre‑1.0 minor bumps may break).
+4. Tag & push.
 
 ## 📜 License
 Currently proprietary / undisclosed. Add SPDX + license file before public release.
@@ -94,4 +100,4 @@ Currently proprietary / undisclosed. Add SPDX + license file before public relea
 See `CHANGELOG.md` for detailed history.
 
 ---
-_This README reflects the state as of version 0.1.0 (navigation + caching refactors and saga tutorial integration)._
+_This README reflects the state after post-0.1.0 Tavern integration & navigation refinements._

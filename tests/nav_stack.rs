@@ -9,10 +9,10 @@ impl gamemaster_bot::ui::NavState for DummyState {
     fn id(&self) -> &'static str {
         self.0
     }
-    fn as_any(&self) -> &(dyn std::any::Any + Send + Sync) {
+    fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    fn as_any_mut(&mut self) -> &mut (dyn std::any::Any + Send + Sync) {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
     async fn render(

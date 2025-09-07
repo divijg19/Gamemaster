@@ -1,18 +1,39 @@
 # Changelog
 
-All notable changes to this project will be documented here.
-
-The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Versioning will adopt SemVer once reaching a public 1.0 milestone.
+All notable changes to this project are documented here. The format follows a lightweight variant of
+[Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and (pre‑1.0) version numbers MAY introduce
+breaking changes in minor bumps (`0.x.0`). Dates use `YYYY-MM-DD`.
 
 ## [Unreleased]
 ### Added
-- Planned per-interaction context cache (profile + party + bonuses)
-- Party combat snapshot caching (design draft)
-- Rate limiting rollout to remaining handlers (saga implemented)
+- Tavern system: deterministic daily rotation (date‑seeded), per‑user rotation persistence, favor tiers & progress bar, hire confirmation, two‑step reroll (confirm / cancel) with cost & remaining count, session persistence (page + filter), filter buttons (All / Rare+ / Epic+ / Legendary+), and rotation diff caching.
+- Tavern daily rotation in‑memory cache (avoids repeated deterministic rebuilds each interaction).
+- World map node preview embeds with content fingerprint hashing to avoid stale UI after progression.
+- Dedicated SagaView::Tavern integrated into navigation stack (distinct from legacy Recruit view) with refresh/back row support.
+- Filter abstraction (`filter_units`) & dynamic filter button rendering with active state.
+- Two‑step reroll flow preserving page/filter state across confirmation.
+- Additional SQL migrations (performance indexes, tavern favor/rotation tables, research & unit expansion, tavern expansion & rotation updates, saga AP/TP rebalance, tavern filter/rotation enhancements). 
 
-### In Progress
-- Expanded world map & procedural encounter design
-- Battle integration tests (snapshot + vitality verification)
+### Changed
+- Split generic Recruit view into explicit Tavern view (cleaner intent & future extensibility).
+- Centralized filtering logic replacing scattered threshold checks.
+- All tavern builds now use cached `build_tavern_state_cached` path (removes duplicate logic / reduces DB + compute churn).
+- Navigation: uniform back / refresh rows applied to Tavern view; consistent sizing via shared button helpers.
+
+### Fixed
+- Corrupted match arms introduced during early reroll confirmation attempt (now replaced with clean confirm/cancel handlers).
+- Potential stale tavern displays after reroll/hire by ensuring session + cache reconciliation and re-render.
+
+### Removed
+- Legacy uncached tavern builder (`build_tavern_state`).
+- Obsolete `apply_filter` and per-enum threshold method (superseded by `filter_units`).
+
+### In Progress / Planned
+- Per-interaction unified context cache (profile + party + bonuses) to reduce multi-fetch overhead.
+- Party combat snapshot caching for faster battle initialization.
+- Expansion of world map procedural encounters & node diversity.
+- Battle integration tests (snapshot + vitality verification).
+- Rate limiting rollout to remaining non-saga handlers.
 
 ## [0.1.0] - 2025-09-04
 ### Added
@@ -44,3 +65,6 @@ The format roughly follows [Keep a Changelog](https://keepachangelog.com/en/1.0.
 
 ---
 Future releases will separate internal refactors from player-visible changes.
+
+---
+Guidelines: Use categories (Added / Changed / Deprecated / Removed / Fixed / Security). Keep internal refactors under Changed unless purely cosmetic. Group related Tavern or Saga changes for readability.
