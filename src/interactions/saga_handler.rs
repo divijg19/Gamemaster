@@ -3,323 +3,279 @@
 use crate::commands::games::engine::Game;
 use crate::saga::battle::game::BattleGame;
 // (✓) FIXED: Import the specific structs needed, removing the unused `BattlePhase`.
+use super::ids::*;
+use super::util::{defer_component, edit_component, handle_global_nav, handle_saga_back_refresh};
 use crate::commands::saga::ui::back_refresh_row;
 use crate::constants::EQUIP_BONUS_CACHE_TTL_SECS;
 use crate::saga::battle::state::{BattleSession, BattleUnit};
+use crate::saga::view::{SagaView, push_and_render};
 use crate::services::{cache as cache_service, saga as saga_service};
 use crate::ui::style::error_embed;
-use crate::ui::{ContextBag, NavState};
-use crate::{AppState, commands, database, saga};
+// NavState no longer needed directly after SagaView migration
+use crate::{AppState, commands, database};
 use serenity::builder::EditInteractionResponse;
 use serenity::model::application::ComponentInteraction;
 use serenity::prelude::Context;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::debug;
 use tracing::instrument;
 
+// (Removed local edit helper; using util::edit_component for consistency.)
+
 // Local cache helpers removed (centralized in services::saga).
-
-struct SagaWorldMapState {
-    nodes: Vec<crate::database::models::MapNode>,
-    ap: i32,
-    max_ap: i32,
-    story_progress: i32,
-}
-#[async_trait::async_trait]
-impl NavState for SagaWorldMapState {
-    fn id(&self) -> &'static str {
-        "saga_world_map"
-    }
-    async fn render(
-        &self,
-        ctx: &ContextBag,
-    ) -> (
-        serenity::builder::CreateEmbed,
-        Vec<serenity::builder::CreateActionRow>,
-    ) {
-        let profile_stub = crate::database::models::SagaProfile {
-            current_ap: self.ap,
-            max_ap: self.max_ap,
-            current_tp: 0,
-            max_tp: 0,
-            last_tp_update: chrono::Utc::now(),
-            story_progress: self.story_progress,
-        };
-        // Touch ctx fields (db & user_id) to keep them "used" for now until future data-driven rendering.
-        let _ = (&ctx.db, ctx.user_id);
-        commands::saga::ui::create_world_map_view(&self.nodes, &profile_stub)
-    }
-}
-
-struct SagaTavernState {
-    recruits: Vec<crate::database::models::Unit>,
-    balance: i64,
-}
-#[async_trait::async_trait]
-impl NavState for SagaTavernState {
-    fn id(&self) -> &'static str {
-        "saga_tavern"
-    }
-    async fn render(
-        &self,
-        ctx: &ContextBag,
-    ) -> (
-        serenity::builder::CreateEmbed,
-        Vec<serenity::builder::CreateActionRow>,
-    ) {
-        let _ = (&ctx.db, ctx.user_id);
-        commands::saga::tavern::create_tavern_menu(&self.recruits, self.balance)
-    }
-}
-
-struct SagaPartyState {
-    embed: serenity::builder::CreateEmbed,
-    components: Vec<serenity::builder::CreateActionRow>,
-}
-#[async_trait::async_trait]
-impl NavState for SagaPartyState {
-    fn id(&self) -> &'static str {
-        "saga_party"
-    }
-    async fn render(
-        &self,
-        ctx: &ContextBag,
-    ) -> (
-        serenity::builder::CreateEmbed,
-        Vec<serenity::builder::CreateActionRow>,
-    ) {
-        let _ = (&ctx.db, ctx.user_id);
-        (self.embed.clone(), self.components.clone())
-    }
-}
 
 #[instrument(level="debug", skip(ctx, component, app_state), fields(user_id = component.user.id.get(), cid = %component.data.custom_id))]
 pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_state: Arc<AppState>) {
     let db = &app_state.db;
-    let custom_id_parts: Vec<&str> = component.data.custom_id.split('_').collect();
-    tracing::debug!(target="saga.interaction", user_id=%component.user.id, custom_id=%component.data.custom_id, "Saga component received");
+    let raw_id = component.data.custom_id.as_str();
+    let custom_id_parts: Vec<&str> = raw_id.split('_').collect();
+    tracing::debug!(target="saga.interaction", user_id=%component.user.id, cid=%raw_id, "Saga component received");
+
+    // Standard unified defer + global nav handling
+    defer_component(ctx, component).await;
+    if handle_global_nav(ctx, component, &app_state, "saga").await {
+        return;
+    }
 
     const MAX_NAV_DEPTH: usize = 15;
 
-    // Some buttons like saga_back/saga_refresh have only one underscore-less segment after prefix; handle explicitly.
-    if component.data.custom_id == "saga_back" {
-        component.defer(&ctx.http).await.ok();
-        {
-            let mut stacks = app_state.nav_stacks.write().await;
-            if let Some(s) = stacks.get_mut(&component.user.id.get())
-                && let Some(old) = s.pop()
-            {
-                debug!(target: "nav", user_id = component.user.id.get(), state = old.id(), action = "pop", depth = s.stack.len());
-            }
-        }
-        let has_party = database::units::get_user_party(db, component.user.id)
-            .await
-            .map(|p| !p.is_empty())
-            .unwrap_or(false);
-        let saga_profile =
-            saga_service::get_saga_profile(&app_state, component.user.id, false).await;
-        if let Some(nav) = app_state
-            .nav_stacks
-            .read()
-            .await
-            .get(&component.user.id.get())
-            .and_then(|s| s.stack.last())
-        {
-            let ctxbag = ContextBag::new(db.clone(), component.user.id);
-            let (embed, components) = nav.render(&ctxbag).await;
-            let builder = EditInteractionResponse::new()
-                .embed(embed)
-                .components(components);
-            component.edit_response(&ctx.http, builder).await.ok();
-        } else if let Some(profile) = saga_profile {
-            let (embed, components) = commands::saga::ui::create_saga_menu(&profile, has_party);
-            let builder = EditInteractionResponse::new()
-                .embed(embed)
-                .components(components);
-            component.edit_response(&ctx.http, builder).await.ok();
-        }
-        return;
-    } else if component.data.custom_id == "saga_refresh" {
-        component.defer(&ctx.http).await.ok();
-        let _ = saga_service::get_saga_profile(&app_state, component.user.id, true).await;
-        let ctxbag = ContextBag::new(db.clone(), component.user.id);
-        if let Some(nav) = app_state
-            .nav_stacks
-            .read()
-            .await
-            .get(&component.user.id.get())
-            .and_then(|s| s.stack.last())
-        {
-            let (embed, mut components) = nav.render(&ctxbag).await;
-            let depth = app_state
-                .nav_stacks
-                .read()
-                .await
-                .get(&component.user.id.get())
-                .map(|s| s.stack.len())
-                .unwrap_or(1);
-            if let Some(row) = back_refresh_row(depth) {
-                components.push(row);
-            }
-            let builder = EditInteractionResponse::new()
-                .embed(embed)
-                .components(components);
-            component.edit_response(&ctx.http, builder).await.ok();
-        }
+    // Centralized back / refresh.
+    if handle_saga_back_refresh(ctx, component, &app_state).await {
         return;
     }
 
     match custom_id_parts.get(1) {
-        // (Removed duplicate early tutorial handler; consolidated later in file around line ~630)
-        // Global navigation buttons (handled here for saga context)
-        Some(&"saga") if component.data.custom_id == "nav_saga" => {
-            // Re-render main saga root; show tutorial if first-time
-            component.defer(&ctx.http).await.ok();
-            let _ = database::economy::get_or_create_profile(db, component.user.id).await;
-            match saga_service::get_profile_and_units_debug(&app_state, component.user.id).await {
-                Ok((profile, units)) => {
-                    let has_party = units.iter().any(|u| u.is_in_party);
-                    let (embed, components) = if !has_party && profile.story_progress == 0 {
-                        commands::saga::ui::create_first_time_tutorial()
-                    } else {
-                        commands::saga::ui::create_saga_menu(&profile, has_party)
-                    };
-                    let builder = EditInteractionResponse::new()
-                        .embed(embed)
-                        .components(components);
-                    component.edit_response(&ctx.http, builder).await.ok();
+        Some(&"preview") if raw_id.starts_with("saga_preview_") => {
+            // Preview a node's enemies & rewards without spending AP.
+            let node_id = match raw_id.trim_start_matches("saga_preview_").parse::<i32>() {
+                Ok(v) => v,
+                Err(_) => {
+                    edit_component(
+                        ctx,
+                        component,
+                        "preview.bad_id",
+                        EditInteractionResponse::new().content("Invalid node id for preview."),
+                    )
+                    .await;
+                    return;
                 }
-                Err(e) => {
-                    let builder = EditInteractionResponse::new()
-                        .content(format!("Error loading saga profile: {e}"));
-                    component.edit_response(&ctx.http, builder).await.ok();
+            };
+            match database::world::get_full_node_bundle(db, node_id).await {
+                Ok((node, enemies, rewards)) => {
+                    use serenity::builder::CreateEmbed;
+                    let mut embed = CreateEmbed::new()
+                        .title(format!("Node Preview: {}", node.name))
+                        .description(
+                            node.description
+                                .clone()
+                                .unwrap_or_else(|| "No description.".into()),
+                        )
+                        .field(
+                            "Story Progress Req",
+                            format!("`{}`", node.story_progress_required),
+                            true,
+                        )
+                        .field(
+                            "Base Rewards",
+                            format!("💰 {} | XP {}", node.reward_coins, node.reward_unit_xp),
+                            true,
+                        )
+                        .color(0x2F3136);
+                    if !enemies.is_empty() {
+                        let enemy_lines = enemies
+                            .iter()
+                            .map(|e| format!("- {} ({:?})", e.name, e.rarity))
+                            .take(10)
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        embed = embed.field("Enemies", enemy_lines, false);
+                    }
+                    if !rewards.is_empty() {
+                        let reward_lines = rewards
+                            .iter()
+                            .take(10)
+                            .map(|r| {
+                                format!(
+                                    "• Item {} x{} ({}%)",
+                                    r.item_id,
+                                    r.quantity,
+                                    (r.drop_chance * 100.0) as i32
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        embed = embed.field("Possible Drops", reward_lines, false);
+                    }
+                    let mut components = Vec::new();
+                    // Provide a Start Battle button (spends AP) and Back/Refresh row if applicable via existing util (depth >1).
+                    components.push(serenity::builder::CreateActionRow::Buttons(vec![
+                        crate::ui::buttons::Btn::primary(
+                            &format!("saga_node_{}", node.node_id),
+                            "⚔ Start Battle",
+                        ),
+                        crate::ui::buttons::Btn::secondary("nav_saga", "↩ Saga"),
+                    ]));
+                    components.push(crate::commands::saga::ui::global_nav_row("saga"));
+                    edit_component(
+                        ctx,
+                        component,
+                        "preview.render",
+                        EditInteractionResponse::new()
+                            .embed(embed)
+                            .components(components),
+                    )
+                    .await;
+                }
+                Err(_) => {
+                    edit_component(
+                        ctx,
+                        component,
+                        "preview.load_err",
+                        EditInteractionResponse::new().content("Failed to load preview."),
+                    )
+                    .await;
                 }
             }
             return;
         }
-        Some(&"party") if component.data.custom_id == "nav_party" => {
-            component.defer(&ctx.http).await.ok();
+        // (Removed duplicate early tutorial handler; consolidated later in file around line ~630)
+        // Global navigation buttons (handled here for saga context)
+        Some(&"saga") if raw_id == NAV_SAGA => {
+            // Re-render main saga root via SagaView abstraction.
+            match push_and_render(SagaView::Root, &app_state, component.user.id, MAX_NAV_DEPTH)
+                .await
+            {
+                Ok((embed, components)) => {
+                    edit_component(
+                        ctx,
+                        component,
+                        "nav_saga.ok",
+                        EditInteractionResponse::new()
+                            .embed(embed)
+                            .components(components),
+                    )
+                    .await;
+                }
+                Err(e) => {
+                    edit_component(
+                        ctx,
+                        component,
+                        "nav_saga.err",
+                        EditInteractionResponse::new()
+                            .content(format!("Error loading saga root: {e}")),
+                    )
+                    .await;
+                }
+            }
+            return;
+        }
+        Some(&"party") if raw_id == NAV_PARTY => {
             let (embed, components) =
                 commands::party::ui::create_party_view_with_bonds(&app_state, component.user.id)
                     .await;
-            let builder = EditInteractionResponse::new()
-                .embed(embed)
-                .components(components);
-            component.edit_response(&ctx.http, builder).await.ok();
+            edit_component(
+                ctx,
+                component,
+                "nav_party",
+                EditInteractionResponse::new()
+                    .embed(embed)
+                    .components(components),
+            )
+            .await;
             return;
         }
-        Some(&"train") if component.data.custom_id == "nav_train" => {
-            component.defer(&ctx.http).await.ok();
+        Some(&"train") if raw_id == NAV_TRAIN => {
             if let (Ok(units), Some(profile)) = (
                 database::units::get_player_units(db, component.user.id).await,
                 saga_service::get_saga_profile(&app_state, component.user.id, false).await,
             ) {
                 let (embed, components) =
                     commands::train::ui::create_training_menu(&units, &profile);
-                let builder = EditInteractionResponse::new()
-                    .embed(embed)
-                    .components(components);
-                component.edit_response(&ctx.http, builder).await.ok();
+                edit_component(
+                    ctx,
+                    component,
+                    "nav_train",
+                    EditInteractionResponse::new()
+                        .embed(embed)
+                        .components(components),
+                )
+                .await;
             }
             return;
         }
         Some(&"map") => {
-            component.defer(&ctx.http).await.ok();
-            if let Ok(saga_profile) =
-                database::saga::update_and_get_saga_profile(db, component.user.id).await
-            {
-                // Server-side guard (UI already disables) against AP exhaustion or no party.
-                let has_party = database::units::get_user_party(db, component.user.id)
-                    .await
-                    .map(|p| !p.is_empty())
-                    .unwrap_or(false);
-                if saga_profile.current_ap < 1 || !has_party {
-                    let builder = EditInteractionResponse::new()
-                        .content("You can't open the World Map right now (need party and 1+ AP).");
-                    component.edit_response(&ctx.http, builder).await.ok();
-                    return;
-                }
-                let node_ids = saga::map::get_available_nodes(saga_profile.story_progress);
-                if let Ok(nodes) = database::world::get_map_nodes_by_ids(db, &node_ids).await {
-                    let state = SagaWorldMapState {
-                        nodes,
-                        ap: saga_profile.current_ap,
-                        max_ap: saga_profile.max_ap,
-                        story_progress: saga_profile.story_progress,
-                    };
-                    let mut stacks = app_state.nav_stacks.write().await;
-                    stacks
-                        .entry(component.user.id.get())
-                        .or_default()
-                        .push_capped(Box::new(state), MAX_NAV_DEPTH);
-                    let ctxbag = ContextBag::new(db.clone(), component.user.id);
-                    if let Some(top) = app_state
-                        .nav_stacks
-                        .read()
-                        .await
-                        .get(&component.user.id.get())
-                        .and_then(|s| s.stack.last())
-                    {
-                        let (embed, mut components) = top.render(&ctxbag).await;
-                        let depth = app_state
-                            .nav_stacks
-                            .read()
-                            .await
-                            .get(&component.user.id.get())
-                            .map(|s| s.stack.len())
-                            .unwrap_or(1);
-                        if let Some(row) = back_refresh_row(depth) {
-                            components.push(row);
-                        }
-                        let builder = EditInteractionResponse::new()
-                            .embed(embed)
-                            .components(components);
-                        component.edit_response(&ctx.http, builder).await.ok();
+            // Guard: need party + 1 AP
+            let saga_profile =
+                match database::saga::update_and_get_saga_profile(db, component.user.id).await {
+                    Ok(p) => p,
+                    Err(e) => {
+                        edit_component(
+                            ctx,
+                            component,
+                            "map.profile_err",
+                            EditInteractionResponse::new()
+                                .content(format!("Failed to load profile: {e}")),
+                        )
+                        .await;
+                        return;
                     }
-                } else {
-                    tracing::error!(target="saga.map", user_id=%component.user.id, "Failed to load map nodes");
-                    let builder = EditInteractionResponse::new().content(
-                        "Error: Could not load map nodes (database error). Try again later.",
-                    );
-                    component.edit_response(&ctx.http, builder).await.ok();
+                };
+            let has_party = database::units::get_user_party(db, component.user.id)
+                .await
+                .map(|p| !p.is_empty())
+                .unwrap_or(false);
+            if saga_profile.current_ap < 1 || !has_party {
+                edit_component(
+                    ctx,
+                    component,
+                    "map.blocked",
+                    EditInteractionResponse::new()
+                        .content("You can't open the World Map right now (need party and 1+ AP)."),
+                )
+                .await;
+                return;
+            }
+            if let Ok((embed, mut components)) =
+                push_and_render(SagaView::Map, &app_state, component.user.id, MAX_NAV_DEPTH).await
+            {
+                let depth = app_state
+                    .nav_stacks
+                    .read()
+                    .await
+                    .get(&component.user.id.get())
+                    .map(|s| s.stack.len())
+                    .unwrap_or(1);
+                if let Some(row) = back_refresh_row(depth) {
+                    components.push(row);
                 }
+                edit_component(
+                    ctx,
+                    component,
+                    "map.render",
+                    EditInteractionResponse::new()
+                        .embed(embed)
+                        .components(components),
+                )
+                .await;
+            } else {
+                edit_component(
+                    ctx,
+                    component,
+                    "map.render_err",
+                    EditInteractionResponse::new().content("Failed to render map."),
+                )
+                .await;
             }
         }
         Some(&"tavern") => {
-            component.defer(&ctx.http).await.ok();
-            let profile =
-                match database::economy::get_or_create_profile(db, component.user.id).await {
-                    Ok(p) => p,
-                    Err(_) => {
-                        let builder = EditInteractionResponse::new()
-                            .content("Error: Could not load your profile.");
-                        component.edit_response(&ctx.http, builder).await.ok();
-                        return;
-                    }
-                };
-            let recruits =
-                database::units::get_units_by_ids(db, &commands::saga::tavern::TAVERN_RECRUITS)
-                    .await
-                    .unwrap_or_default();
-            let state = SagaTavernState {
-                recruits,
-                balance: profile.balance,
-            };
-            let mut stacks = app_state.nav_stacks.write().await;
-            stacks
-                .entry(component.user.id.get())
-                .or_default()
-                .push_capped(Box::new(state), MAX_NAV_DEPTH);
-            let ctxbag = ContextBag::new(db.clone(), component.user.id);
-            if let Some(top) = app_state
-                .nav_stacks
-                .read()
-                .await
-                .get(&component.user.id.get())
-                .and_then(|s| s.stack.last())
+            if let Ok((embed, mut components)) = push_and_render(
+                SagaView::Tavern,
+                &app_state,
+                component.user.id,
+                MAX_NAV_DEPTH,
+            )
+            .await
             {
-                let (embed, mut components) = top.render(&ctxbag).await;
                 let depth = app_state
                     .nav_stacks
                     .read()
@@ -330,47 +286,34 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 if let Some(row) = back_refresh_row(depth) {
                     components.push(row);
                 }
-                let builder = EditInteractionResponse::new()
-                    .embed(embed)
-                    .components(components);
-                component.edit_response(&ctx.http, builder).await.ok();
+                edit_component(
+                    ctx,
+                    component,
+                    "tavern.render",
+                    EditInteractionResponse::new()
+                        .embed(embed)
+                        .components(components),
+                )
+                .await;
+            } else {
+                edit_component(
+                    ctx,
+                    component,
+                    "tavern.render_err",
+                    EditInteractionResponse::new().content("Failed to render tavern."),
+                )
+                .await;
             }
         }
         Some(&"recruit") => {
-            // Shortcut button functions just like tavern
-            component.defer(&ctx.http).await.ok();
-            let profile =
-                match database::economy::get_or_create_profile(db, component.user.id).await {
-                    Ok(p) => p,
-                    Err(_) => {
-                        let builder = EditInteractionResponse::new()
-                            .content("Error: Could not load your profile.");
-                        component.edit_response(&ctx.http, builder).await.ok();
-                        return;
-                    }
-                };
-            let recruits =
-                database::units::get_units_by_ids(db, &commands::saga::tavern::TAVERN_RECRUITS)
-                    .await
-                    .unwrap_or_default();
-            let state = SagaTavernState {
-                recruits,
-                balance: profile.balance,
-            };
-            let mut stacks = app_state.nav_stacks.write().await;
-            stacks
-                .entry(component.user.id.get())
-                .or_default()
-                .push_capped(Box::new(state), MAX_NAV_DEPTH);
-            let ctxbag = ContextBag::new(db.clone(), component.user.id);
-            if let Some(top) = app_state
-                .nav_stacks
-                .read()
-                .await
-                .get(&component.user.id.get())
-                .and_then(|s| s.stack.last())
+            if let Ok((embed, mut components)) = push_and_render(
+                SagaView::Recruit,
+                &app_state,
+                component.user.id,
+                MAX_NAV_DEPTH,
+            )
+            .await
             {
-                let (embed, mut components) = top.render(&ctxbag).await;
                 let depth = app_state
                     .nav_stacks
                     .read()
@@ -381,58 +324,105 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 if let Some(row) = back_refresh_row(depth) {
                     components.push(row);
                 }
-                let builder = EditInteractionResponse::new()
-                    .embed(embed)
-                    .components(components);
-                component.edit_response(&ctx.http, builder).await.ok();
+                edit_component(
+                    ctx,
+                    component,
+                    "recruit.render",
+                    EditInteractionResponse::new()
+                        .embed(embed)
+                        .components(components),
+                )
+                .await;
+            } else {
+                edit_component(
+                    ctx,
+                    component,
+                    "recruit.render_err",
+                    EditInteractionResponse::new().content("Failed to render recruit view."),
+                )
+                .await;
             }
         }
         Some(&"team") => {
-            component.defer(&ctx.http).await.ok();
-            let (embed, components) =
-                commands::party::ui::create_party_view_with_bonds(&app_state, component.user.id)
-                    .await;
-            let state = SagaPartyState {
-                embed: embed.clone(),
-                components: components.clone(),
-            };
-            let mut stacks = app_state.nav_stacks.write().await;
-            stacks
-                .entry(component.user.id.get())
-                .or_default()
-                .push_capped(Box::new(state), MAX_NAV_DEPTH);
-            let depth = app_state
-                .nav_stacks
-                .read()
-                .await
-                .get(&component.user.id.get())
-                .map(|s| s.stack.len())
-                .unwrap_or(1);
-            let mut components = components;
-            if let Some(row) = back_refresh_row(depth) {
-                components.push(row);
+            if let Ok((embed, mut components)) = push_and_render(
+                SagaView::Party,
+                &app_state,
+                component.user.id,
+                MAX_NAV_DEPTH,
+            )
+            .await
+            {
+                let depth = app_state
+                    .nav_stacks
+                    .read()
+                    .await
+                    .get(&component.user.id.get())
+                    .map(|s| s.stack.len())
+                    .unwrap_or(1);
+                if let Some(row) = back_refresh_row(depth) {
+                    components.push(row);
+                }
+                edit_component(
+                    ctx,
+                    component,
+                    "team.render",
+                    EditInteractionResponse::new()
+                        .embed(embed)
+                        .components(components),
+                )
+                .await;
+            } else {
+                edit_component(
+                    ctx,
+                    component,
+                    "team.render_err",
+                    EditInteractionResponse::new().content("Failed to render party view."),
+                )
+                .await;
             }
-            let builder = EditInteractionResponse::new()
-                .embed(embed)
-                .components(components);
-            component.edit_response(&ctx.http, builder).await.ok();
         }
-        Some(&"node") => {
-            component.defer(&ctx.http).await.ok();
-            // Parse node id first
-            let node_id = if let Some(id_str) = custom_id_parts.get(2) {
+        Some(&suffix) if crate::interactions::ids::is_saga_node(raw_id) || suffix == "node" => {
+            // Support both new full custom_id (saga_node_<id>) and legacy split form (saga_node_<id>) already parsed.
+            let node_id = if crate::interactions::ids::is_saga_node(raw_id) {
+                match raw_id
+                    .trim_start_matches(crate::interactions::ids::SAGA_NODE_PREFIX)
+                    .parse::<i32>()
+                {
+                    Ok(v) => v,
+                    Err(_) => {
+                        edit_component(
+                            ctx,
+                            component,
+                            "node.bad_id",
+                            EditInteractionResponse::new()
+                                .content("Error: Invalid battle node ID format."),
+                        )
+                        .await;
+                        return;
+                    }
+                }
+            } else if let Some(id_str) = custom_id_parts.get(2) {
                 if let Ok(id) = id_str.parse::<i32>() {
                     id
                 } else {
-                    let builder = EditInteractionResponse::new()
-                        .content("Error: Invalid battle node ID format.");
-                    component.edit_response(&ctx.http, builder).await.ok();
+                    edit_component(
+                        ctx,
+                        component,
+                        "node.bad_id",
+                        EditInteractionResponse::new()
+                            .content("Error: Invalid battle node ID format."),
+                    )
+                    .await;
                     return;
                 }
             } else {
-                let builder =
-                    EditInteractionResponse::new().content("Error: Missing battle node ID.");
-                component.edit_response(&ctx.http, builder).await.ok();
+                edit_component(
+                    ctx,
+                    component,
+                    "node.missing_id",
+                    EditInteractionResponse::new().content("Error: Missing battle node ID."),
+                )
+                .await;
                 return;
             };
 
@@ -441,9 +431,14 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 match database::units::get_user_party(db, component.user.id).await {
                     Ok(units) if !units.is_empty() => units,
                     _ => {
-                        let builder = EditInteractionResponse::new()
-                            .content("You cannot start a battle without an active party!");
-                        component.edit_response(&ctx.http, builder).await.ok();
+                        edit_component(
+                            ctx,
+                            component,
+                            "node.no_party",
+                            EditInteractionResponse::new()
+                                .content("You cannot start a battle without an active party!"),
+                        )
+                        .await;
                         return;
                     }
                 };
@@ -454,9 +449,14 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     match database::world::get_full_node_bundle(db, node_id).await {
                         Ok(bundle) => bundle,
                         Err(_) => {
-                            let builder = EditInteractionResponse::new()
-                                .content("Error: Could not load node data.");
-                            component.edit_response(&ctx.http, builder).await.ok();
+                            edit_component(
+                                ctx,
+                                component,
+                                "node.bundle_err",
+                                EditInteractionResponse::new()
+                                    .content("Error: Could not load node data."),
+                            )
+                            .await;
                             return;
                         }
                     };
@@ -530,18 +530,19 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                         .start_game(msg.id, Box::new(battle_game));
                 }
             } else {
-                let builder = EditInteractionResponse::new().embed(error_embed(
-                    "Not Enough Action Points",
-                    "You need more AP to start this battle. Come back after they recharge.",
-                ));
-                component.edit_response(&ctx.http, builder).await.ok();
+                edit_component(
+                    ctx,
+                    component,
+                    "node.no_ap",
+                    EditInteractionResponse::new().embed(error_embed(
+                        "Not Enough Action Points",
+                        "You need more AP to start this battle. Come back after they recharge.",
+                    )),
+                )
+                .await;
             }
         }
         Some(&"hire") => {
-            // Use standard defer (update original message) instead of ephemeral to avoid hanging interactions
-            if let Err(e) = component.defer(&ctx.http).await {
-                tracing::error!(target="saga.interaction", user_id=%component.user.id, cid=%component.data.custom_id, error=?e, "Failed to defer hire interaction");
-            }
             let pet_id_to_hire = custom_id_parts[2].parse::<i32>().unwrap_or(0);
             let result = database::units::hire_unit(
                 db,
@@ -567,36 +568,36 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     format!("Hiring failed: {}", e),
                 )),
             };
-            if let Err(e) = component.edit_response(&ctx.http, builder).await {
-                tracing::error!(target="saga.interaction", user_id=%component.user.id, cid=%component.data.custom_id, error=?e, "Failed to edit hire interaction response");
-            }
+            edit_component(ctx, component, "hire.result", builder).await;
         }
         Some(&"main") => {
-            component.defer(&ctx.http).await.ok();
-            match saga_service::get_profile_and_units_debug(&app_state, component.user.id).await {
-                Ok((profile, units)) => {
-                    let has_party = units.iter().any(|u| u.is_in_party);
-                    let (embed, components) = if !has_party && profile.story_progress == 0 {
-                        commands::saga::ui::create_first_time_tutorial()
-                    } else {
-                        commands::saga::ui::create_saga_menu(&profile, has_party)
-                    };
-                    let builder = EditInteractionResponse::new()
-                        .embed(embed)
-                        .components(components);
-                    component.edit_response(&ctx.http, builder).await.ok();
+            match push_and_render(SagaView::Root, &app_state, component.user.id, MAX_NAV_DEPTH)
+                .await
+            {
+                Ok((embed, components)) => {
+                    edit_component(
+                        ctx,
+                        component,
+                        "main.render",
+                        EditInteractionResponse::new()
+                            .embed(embed)
+                            .components(components),
+                    )
+                    .await;
                 }
                 Err(e) => {
-                    let builder = EditInteractionResponse::new()
-                        .content(format!("Error: Could not refresh saga menu ({e})"));
-                    component.edit_response(&ctx.http, builder).await.ok();
+                    edit_component(
+                        ctx,
+                        component,
+                        "main.err",
+                        EditInteractionResponse::new()
+                            .content(format!("Error: Could not refresh saga root ({e})")),
+                    )
+                    .await;
                 }
             }
         }
         Some(&"tutorial") => {
-            if let Err(e) = component.defer(&ctx.http).await {
-                tracing::error!(target="saga.interaction", user_id=%component.user.id, cid=%component.data.custom_id, error=?e, "Failed to defer tutorial interaction");
-            }
             match custom_id_parts.get(2) {
                 Some(&"hire") => {
                     // Give a free starter unit (unit_id 1 assumed) if player has none
@@ -605,87 +606,109 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                         .map(|v| !v.is_empty())
                         .unwrap_or(false);
                     if has_any {
-                        let builder = EditInteractionResponse::new()
-                            .content("You already have a unit. Tutorial reward skipped.");
-                        component.edit_response(&ctx.http, builder).await.ok();
+                        edit_component(
+                            ctx,
+                            component,
+                            "tutorial.hire_skip",
+                            EditInteractionResponse::new()
+                                .content("You already have a unit. Tutorial reward skipped."),
+                        )
+                        .await;
                         return;
                     }
                     // Insert starter without cost
                     let user_id_i64 = component.user.id.get() as i64;
                     let starter_id = *app_state.starter_unit_id.read().await;
                     if let Err(e) = sqlx::query!("INSERT INTO player_units (user_id, unit_id, nickname, current_level, current_xp, current_attack, current_defense, current_health, is_in_party, rarity) SELECT $1, u.unit_id, u.name, 1, 0, u.base_attack, u.base_defense, u.base_health, TRUE, u.rarity FROM units u WHERE u.unit_id = $2 ON CONFLICT DO NOTHING", user_id_i64, starter_id).execute(db).await {
-                        let builder = EditInteractionResponse::new().content(format!("Failed to grant starter unit: {}", e));
-                        component.edit_response(&ctx.http, builder).await.ok();
+                        edit_component(ctx, component, "tutorial.hire_err", EditInteractionResponse::new().content(format!("Failed to grant starter unit: {}", e))).await;
                         return;
                     }
                     // Refresh saga profile and show main menu
-                    let saga_profile =
-                        match database::saga::update_and_get_saga_profile(db, component.user.id)
-                            .await
-                        {
-                            Ok(p) => p,
-                            Err(e) => {
-                                let builder = EditInteractionResponse::new()
-                                    .content(format!("Failed to refresh saga profile: {}", e));
-                                component.edit_response(&ctx.http, builder).await.ok();
-                                return;
-                            }
-                        };
-                    let (embed, components) =
-                        commands::saga::ui::create_saga_menu(&saga_profile, true);
-                    let builder = EditInteractionResponse::new()
-                        .content("Starter unit recruited and added to your party!")
-                        .embed(embed)
-                        .components(components);
-                    if let Err(e) = component.edit_response(&ctx.http, builder).await {
-                        tracing::error!(target="saga.interaction", user_id=%component.user.id, cid=%component.data.custom_id, error=?e, "Failed to edit tutorial hire response");
-                    }
+                    let (embed, components) = match push_and_render(
+                        SagaView::Root,
+                        &app_state,
+                        component.user.id,
+                        MAX_NAV_DEPTH,
+                    )
+                    .await
+                    {
+                        Ok(ec) => ec,
+                        Err(e) => {
+                            edit_component(
+                                ctx,
+                                component,
+                                "tutorial.refresh_err",
+                                EditInteractionResponse::new()
+                                    .content(format!("Failed to refresh saga root: {}", e)),
+                            )
+                            .await;
+                            return;
+                        }
+                    };
+                    edit_component(
+                        ctx,
+                        component,
+                        "tutorial.hire_ok",
+                        EditInteractionResponse::new()
+                            .content("Starter unit recruited and added to your party!")
+                            .embed(embed)
+                            .components(components),
+                    )
+                    .await;
                 }
                 Some(&"skip") => {
                     // Just show main menu (will still be disabled map until a recruit happens)
-                    let saga_profile =
-                        match database::saga::update_and_get_saga_profile(db, component.user.id)
-                            .await
-                        {
-                            Ok(p) => p,
-                            Err(e) => {
-                                let builder = EditInteractionResponse::new()
-                                    .content(format!("Failed to refresh saga profile: {}", e));
-                                component.edit_response(&ctx.http, builder).await.ok();
-                                return;
-                            }
-                        };
-                    let has_party = database::units::get_user_party(db, component.user.id)
-                        .await
-                        .map(|p| !p.is_empty())
-                        .unwrap_or(false);
-                    let (embed, components) =
-                        commands::saga::ui::create_saga_menu(&saga_profile, has_party);
-                    let builder = EditInteractionResponse::new()
-                        .content("Tutorial skipped.")
-                        .embed(embed)
-                        .components(components);
-                    if let Err(e) = component.edit_response(&ctx.http, builder).await {
-                        tracing::error!(target="saga.interaction", user_id=%component.user.id, cid=%component.data.custom_id, error=?e, "Failed to edit tutorial skip response");
-                    }
+                    let (embed, components) = match push_and_render(
+                        SagaView::Root,
+                        &app_state,
+                        component.user.id,
+                        MAX_NAV_DEPTH,
+                    )
+                    .await
+                    {
+                        Ok(ec) => ec,
+                        Err(e) => {
+                            edit_component(
+                                ctx,
+                                component,
+                                "tutorial.skip_refresh_err",
+                                EditInteractionResponse::new()
+                                    .content(format!("Failed to refresh saga root: {}", e)),
+                            )
+                            .await;
+                            return;
+                        }
+                    };
+                    edit_component(
+                        ctx,
+                        component,
+                        "tutorial.skip_ok",
+                        EditInteractionResponse::new()
+                            .content("Tutorial skipped.")
+                            .embed(embed)
+                            .components(components),
+                    )
+                    .await;
                 }
                 _ => {
-                    let builder =
-                        EditInteractionResponse::new().content("Unknown tutorial action.");
-                    if let Err(e) = component.edit_response(&ctx.http, builder).await {
-                        tracing::error!(target="saga.interaction", user_id=%component.user.id, cid=%component.data.custom_id, error=?e, "Failed to edit unknown tutorial action response");
-                    }
+                    edit_component(
+                        ctx,
+                        component,
+                        "tutorial.unknown",
+                        EditInteractionResponse::new().content("Unknown tutorial action."),
+                    )
+                    .await;
                 }
             }
         }
         _ => {
-            if let Err(e) = component.defer(&ctx.http).await {
-                tracing::error!(target="saga.interaction", user_id=%component.user.id, cid=%component.data.custom_id, error=?e, "Failed to defer unknown interaction");
-            }
-            let builder = EditInteractionResponse::new().content("Unknown saga interaction.");
-            if let Err(e) = component.edit_response(&ctx.http, builder).await {
-                tracing::error!(target="saga.interaction", user_id=%component.user.id, cid=%component.data.custom_id, error=?e, "Failed to edit unknown interaction response");
-            }
+            edit_component(
+                ctx,
+                component,
+                "unknown",
+                EditInteractionResponse::new().content("Unknown saga interaction."),
+            )
+            .await;
         }
     }
 }

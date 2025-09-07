@@ -4,6 +4,7 @@ use serenity::builder::EditInteractionResponse;
 use serenity::model::application::ComponentInteraction;
 use serenity::prelude::Context;
 use std::sync::Arc;
+use super::util::{defer_component, handle_global_nav, edit_component};
 use tracing::instrument;
 
 #[instrument(level="info", skip(ctx, component, app_state), fields(user_id = component.user.id.get(), custom_id = %component.data.custom_id))]
@@ -12,7 +13,8 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
     if !(cid.starts_with("contracts_")) {
         return;
     }
-    component.defer_ephemeral(&ctx.http).await.ok();
+    defer_component(ctx, component).await;
+    if handle_global_nav(ctx, component, &app_state, "saga").await { return; }
     let Some(state) = AppState::from_ctx(ctx).await else {
         return;
     };
@@ -63,15 +65,7 @@ async fn refresh(ctx: &Context, component: &mut ComponentInteraction, app_state:
             .ok();
     }
     let (_desc, embed, comps) = load_embed(app_state, component.user.id, 0).await;
-    component
-        .edit_response(
-            &ctx.http,
-            EditInteractionResponse::new()
-                .embed(embed)
-                .components(comps),
-        )
-        .await
-        .ok();
+    edit_component(ctx, component, "contracts.refresh", EditInteractionResponse::new().embed(embed).components(comps)).await;
 }
 async fn page_nav(
     ctx: &Context,
@@ -92,15 +86,7 @@ async fn page_nav(
                 .unwrap_or_default();
         let view =
             crate::commands::contracts::run::build_contracts_embed(&rows, &drafted, &legacy, page);
-        component
-            .edit_response(
-                &ctx.http,
-                EditInteractionResponse::new()
-                    .embed(view.embed)
-                    .components(view.components),
-            )
-            .await
-            .ok();
+    edit_component(ctx, component, "contracts.page", EditInteractionResponse::new().embed(view.embed).components(view.components)).await;
     }
 }
 async fn draft(
@@ -122,15 +108,7 @@ async fn draft(
         feedback.clone()
     };
     let new_embed = base_embed.description(combined_desc);
-    component
-        .edit_response(
-            &ctx.http,
-            EditInteractionResponse::new()
-                .embed(new_embed)
-                .components(comps),
-        )
-        .await
-        .ok();
+    edit_component(ctx, component, "contracts.draft", EditInteractionResponse::new().embed(new_embed).components(comps)).await;
 }
 async fn accept(
     ctx: &Context,
@@ -153,15 +131,7 @@ async fn accept(
         feedback.clone()
     };
     let new_embed = base_embed.description(combined_desc);
-    component
-        .edit_response(
-            &ctx.http,
-            EditInteractionResponse::new()
-                .embed(new_embed)
-                .components(comps),
-        )
-        .await
-        .ok();
+    edit_component(ctx, component, "contracts.accept", EditInteractionResponse::new().embed(new_embed).components(comps)).await;
 }
 
 async fn load_embed(

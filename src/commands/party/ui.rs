@@ -6,7 +6,7 @@ use crate::database::models::{PlayerUnit, UnitRarity};
 use crate::model::AppState;
 use crate::model::{BondedEquippablesMap, EquipmentBonusMap};
 use crate::services::cache as cache_service;
-use crate::ui::style::pad_primary;
+use crate::ui::buttons::Btn;
 use serenity::builder::{
     CreateActionRow, CreateEmbed, CreateEmbedFooter, CreateSelectMenu, CreateSelectMenuKind,
     CreateSelectMenuOption,
@@ -127,11 +127,10 @@ pub fn create_party_view(units: &[PlayerUnit]) -> (CreateEmbed, Vec<CreateAction
         .placeholder("Dismiss a unit from your army...");
         components.push(CreateActionRow::SelectMenu(menu));
         // Add a bond management button row (links to /bond command UI via interaction custom id route)
-        components.push(CreateActionRow::Buttons(vec![
-            serenity::builder::CreateButton::new("bond_open")
-                .label(pad_primary("🔗 Manage Bonds"))
-                .style(serenity::model::application::ButtonStyle::Secondary),
-        ]));
+        components.push(CreateActionRow::Buttons(vec![Btn::secondary(
+            "bond_open",
+            "🔗 Manage Bonds",
+        )]));
     }
 
     // Prepend Play row

@@ -1,5 +1,6 @@
 //! Handles all component interactions for the `train` command family.
 
+use super::util::{defer_component, handle_global_nav};
 use crate::{AppState, commands, database};
 use serenity::builder::EditInteractionResponse;
 use serenity::model::application::ComponentInteraction;
@@ -13,40 +14,13 @@ pub async fn handle(
     app_state: Arc<AppState>,
 ) {
     let db = app_state.db.clone();
-    component.defer_ephemeral(&ctx.http).await.ok();
+    defer_component(ctx, component).await;
 
     let custom_id_parts: Vec<&str> = component.data.custom_id.split('_').collect();
 
-    // Global navigation buttons
-    match component.data.custom_id.as_str() {
-        "nav_saga" => {
-            if let Some(profile) =
-                crate::services::saga::get_saga_profile(&app_state, component.user.id, false).await
-            {
-                let has_party = database::units::get_user_party(&db, component.user.id)
-                    .await
-                    .map(|p| !p.is_empty())
-                    .unwrap_or(false);
-                let (embed, components) = commands::saga::ui::create_saga_menu(&profile, has_party);
-                let builder = EditInteractionResponse::new()
-                    .embed(embed)
-                    .components(components);
-                component.edit_response(&ctx.http, builder).await.ok();
-            }
-            return;
-        }
-        "nav_party" => {
-            let (embed, components) =
-                commands::party::ui::create_party_view_with_bonds(&app_state, component.user.id)
-                    .await;
-            let builder = EditInteractionResponse::new()
-                .embed(embed)
-                .components(components);
-            component.edit_response(&ctx.http, builder).await.ok();
-            return;
-        }
-        "nav_train" => { /* already here; fall through */ }
-        _ => {}
+    // Global nav short-circuit
+    if handle_global_nav(ctx, component, &app_state, "train").await {
+        return;
     }
 
     match custom_id_parts.get(1) {

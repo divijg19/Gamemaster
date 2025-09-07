@@ -20,6 +20,7 @@ mod model;
 mod saga;
 mod services;
 mod ui; // navigation and shared embed utilities // service layer (profile caching)
+mod util; // shared small utilities (hashing, etc.)
 
 #[shuttle_runtime::main]
 async fn serenity(

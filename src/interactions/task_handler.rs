@@ -7,9 +7,12 @@ use serenity::builder::EditInteractionResponse;
 use serenity::model::application::ComponentInteraction;
 use serenity::prelude::Context;
 use std::sync::Arc;
+use super::util::{defer_component, handle_global_nav, edit_component};
 
 pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_state: Arc<AppState>) {
     let db = &app_state.db;
+    defer_component(ctx, component).await;
+    if handle_global_nav(ctx, component, &app_state, "saga").await { return; }
 
     // The custom_id is expected to be "task_claim_{player_task_id}"
     let custom_id = &component.data.custom_id;
@@ -27,9 +30,6 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             return;
         }
     };
-
-    // Defer the interaction to show a loading state.
-    component.defer_ephemeral(&ctx.http).await.ok();
 
     // Attempt to claim the reward from the database.
     let result = database::tasks::claim_task_reward(db, component.user.id, player_task_id).await;
@@ -87,5 +87,5 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
         }
     };
 
-    component.edit_response(&ctx.http, builder).await.ok();
+    edit_component(ctx, component, "tasks.claim", builder).await;
 }

@@ -2,10 +2,9 @@
 
 use crate::commands::economy::core::item::Item;
 use crate::database::models::{PlayerTaskDetails, TaskType};
-use crate::ui::style::pad_primary;
-use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter};
+use crate::ui::buttons::Btn;
+use serenity::builder::{CreateActionRow, CreateEmbed, CreateEmbedFooter};
 use serenity::model::Colour;
-use serenity::model::prelude::ButtonStyle;
 
 /// Creates the embed and interactive components for the player's tasks view.
 ///
@@ -56,9 +55,7 @@ pub fn create_tasks_embed(tasks: &[PlayerTaskDetails]) -> (CreateEmbed, Vec<Crea
         }
 
         if task.is_completed {
-            let button = CreateButton::new(format!("task_claim_{}", task.player_task_id))
-                .label(pad_primary("🎁 Claim"))
-                .style(ButtonStyle::Success);
+            let button = Btn::success(&format!("task_claim_{}", task.player_task_id), "🎁 Claim");
             claim_buttons.push(button);
         }
     }
