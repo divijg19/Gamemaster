@@ -314,12 +314,13 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 .unwrap_or(0);
             let embed = crate::commands::saga::tavern::create_hire_confirmation(&unit, balance);
             use serenity::builder::CreateActionRow;
+            let unit_cost = crate::commands::saga::tavern::hire_cost_for_rarity(unit.rarity);
             let confirm_row = CreateActionRow::Buttons(vec![
                 crate::ui::buttons::Btn::success(
                     &format!("saga_hire_confirm_{}", unit_id),
                     "✅ Confirm",
                 )
-                .disabled(balance < crate::commands::saga::tavern::HIRE_COST),
+                .disabled(balance < unit_cost),
                 crate::ui::buttons::Btn::secondary("saga_tavern_cancel", "❌ Cancel"),
             ]);
             edit_component(
@@ -351,8 +352,15 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     return;
                 }
             };
-            const HIRE_COST: i64 = crate::commands::saga::tavern::HIRE_COST;
-            match crate::database::units::hire_unit(db, component.user.id, unit_id, HIRE_COST).await
+            // Look up unit again for up-to-date rarity & cost (simple second fetch acceptable here)
+            let unit_cost = match crate::database::units::get_units_by_ids(db, &[unit_id]).await {
+                Ok(list) if !list.is_empty() => {
+                    let u = &list[0];
+                    crate::commands::saga::tavern::hire_cost_for_rarity(u.rarity)
+                }
+                _ => crate::commands::saga::tavern::HIRE_COST,
+            };
+            match crate::database::units::hire_unit(db, component.user.id, unit_id, unit_cost).await
             {
                 Ok(name) => {
                     let _ = crate::database::tavern::add_favor(
@@ -386,31 +394,21 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                                         crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS,
                                     reroll_cost: crate::commands::saga::tavern::TAVERN_REROLL_COST,
                                     can_reroll: false,
-                                    filter: crate::commands::saga::tavern::TavernFilter::All,
                                 },
                             ),
                         };
-                    let (sess_page, sess_filter) = {
-                        let sessions = app_state.tavern_sessions.read().await;
-                        sessions
-                            .get(&component.user.id.get())
-                            .map(|s| (s.page, s.filter))
-                            .unwrap_or((0, crate::commands::saga::tavern::TavernFilter::All))
-                    };
-                    let mut meta = meta; // make mutable local copy
-                    meta.filter = sess_filter;
-                    let filtered =
-                        crate::commands::saga::tavern::filter_units(&recruits, sess_filter);
-                    let adj_page = sess_page.min(
-                        filtered.len().saturating_sub(1)
-                            / crate::commands::saga::tavern::TAVERN_PAGE_SIZE,
-                    );
                     let (mut tavern_embed, tavern_components) =
-                        crate::commands::saga::tavern::create_tavern_menu(
-                            &filtered, &meta, adj_page,
-                        );
-                    tavern_embed =
-                        tavern_embed.field("Recruit Hired", format!("{} joins you!", name), false);
+                        crate::commands::saga::tavern::create_tavern_menu(&recruits, &meta);
+                    tavern_embed = tavern_embed.field(
+                        "Recruit Hired",
+                        format!(
+                            "{} joins you! (Cost {} {})",
+                            name,
+                            crate::ui::style::EMOJI_COIN,
+                            unit_cost
+                        ),
+                        false,
+                    );
                     edit_component(
                         ctx,
                         component,
@@ -425,27 +423,16 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     edit_component(
                         ctx,
                         component,
-                        "hireC.err",
-                        EditInteractionResponse::new().content(format!("Hire failed: {e}")),
+                        "hireC.fail",
+                        EditInteractionResponse::new()
+                            .content(format!("Could not hire recruit: {}", e)),
                     )
                     .await;
                 }
             }
         }
         Some(&"tavern") if raw_id == "saga_tavern_cancel" => {
-            // Return to page 0 (could track last page later)
-            // Reset session page (preserve filter)
-            {
-                let mut sessions = app_state.tavern_sessions.write().await;
-                let entry = sessions
-                    .entry(component.user.id.get())
-                    .or_insert_with(Default::default);
-                entry.page = 0; // preserve existing filter
-            }
-            let balance = crate::database::economy::get_or_create_profile(db, component.user.id)
-                .await
-                .map(|p| p.balance)
-                .unwrap_or(0);
+            // Session pagination removed; simply re-render current tavern state.
             let (recruits, meta) = match crate::commands::saga::tavern::build_tavern_state_cached(
                 &app_state,
                 component.user.id,
@@ -456,7 +443,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 Err(_) => (
                     Vec::new(),
                     crate::commands::saga::tavern::TavernUiMeta {
-                        balance,
+                        balance: 0,
                         favor: 0,
                         favor_tier: 0,
                         favor_progress: 0.0,
@@ -464,43 +451,11 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                         max_daily_rerolls: crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS,
                         reroll_cost: crate::commands::saga::tavern::TAVERN_REROLL_COST,
                         can_reroll: false,
-                        filter: crate::commands::saga::tavern::TavernFilter::All,
                     },
                 ),
             };
-            // Apply session filter if any
-            let (page, filter) = {
-                let sessions = app_state.tavern_sessions.read().await;
-                sessions
-                    .get(&component.user.id.get())
-                    .map(|s| (s.page, s.filter))
-                    .unwrap_or((0, crate::commands::saga::tavern::TavernFilter::All))
-            };
-            let filtered: Vec<crate::database::models::Unit> =
-                if filter != crate::commands::saga::tavern::TavernFilter::All {
-                    recruits
-                        .iter()
-                        .filter(|u| match filter {
-                            crate::commands::saga::tavern::TavernFilter::All => true,
-                            crate::commands::saga::tavern::TavernFilter::RarePlus => {
-                                u.rarity >= crate::database::models::UnitRarity::Rare
-                            }
-                            crate::commands::saga::tavern::TavernFilter::EpicPlus => {
-                                u.rarity >= crate::database::models::UnitRarity::Epic
-                            }
-                            crate::commands::saga::tavern::TavernFilter::LegendaryPlus => {
-                                u.rarity >= crate::database::models::UnitRarity::Legendary
-                            }
-                        })
-                        .cloned()
-                        .collect()
-                } else {
-                    recruits.clone()
-                };
-            let mut meta = meta.clone();
-            meta.filter = filter;
             let (embed, components) =
-                crate::commands::saga::tavern::create_tavern_menu(&filtered, &meta, page);
+                crate::commands::saga::tavern::create_tavern_menu(&recruits, &meta);
             edit_component(
                 ctx,
                 component,
@@ -542,120 +497,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 .await;
             }
         }
-        Some(&"tavern")
-            if raw_id.starts_with("saga_tavern_page_")
-                || raw_id.starts_with("saga_tavern_filter_") =>
-        {
-            // Load or init session
-            {
-                let mut sessions = app_state.tavern_sessions.write().await;
-                sessions
-                    .entry(component.user.id.get())
-                    .or_insert_with(Default::default);
-            }
-            let mut new_filter = None;
-            let mut explicit_page = None;
-            if raw_id.starts_with("saga_tavern_page_") {
-                explicit_page = raw_id
-                    .trim_start_matches("saga_tavern_page_")
-                    .parse::<usize>()
-                    .ok();
-            } else if raw_id.starts_with("saga_tavern_filter_") {
-                // suffix like saga_tavern_filter_rareplus (from Debug fmt lowercased)
-                let suf = raw_id.trim_start_matches("saga_tavern_filter_");
-                use crate::commands::saga::tavern::TavernFilter;
-                new_filter = match suf {
-                    "all" => Some(TavernFilter::All),
-                    "rareplus" => Some(TavernFilter::RarePlus),
-                    "epicplus" => Some(TavernFilter::EpicPlus),
-                    "legendaryplus" => Some(TavernFilter::LegendaryPlus),
-                    _ => None,
-                };
-            }
-            let (mut page, mut filter) = {
-                let sessions = app_state.tavern_sessions.read().await;
-                sessions
-                    .get(&component.user.id.get())
-                    .map(|s| (s.page, s.filter))
-                    .unwrap_or((0, crate::commands::saga::tavern::TavernFilter::All))
-            };
-            if let Some(f) = new_filter {
-                filter = f;
-                page = 0; // reset page when changing filter
-            }
-            if let Some(p) = explicit_page {
-                page = p;
-            }
-            let balance = crate::database::economy::get_or_create_profile(db, component.user.id)
-                .await
-                .map(|p| p.balance)
-                .unwrap_or(0);
-            let (recruits, meta) = match crate::commands::saga::tavern::build_tavern_state_cached(
-                &app_state,
-                component.user.id,
-            )
-            .await
-            {
-                Ok(v) => v,
-                Err(_) => (
-                    Vec::new(),
-                    crate::commands::saga::tavern::TavernUiMeta {
-                        balance,
-                        favor: 0,
-                        favor_tier: 0,
-                        favor_progress: 0.0,
-                        daily_rerolls_used: 0,
-                        max_daily_rerolls: crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS,
-                        reroll_cost: crate::commands::saga::tavern::TAVERN_REROLL_COST,
-                        can_reroll: false,
-                        filter: crate::commands::saga::tavern::TavernFilter::All,
-                    },
-                ),
-            };
-            // Filter list
-            let filtered: Vec<crate::database::models::Unit> =
-                if filter != crate::commands::saga::tavern::TavernFilter::All {
-                    recruits
-                        .iter()
-                        .filter(|u| match filter {
-                            crate::commands::saga::tavern::TavernFilter::All => true,
-                            crate::commands::saga::tavern::TavernFilter::RarePlus => {
-                                u.rarity >= crate::database::models::UnitRarity::Rare
-                            }
-                            crate::commands::saga::tavern::TavernFilter::EpicPlus => {
-                                u.rarity >= crate::database::models::UnitRarity::Epic
-                            }
-                            crate::commands::saga::tavern::TavernFilter::LegendaryPlus => {
-                                u.rarity >= crate::database::models::UnitRarity::Legendary
-                            }
-                        })
-                        .cloned()
-                        .collect()
-                } else {
-                    recruits.clone()
-                };
-            let mut meta = meta.clone();
-            meta.filter = filter;
-            let (embed, components) =
-                crate::commands::saga::tavern::create_tavern_menu(&filtered, &meta, page);
-            // Persist session
-            {
-                let mut sessions = app_state.tavern_sessions.write().await;
-                sessions.insert(
-                    component.user.id.get(),
-                    crate::commands::saga::tavern::TavernSessionState { page, filter },
-                );
-            }
-            edit_component(
-                ctx,
-                component,
-                "tavern.page",
-                EditInteractionResponse::new()
-                    .embed(embed)
-                    .components(components),
-            )
-            .await;
-        }
+        // Removed pagination / filter handling branch
         Some(&"tavern") if raw_id == "saga_tavern_reroll" => {
             use crate::commands::saga::tavern::{TAVERN_MAX_DAILY_REROLLS, TAVERN_REROLL_COST};
             let profile = crate::database::economy::get_or_create_profile(db, component.user.id)
@@ -685,7 +527,6 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     max_daily_rerolls: TAVERN_MAX_DAILY_REROLLS,
                     reroll_cost: TAVERN_REROLL_COST,
                     can_reroll: false,
-                    filter: crate::commands::saga::tavern::TavernFilter::All,
                 },
             ));
             let left = (meta.max_daily_rerolls - meta.daily_rerolls_used).max(0);
@@ -718,7 +559,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
         }
         Some(&"tavern") if raw_id == "saga_tavern_reroll_cancel" => {
             // Restore tavern view using session state
-            let (recruits, mut meta) = crate::commands::saga::tavern::build_tavern_state_cached(
+            let (recruits, meta) = crate::commands::saga::tavern::build_tavern_state_cached(
                 &app_state,
                 component.user.id,
             )
@@ -734,26 +575,10 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     max_daily_rerolls: crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS,
                     reroll_cost: crate::commands::saga::tavern::TAVERN_REROLL_COST,
                     can_reroll: false,
-                    filter: crate::commands::saga::tavern::TavernFilter::All,
                 },
             ));
-            let (page, filter) = {
-                let sessions = app_state.tavern_sessions.read().await;
-                sessions
-                    .get(&component.user.id.get())
-                    .map(|s| (s.page, s.filter))
-                    .unwrap_or((0, crate::commands::saga::tavern::TavernFilter::All))
-            };
-            meta.filter = filter;
-            let filtered = crate::commands::saga::tavern::filter_units(&recruits, filter);
-            let (embed, components) = crate::commands::saga::tavern::create_tavern_menu(
-                &filtered,
-                &meta,
-                page.min(
-                    filtered.len().saturating_sub(1)
-                        / crate::commands::saga::tavern::TAVERN_PAGE_SIZE,
-                ),
-            );
+            let (embed, components) =
+                crate::commands::saga::tavern::create_tavern_menu(&recruits, &meta);
             edit_component(
                 ctx,
                 component,
@@ -818,6 +643,29 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                         return;
                     }
                 }
+                // Capture old rotation (for diff highlighting) before overwriting.
+                let (old_units, _old_meta) =
+                    crate::commands::saga::tavern::build_tavern_state_cached(
+                        &app_state,
+                        component.user.id,
+                    )
+                    .await
+                    .unwrap_or((
+                        Vec::new(),
+                        crate::commands::saga::tavern::TavernUiMeta {
+                            balance: profile.balance,
+                            favor: 0,
+                            favor_tier: 0,
+                            favor_progress: 0.0,
+                            daily_rerolls_used: 0,
+                            max_daily_rerolls:
+                                crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS,
+                            reroll_cost: crate::commands::saga::tavern::TAVERN_REROLL_COST,
+                            can_reroll: false,
+                        },
+                    ));
+                let old_ids: std::collections::HashSet<i32> =
+                    old_units.iter().map(|u| u.unit_id).collect();
                 let global = crate::commands::saga::tavern::get_daily_recruits(db).await;
                 let mut rotation: Vec<i32> = global.iter().map(|u| u.unit_id).collect();
                 {
@@ -847,29 +695,61 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                                 crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS,
                             reroll_cost: crate::commands::saga::tavern::TAVERN_REROLL_COST,
                             can_reroll: false,
-                            filter: crate::commands::saga::tavern::TavernFilter::All,
                         },
                     ));
-                let (page, filter) = {
-                    let sessions = app_state.tavern_sessions.read().await;
-                    sessions
-                        .get(&component.user.id.get())
-                        .map(|s| (s.page, s.filter))
-                        .unwrap_or((0, crate::commands::saga::tavern::TavernFilter::All))
-                };
-                let filtered_list =
-                    crate::commands::saga::tavern::filter_units(&resolved_units, filter);
-                let mut meta = meta;
-                meta.filter = filter;
-                let adj_page = page.min(
-                    filtered_list.len().saturating_sub(1)
-                        / crate::commands::saga::tavern::TAVERN_PAGE_SIZE,
-                );
-                let (embed, components) = crate::commands::saga::tavern::create_tavern_menu(
-                    &filtered_list,
-                    &meta,
-                    adj_page,
-                );
+                let (mut embed, components) =
+                    crate::commands::saga::tavern::create_tavern_menu(&resolved_units, &meta);
+                // Diff highlighting: show new and removed units (based on full rotation, not filtered), truncated for brevity.
+                let new_ids: std::collections::HashSet<i32> =
+                    resolved_units.iter().map(|u| u.unit_id).collect();
+                let added: Vec<_> = new_ids.difference(&old_ids).cloned().collect();
+                let removed: Vec<_> = old_ids.difference(&new_ids).cloned().collect();
+                if (!added.is_empty()) || (!removed.is_empty()) {
+                    let mut added_list: Vec<String> = resolved_units
+                        .iter()
+                        .filter(|u| added.contains(&u.unit_id))
+                        .map(|u| u.name.to_string())
+                        .take(5)
+                        .collect();
+                    if added.len() > added_list.len() {
+                        added_list.push("…".into());
+                    }
+                    let mut removed_list: Vec<String> = old_units
+                        .iter()
+                        .filter(|u| removed.contains(&u.unit_id))
+                        .map(|u| u.name.to_string())
+                        .take(5)
+                        .collect();
+                    if removed.len() > removed_list.len() {
+                        removed_list.push("…".into());
+                    }
+                    let mut diff_lines = Vec::new();
+                    if !added.is_empty() {
+                        diff_lines.push(format!("➕ {} new", added.len()));
+                    }
+                    if !removed.is_empty() {
+                        diff_lines.push(format!("➖ {} removed", removed.len()));
+                    }
+                    let summary = diff_lines.join(" • ");
+                    let detail = format!(
+                        "Added: {}\nRemoved: {}",
+                        if added_list.is_empty() {
+                            "-".into()
+                        } else {
+                            added_list.join(", ")
+                        },
+                        if removed_list.is_empty() {
+                            "-".into()
+                        } else {
+                            removed_list.join(", ")
+                        }
+                    );
+                    embed = embed.field(
+                        "Rotation Changes",
+                        format!("{}\n{}", summary, detail),
+                        false,
+                    );
+                }
                 edit_component(
                     ctx,
                     component,
@@ -877,6 +757,53 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     EditInteractionResponse::new()
                         .embed(embed)
                         .components(components),
+                )
+                .await;
+            }
+        }
+        Some(_) if crate::interactions::ids::is_saga_area(raw_id) => {
+            // Area switch: push MapArea view onto stack (persistent) and render
+            let area_id = match raw_id
+                .trim_start_matches(crate::interactions::ids::SAGA_AREA_PREFIX)
+                .parse::<i32>()
+            {
+                Ok(v) => v,
+                Err(_) => {
+                    edit_component(
+                        ctx,
+                        component,
+                        "area.bad_id",
+                        EditInteractionResponse::new().content("Invalid area id"),
+                    )
+                    .await;
+                    return;
+                }
+            };
+            if let Ok((embed, mut comps)) = crate::saga::view::push_and_render(
+                crate::saga::view::SagaView::MapArea(area_id),
+                &app_state,
+                component.user.id,
+                MAX_NAV_DEPTH,
+            )
+            .await
+            {
+                let depth = app_state
+                    .nav_stacks
+                    .read()
+                    .await
+                    .get(&component.user.id.get())
+                    .map(|s| s.stack.len())
+                    .unwrap_or(1);
+                if let Some(row) = crate::commands::saga::ui::back_refresh_row(depth) {
+                    comps.push(row);
+                }
+                edit_component(
+                    ctx,
+                    component,
+                    "area.switch",
+                    EditInteractionResponse::new()
+                        .embed(embed)
+                        .components(comps),
                 )
                 .await;
             }
@@ -1001,8 +928,32 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                         }
                     })
                     .collect();
-                let enemy_units: Vec<BattleUnit> =
-                    enemies.iter().map(BattleUnit::from_unit).collect();
+                // Dynamic enemy scaling: if player's story progress greatly exceeds node requirement, slightly buff enemies
+                let player_story = crate::database::saga::get_story_progress(db, component.user.id)
+                    .await
+                    .unwrap_or(0);
+                let diff = player_story.saturating_sub(node_data.story_progress_required);
+                let (atk_scale, def_scale, hp_scale) = if diff >= 6 {
+                    (1.25, 1.25, 1.35)
+                } else if diff >= 3 {
+                    (1.15, 1.10, 1.20)
+                } else if diff <= -3 {
+                    // Player under-leveled: small nerf to enemies
+                    (0.90, 0.95, 0.90)
+                } else {
+                    (1.0, 1.0, 1.0)
+                };
+                let enemy_units: Vec<BattleUnit> = enemies
+                    .iter()
+                    .map(|u| {
+                        let mut b = BattleUnit::from_unit(u);
+                        b.attack = ((b.attack as f32) * atk_scale).round() as i32;
+                        b.defense = ((b.defense as f32) * def_scale).round() as i32;
+                        b.max_hp = ((b.max_hp as f32) * hp_scale).round() as i32;
+                        b.current_hp = b.max_hp;
+                        b
+                    })
+                    .collect();
                 let mut session = BattleSession::new(player_units, enemy_units);
                 session.log.extend(synergy_log);
                 let can_afford_recruit = database::units::can_afford_recruit(db, component.user.id)
@@ -1043,24 +994,37 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             }
         }
         Some(&"hire") => {
-            let pet_id_to_hire = custom_id_parts[2].parse::<i32>().unwrap_or(0);
-            let result = database::units::hire_unit(
-                db,
-                component.user.id,
-                pet_id_to_hire,
-                commands::saga::tavern::HIRE_COST,
-            )
-            .await;
+            let unit_id_to_hire = custom_id_parts[2].parse::<i32>().unwrap_or(0);
+            // Fetch unit to determine rarity-based cost.
+            let (unit_name, cost) =
+                match database::units::get_units_by_ids(db, &[unit_id_to_hire]).await {
+                    Ok(list) if !list.is_empty() => {
+                        let u = &list[0];
+                        (
+                            u.name.clone(),
+                            crate::commands::saga::tavern::hire_cost_for_rarity(u.rarity),
+                        )
+                    }
+                    _ => (
+                        "Unknown".to_string(),
+                        crate::commands::saga::tavern::HIRE_COST,
+                    ),
+                };
+            let result =
+                database::units::hire_unit(db, component.user.id, unit_id_to_hire, cost).await;
             let builder = match result {
-                Ok(pet_name) => {
-                    // Fetch remaining balance for richer feedback (ignore failure quietly)
+                Ok(_) => {
                     let balance_after =
                         database::economy::get_or_create_profile(db, component.user.id)
                             .await
                             .map(|p| p.balance)
                             .unwrap_or_default();
                     EditInteractionResponse::new().embed(
-                        commands::saga::tavern::recruit_success_embed(&pet_name, balance_after),
+                        commands::saga::tavern::recruit_success_embed(
+                            &unit_name,
+                            cost,
+                            balance_after,
+                        ),
                     )
                 }
                 Err(e) => EditInteractionResponse::new().embed(error_embed(

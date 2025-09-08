@@ -4,5 +4,4 @@ pub mod battle;
 pub mod core;
 pub mod leaderboard;
 pub mod leveling;
-pub mod map;
 pub mod view;

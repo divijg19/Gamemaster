@@ -6,34 +6,38 @@ breaking changes in minor bumps (`0.x.0`). Dates use `YYYY-MM-DD`.
 
 ## [Unreleased]
 ### Added
-- Tavern system: deterministic daily rotation (date‑seeded), per‑user rotation persistence, favor tiers & progress bar, hire confirmation, two‑step reroll (confirm / cancel) with cost & remaining count, session persistence (page + filter), filter buttons (All / Rare+ / Epic+ / Legendary+), and rotation diff caching.
-- Tavern daily rotation in‑memory cache (avoids repeated deterministic rebuilds each interaction).
-- World map node preview embeds with content fingerprint hashing to avoid stale UI after progression.
-- Dedicated SagaView::Tavern integrated into navigation stack (distinct from legacy Recruit view) with refresh/back row support.
-- Filter abstraction (`filter_units`) & dynamic filter button rendering with active state.
-- Two‑step reroll flow preserving page/filter state across confirmation.
-- Additional SQL migrations (performance indexes, tavern favor/rotation tables, research & unit expansion, tavern expansion & rotation updates, saga AP/TP rebalance, tavern filter/rotation enhancements). 
+- Tavern rotation enhancements: deterministic daily list, per‑user persistence, favor tiers & progress, hire confirmation, two‑step reroll, rotation diff highlighting, rarity‑scaled hire costs (rounded), affordable stats (✔ markers, avg cost, affordable count).
+- In‑memory tavern daily cache (date keyed) reducing rebuild churn.
+- World map: node preview embeds; area grouping & navigation (A1..), focused area view (SagaView::MapArea) with persistent nav state.
+- Difficulty-based battle node button styling and legend.
+- Battle scaling: enemy stat scaling vs story progress gap; reward scaling (coins/XP) by avg enemy rarity (clamped ×2.25).
+- Battle UI: condensed log (last 12), vitality mitigation summary, quick Map/Tavern nav buttons after Victory & Defeat.
+- Help command UX: category buttons, persistent dropdown, saga scaling & totals fields, navigation section on single-command view.
 
 ### Changed
-- Split generic Recruit view into explicit Tavern view (cleaner intent & future extensibility).
-- Centralized filtering logic replacing scattered threshold checks.
-- All tavern builds now use cached `build_tavern_state_cached` path (removes duplicate logic / reduces DB + compute churn).
-- Navigation: uniform back / refresh rows applied to Tavern view; consistent sizing via shared button helpers.
+- Split generic Recruit view into dedicated Tavern view.
+- Centralized filtering logic (legacy filters later removed) & cached tavern builder usage everywhere.
+- Uniform back/refresh rows; map embed simplified (grouped by area, locked summary) with clearer legend.
+- Post-battle flow streamlined with quick navigation buttons.
+- Persistent help navigation components across interactions.
 
 ### Fixed
-- Corrupted match arms introduced during early reroll confirmation attempt (now replaced with clean confirm/cancel handlers).
-- Potential stale tavern displays after reroll/hire by ensuring session + cache reconciliation and re-render.
+- Stale tavern display after reroll/hire via consistent cache rebuild.
+- Early battle nav clutter—only terminal phases append global nav.
+- Misc unused variable & doc comment lint warnings.
 
 ### Removed
 - Legacy uncached tavern builder (`build_tavern_state`).
-- Obsolete `apply_filter` and per-enum threshold method (superseded by `filter_units`).
+- Obsolete rarity filter & pagination UI (superseded by lean 5+2 rotation design).
+- `apply_filter` helper & per-enum threshold method (replaced, then removed).
 
 ### In Progress / Planned
-- Per-interaction unified context cache (profile + party + bonuses) to reduce multi-fetch overhead.
-- Party combat snapshot caching for faster battle initialization.
-- Expansion of world map procedural encounters & node diversity.
-- Battle integration tests (snapshot + vitality verification).
-- Rate limiting rollout to remaining non-saga handlers.
+- Per-interaction unified context cache (profile + party + bonuses).
+- Party combat snapshot caching for faster battle init.
+- Area pagination when >5 areas; richer area metadata (difficulty summary).
+- Expanded procedural encounters & node diversity.
+- Battle & map integration tests (snapshot, mitigation assertions).
+- Rate limiting remaining non-saga handlers.
 
 ## [0.1.0] - 2025-09-04
 ### Added

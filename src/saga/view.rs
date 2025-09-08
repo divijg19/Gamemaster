@@ -9,6 +9,8 @@ use std::sync::Arc;
 pub enum SagaView {
     Root,
     Map,
+    /// Focused view of a single area id (persists across refresh/back until exited)
+    MapArea(i32),
     Tavern,
     Recruit,
     Party,
@@ -36,38 +38,25 @@ impl SagaView {
             }
             SagaView::Map => {
                 let profile = database::saga::update_and_get_saga_profile(&state.db, user).await?;
-                let node_ids = crate::saga::map::get_available_nodes(profile.story_progress);
-                let nodes = database::world::get_map_nodes_by_ids(&state.db, &node_ids)
+                // Fetch all nodes to allow locked preview; filtering handled in UI layer.
+                let nodes = database::world::get_all_map_nodes(&state.db)
                     .await
                     .unwrap_or_default();
                 Ok(commands::saga::ui::create_world_map_view(&nodes, &profile))
             }
-            SagaView::Tavern => {
-                let (recruits, mut meta) =
-                    commands::saga::tavern::build_tavern_state_cached(state, user).await?;
-                let (page, filter) = {
-                    let sessions = state.tavern_sessions.read().await;
-                    sessions
-                        .get(&user.get())
-                        .map(|s| (s.page, s.filter))
-                        .unwrap_or((0, commands::saga::tavern::TavernFilter::All))
-                };
-                meta.filter = filter;
-                let filtered = commands::saga::tavern::filter_units(&recruits, filter);
-                Ok(commands::saga::tavern::create_tavern_menu(
-                    &filtered,
-                    &meta,
-                    page.min(
-                        filtered.len().saturating_sub(1) / commands::saga::tavern::TAVERN_PAGE_SIZE,
-                    ),
+            SagaView::MapArea(area_id) => {
+                let profile = database::saga::update_and_get_saga_profile(&state.db, user).await?;
+                let nodes = database::world::get_all_map_nodes(&state.db)
+                    .await
+                    .unwrap_or_default();
+                Ok(commands::saga::ui::create_world_map_area_view(
+                    &nodes, &profile, *area_id,
                 ))
             }
-            SagaView::Recruit => {
+            SagaView::Tavern | SagaView::Recruit => {
                 let (recruits, meta) =
                     commands::saga::tavern::build_tavern_state_cached(state, user).await?;
-                Ok(commands::saga::tavern::create_tavern_menu(
-                    &recruits, &meta, 0,
-                ))
+                Ok(commands::saga::tavern::create_tavern_menu(&recruits, &meta))
             }
             SagaView::Party => {
                 Ok(commands::party::ui::create_party_view_with_bonds(state, user).await)
@@ -152,6 +141,7 @@ fn view_marker(v: &SagaView) -> &'static str {
     match v {
         SagaView::Root => "saga_root",
         SagaView::Map => "saga_map_view",
+        SagaView::MapArea(_) => "saga_map_area_view",
         SagaView::Tavern => "saga_tavern_view",
         SagaView::Recruit => "saga_recruit_view",
         SagaView::Party => "saga_party_view",

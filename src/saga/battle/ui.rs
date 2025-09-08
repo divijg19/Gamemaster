@@ -17,11 +17,38 @@ pub fn render_battle(
         BattlePhase::Defeat => ("Defeat", 0x99AAB5),                 // Grey
     };
 
+    // Build a concise header line (phase + living counts)
+    let living_players = session
+        .player_party
+        .iter()
+        .filter(|u| u.current_hp > 0)
+        .count();
+    let living_enemies = session
+        .enemy_party
+        .iter()
+        .filter(|u| u.current_hp > 0)
+        .count();
+    let mut desc_lines = Vec::new();
+    desc_lines.push(format!(
+        "{} vs {} alive | Log:",
+        living_players, living_enemies
+    ));
+    // Limit log to last 12 lines for readability
+    let max_log = 12usize;
+    let log_slice = if session.log.len() > max_log {
+        &session.log[session.log.len() - max_log..]
+    } else {
+        &session.log[..]
+    };
+    desc_lines.extend(log_slice.iter().cloned());
     let embed = CreateEmbed::new()
         .title(title)
-        .description(session.log.join("\n"))
+        .description(desc_lines.join("\n"))
         .field("Your Party", format_party_hp(&session.player_party), true)
         .field("Enemy Party", format_party_hp(&session.enemy_party), true)
+        .footer(serenity::builder::CreateEmbedFooter::new(
+            "Actions cost 1 turn • Tame only when one recruitable enemy remains",
+        ))
         .color(color);
 
     // (✓) MODIFIED: The entire component layout is now determined by the battle phase.
@@ -70,17 +97,26 @@ pub fn render_battle(
         }
         // (✓) MODIFIED: When the battle is won, show a "Claim Rewards" button.
         BattlePhase::Victory => {
-            vec![CreateActionRow::Buttons(vec![Btn::success(
-                "battle_claim_rewards",
-                "🎁 Claim Rewards",
-            )])]
+            vec![
+                CreateActionRow::Buttons(vec![Btn::success(
+                    "battle_claim_rewards",
+                    "🎁 Claim Rewards",
+                )]),
+                CreateActionRow::Buttons(vec![
+                    Btn::secondary(crate::interactions::ids::SAGA_MAP, "↩ Map"),
+                    Btn::secondary(crate::interactions::ids::SAGA_TAVERN, "🍺 Tavern"),
+                ]),
+            ]
         }
         // (✓) MODIFIED: When the battle is lost, show a simple "Close" button.
         BattlePhase::Defeat => {
-            vec![CreateActionRow::Buttons(vec![Btn::secondary(
-                "battle_close",
-                "❌ Close",
-            )])]
+            vec![
+                CreateActionRow::Buttons(vec![Btn::secondary("battle_close", "❌ Close")]),
+                CreateActionRow::Buttons(vec![
+                    Btn::secondary(crate::interactions::ids::SAGA_MAP, "↩ Map"),
+                    Btn::secondary(crate::interactions::ids::SAGA_TAVERN, "🍺 Tavern"),
+                ]),
+            ]
         }
     };
 
@@ -91,15 +127,12 @@ fn format_party_hp(party: &[BattleUnit]) -> String {
     party
         .iter()
         .map(|unit| {
-            let status = if unit.current_hp <= 0 {
-                "💀"
+            let (icon, hp_part) = if unit.current_hp <= 0 {
+                ("💀", format!("0/{}", unit.max_hp))
             } else {
-                "❤️"
+                ("❤️", format!("{}/{}", unit.current_hp, unit.max_hp))
             };
-            format!(
-                "{} **{}** ({}/{})",
-                status, unit.name, unit.current_hp, unit.max_hp
-            )
+            format!("{} {} [{}]", icon, unit.name, hp_part)
         })
         .collect::<Vec<_>>()
         .join("\n")

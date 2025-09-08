@@ -57,9 +57,23 @@ pub async fn resolve_node_victory(
         }
     }
     // Fetch enemy metas in one batch
+    // Accumulate enemy rarity weights for reward scaling.
+    let mut rarity_scaler: f64 = 0.0;
+    let mut rarity_count: usize = 0;
     if let Ok(enemy_units) = database::units::get_units_by_ids(db, enemy_unit_ids).await {
         let mut human_units: Vec<crate::database::models::Unit> = Vec::new();
         for meta in enemy_units.iter() {
+            // Add to rarity scaling (all enemies contribute equally weight 1).
+            rarity_scaler += match meta.rarity {
+                UnitRarity::Common => 1.0,
+                UnitRarity::Rare => 1.08,
+                UnitRarity::Epic => 1.18,
+                UnitRarity::Legendary => 1.35,
+                UnitRarity::Unique => 1.55,
+                UnitRarity::Mythical => 1.80,
+                UnitRarity::Fabled => 2.10,
+            };
+            rarity_count += 1;
             if matches!(meta.kind, UnitKind::Pet)
                 && !matches!(
                     meta.rarity,
@@ -88,14 +102,31 @@ pub async fn resolve_node_victory(
             let _ = database::human::record_human_defeat(db, user_id, &h).await;
         }
     }
+    // Derive average rarity multiplier if any enemies processed.
+    let avg_multiplier = if rarity_count > 0 {
+        (rarity_scaler / rarity_count as f64).clamp(1.0, 2.25)
+    } else {
+        1.0
+    };
+    // Scale node base rewards (ensure at least 1 coin/xp when base >0).
+    let scaled_coins = if node.reward_coins > 0 {
+        ((node.reward_coins as f64) * avg_multiplier).round() as i64
+    } else {
+        0
+    };
+    let scaled_xp = if node.reward_unit_xp > 0 {
+        ((node.reward_unit_xp as f64) * avg_multiplier).round() as i32
+    } else {
+        0
+    };
     // Apply rewards
     let results = database::units::apply_battle_rewards(
         db,
         user_id,
-        node.reward_coins,
+        scaled_coins,
         &dynamic_loot,
         party_units,
-        node.reward_unit_xp,
+        scaled_xp,
     )
     .await
     .map_err(|_| "Apply rewards failed")?;
@@ -111,7 +142,14 @@ pub async fn resolve_node_victory(
 
     let mut log = vec![
         format!("🎉 **Victory at the {}!**", node_name),
-        format!("💰 You earned **{}** coins.", node.reward_coins),
+        if (scaled_coins - node.reward_coins).abs() > 0 {
+            format!(
+                "💰 You earned **{}** coins ({} base × {:.2} rarity).",
+                scaled_coins, node.reward_coins, avg_multiplier
+            )
+        } else {
+            format!("💰 You earned **{}** coins.", scaled_coins)
+        },
     ];
     if !dynamic_loot.is_empty() {
         let loot_str = dynamic_loot
@@ -136,11 +174,13 @@ pub async fn resolve_node_victory(
                     "🌟 **{} leveled up to {}!** (+{} ATK, +{} DEF, +{} HP)",
                     name, res.new_level, res.stat_gains.0, res.stat_gains.1, res.stat_gains.2
                 ));
-            } else {
+            } else if (scaled_xp - node.reward_unit_xp).abs() > 0 {
                 log.push(format!(
-                    "- **{}** gained `{}` XP.",
-                    name, node.reward_unit_xp
+                    "- **{}** gained `{}` XP ({} base × {:.2} rarity).",
+                    name, scaled_xp, node.reward_unit_xp, avg_multiplier
                 ));
+            } else {
+                log.push(format!("- **{}** gained `{}` XP.", name, scaled_xp));
             }
         }
     }
