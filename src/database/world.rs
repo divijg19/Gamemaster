@@ -18,6 +18,15 @@ pub async fn get_map_nodes_by_ids(
     .await
 }
 
+/// Fetch all map nodes (ordered by required story progress then node id) for richer map UI/UX.
+pub async fn get_all_map_nodes(pool: &PgPool) -> Result<Vec<MapNode>, sqlx::Error> {
+    sqlx::query_as::<_, MapNode>(
+        "SELECT * FROM map_nodes ORDER BY story_progress_required, node_id",
+    )
+    .fetch_all(pool)
+    .await
+}
+
 /// Fetches the potential loot rewards for a specific battle node.
 pub async fn get_rewards_for_node(
     pool: &PgPool,

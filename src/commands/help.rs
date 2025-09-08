@@ -47,6 +47,18 @@ impl CommandCategory {
     }
 }
 
+impl CommandCategory {
+    fn all() -> [CommandCategory; 5] {
+        [
+            CommandCategory::General,
+            CommandCategory::Economy,
+            CommandCategory::Saga,
+            CommandCategory::Games,
+            CommandCategory::Admin,
+        ]
+    }
+}
+
 struct CommandInfo {
     name: &'static str,
     description: &'static str,
@@ -315,6 +327,64 @@ fn create_command_select_menu() -> CreateActionRow {
     CreateActionRow::SelectMenu(select_menu)
 }
 
+fn create_category_buttons() -> CreateActionRow {
+    let mut buttons = Vec::new();
+    for cat in CommandCategory::all() {
+        let id = format!(
+            "help_cat_{}",
+            match cat {
+                CommandCategory::General => "general",
+                CommandCategory::Economy => "economy",
+                CommandCategory::Saga => "saga",
+                CommandCategory::Games => "games",
+                CommandCategory::Admin => "admin",
+            }
+        );
+        let label = format!("{} {}", cat.emoji(), cat.name());
+        buttons.push(serenity::builder::CreateButton::new(id).label(label));
+    }
+    CreateActionRow::Buttons(buttons)
+}
+
+fn parse_category_id(id: &str) -> Option<CommandCategory> {
+    if !id.starts_with("help_cat_") {
+        return None;
+    }
+    match id.trim_start_matches("help_cat_") {
+        "general" => Some(CommandCategory::General),
+        "economy" => Some(CommandCategory::Economy),
+        "saga" => Some(CommandCategory::Saga),
+        "games" => Some(CommandCategory::Games),
+        "admin" => Some(CommandCategory::Admin),
+        _ => None,
+    }
+}
+
+fn create_category_embed(prefix: &str, cat: CommandCategory) -> CreateEmbed {
+    let mut embed = CreateEmbed::new()
+        .title(format!("{} {} Commands", cat.emoji(), cat.name()))
+        .color(0x5865F2)
+        .footer(CreateEmbedFooter::new(format!(
+            "Prefix: {} • Select a command for details or pick another category",
+            prefix
+        )));
+    let cmds: Vec<&CommandInfo> = COMMANDS.iter().filter(|c| c.category == cat).collect();
+    let mut lines = Vec::new();
+    for cmd in cmds.iter() {
+        lines.push(format!("`{}` – {}", cmd.name, cmd.description));
+    }
+    if !lines.is_empty() {
+        embed = embed.description(lines.join("\n"));
+    }
+    embed = embed.field("Count", format!("{} shown", lines.len()), true);
+    embed = embed.field(
+        "Tip",
+        "Use the dropdown for full details, or /help <command> directly.",
+        true,
+    );
+    embed
+}
+
 async fn create_help_embed(ctx: &Context, command_name_opt: Option<&str>) -> CreateEmbed {
     let prefix = {
         ctx.data
@@ -350,7 +420,12 @@ async fn create_help_embed(ctx: &Context, command_name_opt: Option<&str>) -> Cre
                     .title(format!("{} Command: {}", cmd.category.emoji(), cmd.name))
                     .field("Description", cmd.description, false)
                     .field("Usage", usage_string, false)
-                    .field("Details", cmd.details, false);
+                    .field("Details", cmd.details, false)
+                    .field(
+                        "Navigation",
+                        "Use category buttons below or the dropdown to switch quickly without retyping.",
+                        false,
+                    );
             } else {
                 embed = embed
                     .title("Command Not Found")
@@ -359,7 +434,7 @@ async fn create_help_embed(ctx: &Context, command_name_opt: Option<&str>) -> Cre
             }
         }
         None => {
-            embed = embed.title("Help Menu").description(format!("Here are my available commands. For more details, use `{}help <command>` or select an option from the dropdown below. The selector shows a subset (max 25).", prefix));
+            embed = embed.title("Help Menu").description(format!("Here are my available commands. Use `{}help <command>` or the selector for details. Use category buttons for a focused list.", prefix));
             let categories = [
                 CommandCategory::General,
                 CommandCategory::Economy,
@@ -390,6 +465,20 @@ async fn create_help_embed(ctx: &Context, command_name_opt: Option<&str>) -> Cre
             }
             embed = embed.field("Rarity Legend", "Common < Rare < Epic < Legendary < Unique < Mythical < Fabled", false)
                 .field("Bonding", "Use `/bond` or `bond` to equip one unit onto another. Stat bonus scales with equipped unit rarity & level. One equipped unit per host.", false);
+            embed = embed.field(
+                "Saga Scaling",
+                "Tavern hire cost scales by rarity (≈ +15%→+175%). Battle coins & XP scale with average enemy rarity (up to ×2.25). Enemy stats scale if you're 3+ SP above (mild buff) or 3+ below (mild nerf). Difficulty symbols: E Easy • = Even • M Moderate • H Hard.",
+                false,
+            );
+            embed = embed.field(
+                "Totals",
+                format!(
+                    "{} commands registered (showing up to {} per category).",
+                    COMMANDS.len(),
+                    MAX_SELECT_OPTIONS
+                ),
+                false,
+            );
         }
     }
     embed
@@ -413,7 +502,10 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
     let embed = create_help_embed(ctx, command_name).await;
     let mut builder = CreateInteractionResponseMessage::new().embed(embed);
     if command_name.is_none() {
-        builder = builder.components(vec![create_command_select_menu()]);
+        builder = builder.components(vec![
+            create_category_buttons(),
+            create_command_select_menu(),
+        ]);
     }
     let response = serenity::builder::CreateInteractionResponse::Message(builder);
     interaction.create_response(&ctx.http, response).await.ok();
@@ -421,41 +513,69 @@ pub async fn run_slash(ctx: &Context, interaction: &CommandInteraction) {
 
 pub async fn handle_interaction(ctx: &Context, interaction: &mut ComponentInteraction) {
     use serenity::builder::CreateInteractionResponse;
-    if interaction.data.custom_id != "help_select_command" {
-        tracing::debug!(target="help.interaction", id=%interaction.data.custom_id, "Ignoring non-help component in help handler");
-        return;
-    }
-    let selected_command = match &interaction.data.kind {
-        ComponentInteractionDataKind::StringSelect { values } if !values.is_empty() => {
-            values[0].as_str()
+    let cid = interaction.data.custom_id.as_str();
+    if cid == "help_select_command" {
+        let selected_command = match &interaction.data.kind {
+            ComponentInteractionDataKind::StringSelect { values } if !values.is_empty() => {
+                values[0].as_str()
+            }
+            other => {
+                tracing::warn!(target="help.interaction", kind=?other, "Unexpected component kind for help handler");
+                let _ = interaction
+                    .create_response(
+                        &ctx.http,
+                        CreateInteractionResponse::Message(
+                            CreateInteractionResponseMessage::new()
+                                .content(
+                                    "Unable to process that selection (unexpected component type).",
+                                )
+                                .ephemeral(true),
+                        ),
+                    )
+                    .await;
+                return;
+            }
+        };
+        tracing::info!(target="help.interaction", command=%selected_command, user_id=%interaction.user.id, "Help selection processed");
+        let embed = create_help_embed(ctx, Some(selected_command)).await;
+        let update = CreateInteractionResponse::UpdateMessage(
+            CreateInteractionResponseMessage::new()
+                .embed(embed)
+                .components(vec![
+                    create_category_buttons(),
+                    create_command_select_menu(),
+                ]),
+        );
+        if let Err(e) = interaction.create_response(&ctx.http, update).await {
+            tracing::error!(target="help.interaction", error=?e, "Failed to update help message");
         }
-        other => {
-            tracing::warn!(target="help.interaction", kind=?other, "Unexpected component kind for help handler");
-            let _ = interaction
-                .create_response(
-                    &ctx.http,
-                    CreateInteractionResponse::Message(
-                        CreateInteractionResponseMessage::new()
-                            .content(
-                                "Unable to process that selection (unexpected component type).",
-                            )
-                            .ephemeral(true),
-                    ),
-                )
-                .await;
-            return;
+    } else if let Some(cat) = parse_category_id(cid) {
+        // Only need prefix for usage hints
+        let prefix = {
+            ctx.data
+                .read()
+                .await
+                .get::<AppState>()
+                .expect("Expected AppState in TypeMap.")
+                .prefix
+                .read()
+                .await
+                .clone()
+        };
+        let embed = create_category_embed(&prefix, cat);
+        let update = CreateInteractionResponse::UpdateMessage(
+            CreateInteractionResponseMessage::new()
+                .embed(embed)
+                .components(vec![
+                    create_category_buttons(),
+                    create_command_select_menu(),
+                ]),
+        );
+        if let Err(e) = interaction.create_response(&ctx.http, update).await {
+            tracing::error!(target="help.interaction", error=?e, "Failed to update help category message");
         }
-    };
-    tracing::info!(target="help.interaction", command=%selected_command, user_id=%interaction.user.id, "Help selection processed");
-    let embed = create_help_embed(ctx, Some(selected_command)).await;
-    // Update the original help message (clear components so dropdown disappears after selection).
-    let update = CreateInteractionResponse::UpdateMessage(
-        CreateInteractionResponseMessage::new()
-            .embed(embed)
-            .components(vec![]),
-    );
-    if let Err(e) = interaction.create_response(&ctx.http, update).await {
-        tracing::error!(target="help.interaction", error=?e, "Failed to update help message");
+    } else {
+        tracing::debug!(target="help.interaction", id=%cid, "Ignoring unrelated component");
     }
 }
 
@@ -464,7 +584,10 @@ pub async fn run_prefix(ctx: &Context, msg: &Message, args: Vec<&str>) {
     let embed = create_help_embed(ctx, command_name).await;
     let mut builder = CreateMessage::new().embed(embed).reference_message(msg);
     if command_name.is_none() {
-        builder = builder.components(vec![create_command_select_menu()]);
+        builder = builder.components(vec![
+            create_category_buttons(),
+            create_command_select_menu(),
+        ]);
     }
     msg.channel_id.send_message(&ctx.http, builder).await.ok();
 }

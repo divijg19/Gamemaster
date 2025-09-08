@@ -40,6 +40,8 @@ type UserResearchCache = HashMap<u64, UserResearchCacheEntry>;
 // Saga profile short-lived cache (avoids rapid duplicate AP/TP queries on refresh spam)
 type SagaProfileCacheEntry = (Instant, crate::database::models::SagaProfile);
 type SagaProfileCache = HashMap<u64, SagaProfileCacheEntry>;
+// Tavern daily rotation cache (date, units)
+type TavernDailyCacheInner = Option<(chrono::NaiveDate, Vec<crate::database::models::Unit>)>;
 
 /// A container for the ShardManager, allowing it to be stored in the global context.
 /// This provides access to shard-specific information, like gateway latency.
@@ -75,11 +77,8 @@ pub struct AppState {
     /// Short TTL cache for saga profiles to smooth rapid refresh interaction bursts.
     pub saga_profile_cache: Arc<RwLock<SagaProfileCache>>,
     /// Cached global tavern rotation (date, units) to avoid re-sorting each request.
-    pub tavern_daily_cache:
-        Arc<RwLock<Option<(chrono::NaiveDate, Vec<crate::database::models::Unit>)>>>,
-    /// Per-user ephemeral tavern session state (page/filter persistence).
-    pub tavern_sessions:
-        Arc<RwLock<HashMap<u64, crate::commands::saga::tavern::TavernSessionState>>>,
+    pub tavern_daily_cache: Arc<RwLock<TavernDailyCacheInner>>,
+    // Removed tavern_sessions (pagination / rarity filters removed from Tavern UX).
 }
 
 impl AppState {

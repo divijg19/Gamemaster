@@ -5,6 +5,7 @@ use super::models::{PlayerUnit, SagaProfile, UnitRarity};
 use crate::saga;
 use serenity::model::id::UserId;
 use sqlx::PgPool;
+use sqlx::Row; // for try_get
 use sqlx::types::chrono::Utc;
 
 /// Fetches a user's Saga Profile, automatically updating their AP, TP, and completed training.
@@ -155,4 +156,20 @@ pub async fn advance_story_progress(
     let user_id_i64 = user_id.get() as i64;
     sqlx::query!("UPDATE player_saga_profile SET story_progress = $1 WHERE user_id = $2 AND story_progress < $1", new_progress, user_id_i64).execute(pool).await?;
     Ok(())
+}
+
+/// Lightweight helper to fetch only the story_progress integer.
+pub async fn get_story_progress(pool: &PgPool, user_id: UserId) -> Result<i32, sqlx::Error> {
+    let uid = user_id.get() as i64;
+    let rec = sqlx::query("SELECT story_progress FROM player_saga_profile WHERE user_id=$1")
+        .bind(uid)
+        .fetch_optional(pool)
+        .await?;
+    if let Some(row) = rec {
+        // Use try_get to avoid deriving a struct
+        let val: i32 = row.try_get::<i32, _>("story_progress").unwrap_or(0);
+        Ok(val)
+    } else {
+        Ok(0)
+    }
 }

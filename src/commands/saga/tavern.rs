@@ -13,9 +13,15 @@ use serenity::model::id::UserId;
 use std::hash::Hasher;
 
 // Configurable parameters for the dynamic tavern.
+/// Base hire cost used for cost scaling (Common rarity baseline).
 pub const HIRE_COST: i64 = 250;
-pub const TAVERN_PAGE_SIZE: usize = 5;
-pub const TAVERN_MAX_DAILY: usize = 25; // cap the number of daily shuffled recruits surfaced
+// Base visible recruits per rotation (always shown)
+pub const TAVERN_BASE_ROTATION: usize = 5;
+// Additional recruits unlocked via story progress milestones (progress >=3, >=6)
+pub const TAVERN_UNLOCK_PROGRESS_1: i32 = 3;
+pub const TAVERN_UNLOCK_PROGRESS_2: i32 = 6;
+// Hard ceiling safeguard (was previously 25)
+pub const TAVERN_MAX_DAILY: usize = 25; // still fetch a wider pool for future features / rerolls
 pub const TAVERN_REROLL_COST: i64 = 150; // coins per reroll (coins or future token)
 pub const TAVERN_MAX_DAILY_REROLLS: i32 = 3;
 pub const FAVOR_PER_HIRE: i32 = 5;
@@ -64,7 +70,11 @@ pub async fn get_daily_recruits(pool: &sqlx::PgPool) -> Vec<Unit> {
 }
 
 /// Helper embed for a successful recruit hire (DRY for interaction handlers)
-pub fn recruit_success_embed(unit_name: &str, player_balance_after: i64) -> CreateEmbed {
+pub fn recruit_success_embed(
+    unit_name: &str,
+    unit_cost: i64,
+    player_balance_after: i64,
+) -> CreateEmbed {
     // Reuse generic success styling then append contextual field.
     let mut embed = crate::ui::style::success_embed(
         "Recruit Hired",
@@ -74,7 +84,7 @@ pub fn recruit_success_embed(unit_name: &str, player_balance_after: i64) -> Crea
         "Cost",
         format!(
             "{} {} (Remaining: {} {})",
-            EMOJI_COIN, HIRE_COST, EMOJI_COIN, player_balance_after
+            EMOJI_COIN, unit_cost, EMOJI_COIN, player_balance_after
         ),
         true,
     );
@@ -92,19 +102,33 @@ pub struct TavernUiMeta {
     pub max_daily_rerolls: i32,
     pub reroll_cost: i64,
     pub can_reroll: bool,
-    pub filter: TavernFilter,
+    // Filter removed from UI; retained implicitly by not exposing buttons.
 }
 
 /// Builds the Tavern embed & components given an ordered recruit list and contextual meta.
 pub fn create_tavern_menu(
     recruits: &[Unit],
     meta: &TavernUiMeta,
-    page: usize,
 ) -> (CreateEmbed, Vec<CreateActionRow>) {
+    // Pre-compute some rotation stats
+    let avg_cost: i64 = if !recruits.is_empty() {
+        (recruits
+            .iter()
+            .map(|u| hire_cost_for_rarity(u.rarity))
+            .sum::<i64>() as f64
+            / recruits.len() as f64)
+            .round() as i64
+    } else {
+        0
+    };
+    let affordable = recruits
+        .iter()
+        .filter(|u| meta.balance >= hire_cost_for_rarity(u.rarity))
+        .count();
     let mut embed = CreateEmbed::new()
         .title("The Weary Dragon Tavern")
-        .description("The air is thick with the smell of stale ale and adventure. A rotating cast of mercenaries seeks coin. New rotation every day (UTC). Click a Hire button for details & confirmation.")
-        .field("Your Balance", format!("{} {}", EMOJI_COIN, meta.balance), true)
+        .description(format!("Daily rotation (UTC). Hire mercenaries to grow your forces. **{} / {} affordable** • Avg Cost: {} {}", affordable, recruits.len(), EMOJI_COIN, avg_cost))
+        .field("Balance", format!("{} {}", EMOJI_COIN, meta.balance), true)
         .field(
             "Favor",
             format!(
@@ -133,29 +157,34 @@ pub fn create_tavern_menu(
             true,
         )
     .color(COLOR_SAGA_TAVERN);
-    let total_pages = recruits.len().div_ceil(TAVERN_PAGE_SIZE);
-    let page = page.min(total_pages.saturating_sub(1));
-    let start = page * TAVERN_PAGE_SIZE;
-    let end = (start + TAVERN_PAGE_SIZE).min(recruits.len());
-    let page_slice = &recruits[start..end];
+    // Pagination removed (rotation <= 7 entries). Show all recruits provided.
+    let page_slice = recruits;
 
     let mut hire_buttons = Vec::new();
     for unit in page_slice {
+        let unit_cost = hire_cost_for_rarity(unit.rarity);
+        let rarity_icon = rarity_emoji(unit.rarity);
         embed = embed.field(
-            format!("{} (#{})", unit.name, unit.unit_id),
+            format!("{} {} (#{})", rarity_icon, unit.name, unit.unit_id),
             format!(
-                "{} Atk:`{}` Def:`{}` HP:`{}` | Cost: {} {} | Rarity: {:?}",
+                "{} Atk:`{}` Def:`{}` HP:`{}` • Cost: {} {} • {} {}{}",
                 unit.description.as_deref().unwrap_or(""),
                 unit.base_attack,
                 unit.base_defense,
                 unit.base_health,
                 EMOJI_COIN,
-                HIRE_COST,
-                unit.rarity
+                unit_cost,
+                rarity_icon,
+                rarity_label(unit.rarity),
+                if meta.balance >= unit_cost {
+                    " ✔"
+                } else {
+                    ""
+                }
             ),
             false,
         );
-        let label = if meta.balance < HIRE_COST {
+        let label = if meta.balance < unit_cost {
             "Cannot Afford"
         } else {
             "Hire"
@@ -165,35 +194,13 @@ pub fn create_tavern_menu(
                 &format!("saga_hire_{}", unit.unit_id),
                 &format!("➕ {} {}", label, unit.name),
             )
-            .disabled(meta.balance < HIRE_COST),
+            .disabled(meta.balance < unit_cost),
         );
     }
 
     // Paging controls (if multiple pages)
     let mut rows: Vec<CreateActionRow> = Vec::new();
     rows.push(crate::commands::saga::ui::global_nav_row("saga"));
-    if total_pages > 1 {
-        rows.push(CreateActionRow::Buttons(vec![
-            Btn::secondary(
-                &format!("saga_tavern_page_{}", page.saturating_sub(1)),
-                "◀ Prev",
-            )
-            .disabled(page == 0),
-            Btn::secondary(
-                "noop_tavern_page",
-                &format!("Page {}/{}", page + 1, total_pages),
-            )
-            .disabled(true),
-            Btn::secondary(
-                &format!(
-                    "saga_tavern_page_{}",
-                    (page + 1).min(total_pages.saturating_sub(1))
-                ),
-                "Next ▶",
-            )
-            .disabled(page + 1 >= total_pages),
-        ]));
-    }
     rows.push(CreateActionRow::Buttons(hire_buttons));
     // Reroll button with dynamic label/state
     let left = (meta.max_daily_rerolls - meta.daily_rerolls_used).max(0);
@@ -209,14 +216,13 @@ pub fn create_tavern_menu(
         Btn::secondary("saga_tavern_reroll", &reroll_label)
             .disabled(!meta.can_reroll || meta.balance < meta.reroll_cost || left == 0),
     ]));
-    // Filter buttons row
-    rows.push(CreateActionRow::Buttons(filter_buttons(meta.filter)));
+    // Rarity filter buttons removed per spec (simplify UX).
     (embed, rows)
 }
 
 /// Confirmation embed for a hire attempt.
 pub fn create_hire_confirmation(unit: &Unit, player_balance: i64) -> CreateEmbed {
-    
+    let unit_cost = hire_cost_for_rarity(unit.rarity);
     CreateEmbed::new()
         .title(format!("Confirm Hire: {}", unit.name))
         .description(unit.description.as_deref().unwrap_or("No description."))
@@ -232,7 +238,7 @@ pub fn create_hire_confirmation(unit: &Unit, player_balance: i64) -> CreateEmbed
             "Cost",
             format!(
                 "{} {} (You have: {} {})",
-                EMOJI_COIN, HIRE_COST, EMOJI_COIN, player_balance
+                EMOJI_COIN, unit_cost, EMOJI_COIN, player_balance
             ),
             true,
         )
@@ -242,7 +248,6 @@ pub fn create_hire_confirmation(unit: &Unit, player_balance: i64) -> CreateEmbed
 /// Build the ordered list of today's recruits for a given user (respecting per-user rerolls)
 /// along with the UI meta block (favor, rerolls, balance, etc.).
 // (legacy uncached builder removed; use build_tavern_state_cached)
-
 /// Cached variant that uses `AppState.tavern_daily_cache` to avoid re-sorting every call.
 pub async fn build_tavern_state_cached(
     app: &AppState,
@@ -300,6 +305,20 @@ pub async fn build_tavern_state_cached(
     let can_reroll = database::tavern::can_reroll(&app.db, user, TAVERN_MAX_DAILY_REROLLS)
         .await
         .unwrap_or(false);
+    // Determine story progress to unlock extra recruits (call lightweight profile fetch)
+    let story_progress = database::saga::get_story_progress(&app.db, user)
+        .await
+        .unwrap_or(0);
+    let mut visible_cap = TAVERN_BASE_ROTATION;
+    if story_progress >= TAVERN_UNLOCK_PROGRESS_1 {
+        visible_cap += 1;
+    }
+    if story_progress >= TAVERN_UNLOCK_PROGRESS_2 {
+        visible_cap += 1;
+    }
+    if ordered.len() > visible_cap {
+        ordered.truncate(visible_cap);
+    }
     let meta = TavernUiMeta {
         balance,
         favor,
@@ -309,7 +328,6 @@ pub async fn build_tavern_state_cached(
         max_daily_rerolls: TAVERN_MAX_DAILY_REROLLS,
         reroll_cost: TAVERN_REROLL_COST,
         can_reroll,
-        filter: TavernFilter::All,
     };
     Ok((ordered, meta))
 }
@@ -328,77 +346,73 @@ fn favor_bar(frac: f32) -> String {
     s
 }
 
-// ---------------- Filters & Session State (foundation) ----------------
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TavernFilter {
-    All,
-    RarePlus,
-    EpicPlus,
-    LegendaryPlus,
+/// Provide a short emoji marker for unit rarity for quick scanning.
+pub fn rarity_emoji(r: UnitRarity) -> &'static str {
+    match r {
+        UnitRarity::Common => "⚪",
+        UnitRarity::Rare => "🟢",
+        UnitRarity::Epic => "🔵",
+        UnitRarity::Legendary => "🟣",
+        UnitRarity::Unique => "🟡",
+        UnitRarity::Mythical => "🔴",
+        UnitRarity::Fabled => "🟦",
+    }
 }
 
-impl TavernFilter {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::All => "All",
-            Self::RarePlus => "Rare+",
-            Self::EpicPlus => "Epic+",
-            Self::LegendaryPlus => "Legendary+",
+/// Human‑readable rarity label (could later localize or shorten further).
+pub fn rarity_label(r: UnitRarity) -> &'static str {
+    match r {
+        UnitRarity::Common => "Common",
+        UnitRarity::Rare => "Rare",
+        UnitRarity::Epic => "Epic",
+        UnitRarity::Legendary => "Legendary",
+        UnitRarity::Unique => "Unique",
+        UnitRarity::Mythical => "Mythical",
+        UnitRarity::Fabled => "Fabled",
+    }
+}
+
+/// Multiplier applied to the base hire cost for each rarity tier.
+pub fn rarity_cost_multiplier(r: UnitRarity) -> f64 {
+    match r {
+        UnitRarity::Common => 1.0,
+        UnitRarity::Rare => 1.15,
+        UnitRarity::Epic => 1.35,
+        UnitRarity::Legendary => 1.65,
+        UnitRarity::Unique => 1.95,
+        UnitRarity::Mythical => 2.25,
+        UnitRarity::Fabled => 2.75,
+    }
+}
+
+/// Compute the hire cost for a given rarity (rounded to nearest 5 for cleaner numbers).
+pub fn hire_cost_for_rarity(r: UnitRarity) -> i64 {
+    let raw = (HIRE_COST as f64 * rarity_cost_multiplier(r)).round() as i64;
+    // Round to nearest 5 to avoid odd values.
+    let rem = raw % 5;
+    if rem == 0 { raw } else { raw + (5 - rem) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn cost_progression_increases_monotonically() {
+        let mut last = 0;
+        for r in [
+            UnitRarity::Common,
+            UnitRarity::Rare,
+            UnitRarity::Epic,
+            UnitRarity::Legendary,
+            UnitRarity::Unique,
+            UnitRarity::Mythical,
+            UnitRarity::Fabled,
+        ] {
+            let c = hire_cost_for_rarity(r);
+            assert!(c >= last, "Cost should not decrease going up rarities");
+            last = c;
         }
     }
 }
 
-/// Build the row of filter buttons marking the active one disabled.
-pub fn filter_buttons(active: TavernFilter) -> Vec<serenity::builder::CreateButton> {
-    use TavernFilter::*;
-    let variants = [All, RarePlus, EpicPlus, LegendaryPlus];
-    variants
-        .iter()
-        .map(|f| {
-            let id = format!("saga_tavern_filter_{:?}", f).to_lowercase();
-            let mut btn = Btn::secondary(&id, f.label());
-            if *f == active {
-                btn = btn.disabled(true);
-            }
-            btn
-        })
-        .collect()
-}
-
-/// Filter units into an owned Vec based on filter rarity threshold.
-pub fn filter_units(units: &[Unit], filter: TavernFilter) -> Vec<Unit> {
-    use TavernFilter::*;
-    match filter {
-        All => units.to_vec(),
-        RarePlus => units
-            .iter()
-            .filter(|u| u.rarity >= UnitRarity::Rare)
-            .cloned()
-            .collect(),
-        EpicPlus => units
-            .iter()
-            .filter(|u| u.rarity >= UnitRarity::Epic)
-            .cloned()
-            .collect(),
-        LegendaryPlus => units
-            .iter()
-            .filter(|u| u.rarity >= UnitRarity::Legendary)
-            .cloned()
-            .collect(),
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct TavernSessionState {
-    pub page: usize,
-    pub filter: TavernFilter,
-}
-
-impl Default for TavernSessionState {
-    fn default() -> Self {
-        Self {
-            page: 0,
-            filter: TavernFilter::All,
-        }
-    }
-}
+// Session state and rarity filters removed (no pagination or rarity filtering needed after redesign).

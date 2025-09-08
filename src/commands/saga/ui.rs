@@ -93,87 +93,272 @@ pub fn create_world_map_view(
     nodes: &[MapNode],
     saga_profile: &SagaProfile,
 ) -> (CreateEmbed, Vec<CreateActionRow>) {
+    // Separate unlocked vs locked (based on story progress requirement)
+    let (unlocked, locked): (Vec<&MapNode>, Vec<&MapNode>) = nodes
+        .iter()
+        .partition(|n| n.story_progress_required <= saga_profile.story_progress);
+
     let mut embed = CreateEmbed::new()
-        .title("Whispering Woods")
-        .description("You look over the map, deciding where to go next.")
+        .title("World Map")
+        .description(format!(
+            "Story Progress: **{}** | Unlocked Nodes: **{}** | Locked: **{}**\nSelect a destination to spend 1 AP and engage the encounter.",
+            saga_profile.story_progress,
+            unlocked.len(),
+            locked.len()
+        ))
         .field(
             "⚔️ Action Points",
             format!("`{}/{}`", saga_profile.current_ap, saga_profile.max_ap),
-            false,
+            true,
         )
+    .field("Legend", "E Easy • = Even • M Moderate • H Hard", true)
         .color(COLOR_SAGA_MAP)
         .footer(serenity::builder::CreateEmbedFooter::new(
-            "Spend AP to battle nodes • Back + Refresh available",
-        )); // Styled constant
+            "Use Back to return • Refresh to update AP/TP • Locked nodes show their required SP",
+        ));
 
-    if nodes.is_empty() {
-        embed = embed.description("There are no available locations for you to explore right now. Come back after you've made more progress in the story!");
-        return (embed, vec![]);
-    }
-
-    // Build descriptive labels including area id & required story progress (activates previously unused fields)
-    // Also surface node description + rewards (coins/xp) in a single consolidated field.
-
-    // Compose a compact locations listing; truncate to avoid exceeding field limits (<= 1024 chars).
-    let mut lines = Vec::new();
-    let mut total_len = 0usize;
-    for node in nodes {
-        let desc_snip = node
-            .description
-            .as_deref()
-            .map(|d| {
-                if d.len() > 40 {
-                    format!("{}…", &d[..40])
-                } else {
-                    d.to_string()
-                }
-            })
-            .unwrap_or_else(|| "No details".to_string());
-        let rewards_part = if node.reward_coins > 0 || node.reward_unit_xp > 0 {
-            format!(" (💰{} / XP {})", node.reward_coins, node.reward_unit_xp)
-        } else {
-            String::new()
-        };
-        let line = format!(
-            "[#{:02}] {} (SP {}){} - {}",
-            node.node_id, node.name, node.story_progress_required, rewards_part, desc_snip
+    if unlocked.is_empty() {
+        embed = embed.field(
+            "No Battles Available",
+            "Advance the story by completing currently available encounters to unlock more nodes.",
+            false,
         );
-        // Stop if adding would exceed ~950 chars (leave headroom for formatting).
-        if total_len + line.len() > 950 {
-            break;
+    } else {
+        use std::collections::BTreeMap;
+        let mut by_area: BTreeMap<i32, Vec<&MapNode>> = BTreeMap::new();
+        for n in &unlocked {
+            by_area.entry(n.area_id).or_default().push(*n);
         }
-        total_len += line.len();
-        lines.push(line);
-    }
-    if lines.len() < nodes.len() {
-        lines.push("… more locations available".to_string());
-    }
-    if !lines.is_empty() {
-        embed = embed.field("Locations", lines.join("\n"), false);
+        let mut area_fields_added = 0usize;
+        for (area, list) in by_area.iter() {
+            if area_fields_added >= 8 {
+                break;
+            } // cap to avoid too many embed fields
+            let mut lines = Vec::new();
+            for node in list.iter().take(6) {
+                // cap nodes per area field
+                let diff =
+                    difficulty_tag(node.story_progress_required, saga_profile.story_progress);
+                let diff_symbol = match diff {
+                    "EASY" => "E",
+                    "EVEN" => "=",
+                    "MOD" => "M",
+                    "HARD" => "H",
+                    _ => "?",
+                };
+                let rewards_part = if node.reward_coins > 0 || node.reward_unit_xp > 0 {
+                    format!(" (💰{} / XP {})", node.reward_coins, node.reward_unit_xp)
+                } else {
+                    String::new()
+                };
+                let desc_snip = truncate(node.description.as_deref().unwrap_or("No details"), 40);
+                lines.push(format!(
+                    "{} #{:02} **{}**{} – {}",
+                    diff_symbol, node.node_id, node.name, rewards_part, desc_snip
+                ));
+            }
+            if list.len() > 6 {
+                lines.push("…".into());
+            }
+            embed = embed.field(
+                format!("Area A{} ({} nodes)", area, list.len()),
+                lines.join("\n"),
+                false,
+            );
+            area_fields_added += 1;
+        }
+        if by_area.len() > area_fields_added {
+            // collapse remaining areas into summary
+            let remaining = by_area.len() - area_fields_added;
+            embed = embed.field(
+                "More Areas",
+                format!("{} additional area groups hidden for brevity", remaining),
+                false,
+            );
+        }
     }
 
-    let mut components: Vec<CreateActionRow> = Vec::new();
-    // Build rows with main node buttons and a paired preview row beneath each.
-    components.clear();
-    for chunk_nodes in nodes.chunks(5) {
-        let main: Vec<CreateButton> = chunk_nodes.iter().map(map_node_button).collect();
-        components.push(CreateActionRow::Buttons(main));
-        let preview: Vec<CreateButton> = chunk_nodes
-            .iter()
-            .map(|n| {
-                CreateButton::new(format!("saga_preview_{}", n.node_id))
-                    .label(format!(
-                        "👁 {}",
-                        &n.name.chars().take(10).collect::<String>()
-                    ))
-                    .style(ButtonStyle::Secondary)
-            })
-            .collect();
-        components.push(CreateActionRow::Buttons(preview));
+    if !locked.is_empty() {
+        let mut lines = Vec::new();
+        for node in &locked {
+            lines.push(format!(
+                "`SP {:02}` {} (#{})",
+                node.story_progress_required, node.name, node.node_id
+            ));
+            if lines.len() >= 6 {
+                break;
+            }
+        }
+        if locked.len() > lines.len() {
+            lines.push("… more locked".into());
+        }
+        embed = embed.field("Locked", lines.join("\n"), false);
     }
-    // Append global nav row; back/refresh row injected by interaction handler based on stack depth.
+
+    // Build button rows: unlocked nodes are clickable; locked shown disabled (first few only)
+    let mut components: Vec<CreateActionRow> = Vec::new();
+    for chunk in unlocked.chunks(5) {
+        let row = CreateActionRow::Buttons(
+            chunk
+                .iter()
+                .map(|n| map_node_button(n, saga_profile.story_progress))
+                .collect(),
+        );
+        components.push(row);
+    }
+    // Show up to one row of locked nodes (disabled) for foreshadowing
+    if !locked.is_empty() {
+        let mut locked_buttons = Vec::new();
+        for node in locked.iter().take(5) {
+            let mut label = format!("SP{} {}", node.story_progress_required, node.name);
+            label.truncate(20);
+            locked_buttons.push(
+                CreateButton::new("locked_node")
+                    .label(label)
+                    .style(ButtonStyle::Secondary)
+                    .disabled(true)
+                    .emoji('🔒'),
+            );
+        }
+        components.push(CreateActionRow::Buttons(locked_buttons));
+    }
     components.push(global_nav_row("saga"));
     (embed, components)
+}
+
+/// Render a single-area focused map view showing only nodes for that area (unlocked + locked) with an area nav bar.
+pub fn create_world_map_area_view(
+    all_nodes: &[MapNode],
+    saga_profile: &SagaProfile,
+    area_id: i32,
+) -> (CreateEmbed, Vec<CreateActionRow>) {
+    let current_area_nodes: Vec<&MapNode> =
+        all_nodes.iter().filter(|n| n.area_id == area_id).collect();
+    let (unlocked, locked): (Vec<&MapNode>, Vec<&MapNode>) = current_area_nodes
+        .into_iter()
+        .partition(|n| n.story_progress_required <= saga_profile.story_progress);
+    let mut embed = CreateEmbed::new()
+        .title(format!("Area A{}", area_id))
+        .description(format!(
+            "Story Progress **{}** • Unlocked **{}** • Locked **{}**\nUse area buttons below to switch regions.",
+            saga_profile.story_progress,
+            unlocked.len(),
+            locked.len()
+        ))
+        .field(
+            "AP",
+            format!("`{}/{}`", saga_profile.current_ap, saga_profile.max_ap),
+            true,
+        )
+        .field("Legend", "E =Easy | = =Even | M =Mod | H =Hard", true)
+        .color(COLOR_SAGA_MAP)
+        .footer(serenity::builder::CreateEmbedFooter::new(
+            "Switch areas or pick a node to battle.",
+        ));
+    if unlocked.is_empty() {
+        embed = embed.field(
+            "No Unlocked Nodes",
+            "Progress the story to unlock nodes in this area.",
+            false,
+        );
+    } else {
+        let mut lines = Vec::new();
+        for n in &unlocked {
+            let diff = difficulty_tag(n.story_progress_required, saga_profile.story_progress);
+            let diff_symbol = match diff {
+                "EASY" => "E",
+                "EVEN" => "=",
+                "MOD" => "M",
+                "HARD" => "H",
+                _ => "?",
+            };
+            let rewards_part = if n.reward_coins > 0 || n.reward_unit_xp > 0 {
+                format!(" (💰{} / XP {})", n.reward_coins, n.reward_unit_xp)
+            } else {
+                String::new()
+            };
+            lines.push(format!(
+                "{} #{:02} **{}**{}",
+                diff_symbol, n.node_id, n.name, rewards_part
+            ));
+            if lines.len() >= 12 {
+                break;
+            }
+        }
+        embed = embed.field("Unlocked", lines.join("\n"), false);
+    }
+    if !locked.is_empty() {
+        let mut lines = Vec::new();
+        for n in &locked {
+            lines.push(format!("SP{} {}", n.story_progress_required, n.name));
+            if lines.len() >= 6 {
+                break;
+            }
+        }
+        embed = embed.field("Locked", lines.join("\n"), false);
+    }
+    // Build components: area nav row + node rows + global nav
+    use std::collections::BTreeSet;
+    let mut area_ids: BTreeSet<i32> = BTreeSet::new();
+    for n in all_nodes {
+        area_ids.insert(n.area_id);
+    }
+    let mut area_buttons = Vec::new();
+    for id in area_ids.iter().take(5) {
+        // cap nav buttons
+        let mut label = format!("A{}", id);
+        if *id == area_id {
+            label.push('*');
+        }
+        let mut btn = Btn::secondary(
+            &format!("{}{}", crate::interactions::ids::SAGA_AREA_PREFIX, id),
+            &label,
+        );
+        if *id == area_id {
+            btn = btn.disabled(true);
+        }
+        area_buttons.push(btn);
+    }
+    let mut components: Vec<CreateActionRow> = Vec::new();
+    components.push(CreateActionRow::Buttons(area_buttons));
+    for chunk in unlocked.chunks(5) {
+        components.push(CreateActionRow::Buttons(
+            chunk
+                .iter()
+                .map(|n| map_node_button(n, saga_profile.story_progress))
+                .collect(),
+        ));
+    }
+    if !locked.is_empty() {
+        let mut locked_buttons = Vec::new();
+        for node in locked.iter().take(5) {
+            let mut label = format!("SP{} {}", node.story_progress_required, node.name);
+            label.truncate(20);
+            locked_buttons.push(
+                CreateButton::new("locked_node")
+                    .label(label)
+                    .style(ButtonStyle::Secondary)
+                    .disabled(true)
+                    .emoji('🔒'),
+            );
+        }
+        components.push(CreateActionRow::Buttons(locked_buttons));
+    }
+    components.push(global_nav_row("saga"));
+    (embed, components)
+}
+
+/// Rough difficulty heuristic compared to player's current story progress.
+fn difficulty_tag(req: i32, current: i32) -> &'static str {
+    if req > current + 2 {
+        "HARD"
+    } else if req > current {
+        "MOD"
+    } else if req + 2 < current {
+        "EASY"
+    } else {
+        "EVEN"
+    }
 }
 
 /// Creates the first-time player tutorial view.
@@ -198,15 +383,20 @@ pub fn create_first_time_tutorial() -> (CreateEmbed, Vec<CreateActionRow>) {
 }
 
 // --- helpers ---
-fn map_node_button(node: &MapNode) -> CreateButton {
-    let mut label = format!(
-        "[A{}|SP{}] {}",
-        node.area_id, node.story_progress_required, node.name
-    );
-    label.truncate(20);
+fn map_node_button(node: &MapNode, player_sp: i32) -> CreateButton {
+    let mut base = format!("{} •1AP", node.name);
+    base.truncate(20);
+    let diff = difficulty_tag(node.story_progress_required, player_sp);
+    let style = match diff {
+        "HARD" => ButtonStyle::Danger,
+        "MOD" => ButtonStyle::Primary,
+        "EVEN" => ButtonStyle::Success,
+        "EASY" => ButtonStyle::Secondary,
+        _ => ButtonStyle::Secondary,
+    };
     CreateButton::new(format!("{}{}", SAGA_NODE_PREFIX, node.node_id))
-        .label(label)
-        .style(ButtonStyle::Secondary)
+        .label(base)
+        .style(style)
         .emoji('🗺')
         .disabled(false)
 }
@@ -252,5 +442,14 @@ pub fn add_nav(components: &mut Vec<CreateActionRow>, active: &'static str) {
     });
     if !has_nav {
         components.push(global_nav_row(active));
+    }
+}
+
+// Small helper to truncate text with ellipsis.
+fn truncate(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        format!("{}…", &s[..max])
     }
 }

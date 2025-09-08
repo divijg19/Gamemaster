@@ -85,7 +85,6 @@ async fn serenity(
         nav_stacks: Arc::new(RwLock::new(std::collections::HashMap::new())),
         saga_profile_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
         tavern_daily_cache: Arc::new(RwLock::new(None)),
-        tavern_sessions: Arc::new(RwLock::new(std::collections::HashMap::new())),
     });
     tracing::info!(target: "setup", "Shared application state initialized");
 
