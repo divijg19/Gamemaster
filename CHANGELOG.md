@@ -13,6 +13,7 @@ breaking changes in minor bumps (`0.x.0`). Dates use `YYYY-MM-DD`.
 - Battle scaling: enemy stat scaling vs story progress gap; reward scaling (coins/XP) by avg enemy rarity (clamped ×2.25).
 - Battle UI: condensed log (last 12), vitality mitigation summary, quick Map/Tavern nav buttons after Victory & Defeat.
 - Help command UX: category buttons, persistent dropdown, saga scaling & totals fields, navigation section on single-command view.
+ - Training menu: global navigation row now shown even when the player has no units (prevents dead‑end view).
 
 ### Changed
 - Split generic Recruit view into dedicated Tavern view.
@@ -20,11 +21,15 @@ breaking changes in minor bumps (`0.x.0`). Dates use `YYYY-MM-DD`.
 - Uniform back/refresh rows; map embed simplified (grouped by area, locked summary) with clearer legend.
 - Post-battle flow streamlined with quick navigation buttons.
 - Persistent help navigation components across interactions.
+ - World Map and Node Preview UX: AP-aware "Start Battle" button labeling and disabling when AP=0; area view now caps action rows to Discord's 5-row limit.
 
 ### Fixed
 - Stale tavern display after reroll/hire via consistent cache rebuild.
 - Early battle nav clutter—only terminal phases append global nav.
 - Misc unused variable & doc comment lint warnings.
+ - Prevented component overflow interaction failures by capping world map/area rows to 5.
+ - Replaced explicit counter loops with `enumerate` to satisfy clippy; resolved minor lints in saga UI.
+ - Training "no units" view no longer strands the user; global nav always present.
 
 ### Removed
 - Legacy uncached tavern builder (`build_tavern_state`).
@@ -38,6 +43,8 @@ breaking changes in minor bumps (`0.x.0`). Dates use `YYYY-MM-DD`.
 - Expanded procedural encounters & node diversity.
 - Battle & map integration tests (snapshot, mitigation assertions).
 - Rate limiting remaining non-saga handlers.
+ - Tavern reroll hardening: single-transaction flow combining balance deduction, rotation overwrite, and reroll counter update.
+ - Integration test to verify persistence of fallback enemy generation for empty nodes.
 
 ## [0.1.0] - 2025-09-04
 ### Added

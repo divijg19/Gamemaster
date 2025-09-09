@@ -11,7 +11,7 @@ use crate::saga::view::{SagaView, push_and_render};
 use crate::services::cache as cache_service;
 use crate::ui::style::error_embed;
 // NavState no longer needed directly after SagaView migration
-use crate::{AppState, commands, database};
+use crate::{AppState, database};
 use serenity::builder::EditInteractionResponse;
 use serenity::model::application::ComponentInteraction;
 use serenity::prelude::Context;
@@ -106,12 +106,26 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                         embed = embed.field("Possible Drops", reward_lines, false);
                     }
                     let mut components = Vec::new();
-                    // Provide a Start Battle button (spends AP) and Back/Refresh row if applicable via existing util (depth >1).
+                    // Provide a Start Battle button (spends AP) reflecting AP availability, plus Saga nav.
+                    let ap_ok = crate::services::saga::get_saga_profile(
+                        &app_state,
+                        component.user.id,
+                        false,
+                    )
+                    .await
+                    .map(|p| p.current_ap > 0)
+                    .unwrap_or(false);
+                    let start_label = if ap_ok {
+                        "⚔ Start Battle (1 AP)"
+                    } else {
+                        "⚔ Start Battle (No AP)"
+                    };
                     components.push(serenity::builder::CreateActionRow::Buttons(vec![
                         crate::ui::buttons::Btn::primary(
                             &format!("saga_node_{}", node.node_id),
-                            "⚔ Start Battle",
-                        ),
+                            start_label,
+                        )
+                        .disabled(!ap_ok),
                         crate::ui::buttons::Btn::secondary("nav_saga", "↩ Saga"),
                     ]));
                     components.push(crate::commands::saga::ui::global_nav_row("saga"));
@@ -620,29 +634,6 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     .await;
                     return;
                 }
-                if let Ok(mut tx) = db.begin().await {
-                    if crate::database::economy::add_balance(
-                        &mut tx,
-                        component.user.id,
-                        -TAVERN_REROLL_COST,
-                    )
-                    .await
-                    .is_ok()
-                    {
-                        let _ = tx.commit().await;
-                    } else {
-                        let _ = tx.rollback().await;
-                        edit_component(
-                            ctx,
-                            component,
-                            "tavern.reroll.balance_race",
-                            EditInteractionResponse::new()
-                                .content("Balance changed; reroll aborted."),
-                        )
-                        .await;
-                        return;
-                    }
-                }
                 // Capture old rotation (for diff highlighting) before overwriting.
                 let (old_units, _old_meta) =
                     crate::commands::saga::tavern::build_tavern_state_cached(
@@ -667,7 +658,33 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 let old_ids: std::collections::HashSet<i32> =
                     old_units.iter().map(|u| u.unit_id).collect();
                 let global = crate::commands::saga::tavern::get_daily_recruits(db).await;
-                let mut rotation: Vec<i32> = global.iter().map(|u| u.unit_id).collect();
+                let rotation: Vec<i32> = global.iter().map(|u| u.unit_id).collect();
+                // Deduct coins in a short transaction to reduce double-charge risk.
+                if let Ok(mut tx) = db.begin().await {
+                    if crate::database::economy::add_balance(
+                        &mut tx,
+                        component.user.id,
+                        -TAVERN_REROLL_COST,
+                    )
+                    .await
+                    .is_ok()
+                    {
+                        let _ = tx.commit().await;
+                    } else {
+                        let _ = tx.rollback().await;
+                        edit_component(
+                            ctx,
+                            component,
+                            "tavern.reroll.balance_race",
+                            EditInteractionResponse::new()
+                                .content("Balance changed; reroll aborted."),
+                        )
+                        .await;
+                        return;
+                    }
+                }
+                // Shuffle rotation deterministically for the reroll.
+                let mut rotation = rotation.clone();
                 {
                     use rand::seq::SliceRandom;
                     let mut rng = rand::rng();
@@ -686,7 +703,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     .unwrap_or((
                         Vec::new(),
                         crate::commands::saga::tavern::TavernUiMeta {
-                            balance: profile.balance - TAVERN_REROLL_COST,
+                            balance: profile.balance.saturating_sub(TAVERN_REROLL_COST),
                             favor: 0,
                             favor_tier: 0,
                             favor_progress: 0.0,
@@ -992,47 +1009,6 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 )
                 .await;
             }
-        }
-        Some(&"hire") => {
-            let unit_id_to_hire = custom_id_parts[2].parse::<i32>().unwrap_or(0);
-            // Fetch unit to determine rarity-based cost.
-            let (unit_name, cost) =
-                match database::units::get_units_by_ids(db, &[unit_id_to_hire]).await {
-                    Ok(list) if !list.is_empty() => {
-                        let u = &list[0];
-                        (
-                            u.name.clone(),
-                            crate::commands::saga::tavern::hire_cost_for_rarity(u.rarity),
-                        )
-                    }
-                    _ => (
-                        "Unknown".to_string(),
-                        crate::commands::saga::tavern::HIRE_COST,
-                    ),
-                };
-            let result =
-                database::units::hire_unit(db, component.user.id, unit_id_to_hire, cost).await;
-            let builder = match result {
-                Ok(_) => {
-                    let balance_after =
-                        database::economy::get_or_create_profile(db, component.user.id)
-                            .await
-                            .map(|p| p.balance)
-                            .unwrap_or_default();
-                    EditInteractionResponse::new().embed(
-                        commands::saga::tavern::recruit_success_embed(
-                            &unit_name,
-                            cost,
-                            balance_after,
-                        ),
-                    )
-                }
-                Err(e) => EditInteractionResponse::new().embed(error_embed(
-                    "Recruit Failed",
-                    format!("Hiring failed: {}", e),
-                )),
-            };
-            edit_component(ctx, component, "hire.result", builder).await;
         }
         Some(&"main") => {
             match push_and_render(SagaView::Root, &app_state, component.user.id, MAX_NAV_DEPTH)

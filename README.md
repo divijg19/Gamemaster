@@ -2,7 +2,7 @@
 
 A feature-rich Discord game bot written in Rust (Serenity + SQLx + Tokio) featuring an evolving RPG mode (The Gamemaster Saga), a deterministic daily Tavern recruitment system, economy, research & bonding systems, and several mini‑games.
 
-## ✨ Key Features
+## ✨ Features
 - **Gamemaster Saga**: Turn-based progression with Action Points (AP), Training Points (TP), world map nodes, quests, and battles.
 - **Tavern Recruitment**: Deterministic daily rotation (date‑seeded), per‑user rotation persistence, favor tiers & progress, rarity‑scaled hire costs, affordable count & average cost stats, two‑step reroll confirmation with remaining count, rotation diff highlighting.
 - **Party & Army Management**: Maintain a 5‑unit active party plus a larger army roster; rarity & leveling determine power.
@@ -16,6 +16,7 @@ A feature-rich Discord game bot written in Rust (Serenity + SQLx + Tokio) featur
 - **Caching Layer**: Short TTL layer for saga profiles, bonds, equipment bonuses, research, and party mapping (hit/miss stats exposed via `/adminutil cachestats`).
 - **Global Navigation**: Consistent cross-command navigation row (Saga / Party / Train) with capped per-user nav stack.
 - **Area Map Navigation**: Grouped world map nodes by area with focused area view and difficulty‑styled buttons (Easy / Even / Moderate / Hard).
+  - AP-aware node buttons and Node Preview start action (disabled with clear label when AP=0); respects Discord's 5-row component limit to prevent overflow.
 - **Enhanced Help System**: Interactive category buttons + dropdown selector, saga scaling & rarity information, persistent navigation within help embeds.
 - **View System**: Distinct `SagaView::Tavern` vs legacy `Recruit` path for clearer lifecycle & future extensibility.
 - **Migrations**: SQLx migrations include performance indexes and data integrity constraints.
@@ -40,27 +41,35 @@ tests/             # Unit & lightweight logic tests
 - **Deployment**: Shuttle (runtime + shared Postgres)
 - **Logging**: `tracing` with structured spans (cache hits/misses, profile fetches)
 
-## 🚀 Getting Started
-1. Install Rust (stable) and Postgres.
-2. Set environment variables (or a `.env` file):
-   - `DISCORD_TOKEN` – Bot token
-   - `DATABASE_URL` – Postgres connection string
-3. Run migrations:
-```
+## 🚀 Getting started
+1) Install Rust (stable) and PostgreSQL.
+
+2) Configure environment variables (or a `.env` file):
+  - `DISCORD_TOKEN` – your bot token
+  - `DATABASE_URL` – Postgres connection string
+
+3) Run migrations, then build and run the bot.
+
+PowerShell (pwsh):
+
+```powershell
 sqlx migrate run
 ```
 4. Build & run:
 ```
 cargo run
 ```
-5. (Optional) Register slash commands by starting the bot once; Discord may take a minute to propagate.
+
+Slash commands will register automatically on first run; Discord can take up to a minute to propagate changes.
 
 ## 🧪 Testing
-Run all logic tests:
-```
+Run logic tests:
+
+```powershell
 cargo test --tests
 ```
-Current coverage includes leveling, TP recharge, cache stats, and first‑time tutorial flow. Add integration tests (battle snapshots, quest completion) as the saga expands.
+
+Current coverage includes leveling, TP recharge, cache stats, and first‑time tutorial flow. I’ll add more (battle snapshots, quest completion) as the saga expands.
 
 ## 🏗 Architecture Notes
 - **Navigation**: Per-user stack of `NavState` objects; capped depth prevents unbounded memory growth; Tavern & Area Map views are first‑class variants.
@@ -74,32 +83,28 @@ Current coverage includes leveling, TP recharge, cache stats, and first‑time t
 - Partial & composite indexes: party ordering, equipped bonds, etc.
 - Cache hit/miss counters to guide future optimization (view via `/adminutil cachestats`).
 
-## 🗺 Roadmap (Short-Term)
-- Unified per-interaction context cache (profile + party + bonuses)
+## 🗺 Short‑term plans
+- Unified per‑interaction context cache (profile + party + bonuses)
 - Party snapshot caching for faster battle initialization
 - Extended world map progression & procedural encounter generation
 - Battle snapshot integration tests (vitality / mitigation assertions)
-- Rate limiting across remaining non-saga handlers
+- Rate limiting across remaining non‑saga handlers
 - Quest reward variety & scaling
 - Admin telemetry & live metrics command
 - Additional Tavern UX polish (highlight newest rotation changes, richer favor tiers)
+- Tavern reroll hardening: make reroll fully transactional (deduct coins + overwrite rotation + increment counter in one DB transaction)
 
 ## 🧩 Contributing
-1. Fork or branch from `test` (staging) then open PR.
-2. Keep patches focused; include tests for new logic where feasible.
-3. Run `cargo fmt` / `cargo clippy` if added (not yet enforced, but recommended).
+This is primarily a personal project. Issues and small PRs are welcome, but I may scope or defer changes that don’t align with the current roadmap. There’s no strict process—please keep patches focused and include tests when practical.
 
 ## 📦 Releasing
-1. Update `CHANGELOG.md` (categories: Added / Changed / Deprecated / Removed / Fixed / Security).
-2. Bump version in `Cargo.toml`.
-3. Commit with `release: vX.Y.Z` conventional style (pre‑1.0 minor bumps may break).
-4. Tag & push.
+Releases are informal for now. I’ll update `CHANGELOG.md`, bump `Cargo.toml`, and tag versions when meaningful milestones land.
 
 ## 📜 License
-Currently proprietary / undisclosed. Add SPDX + license file before public release.
+Currently proprietary / undecided. I’ll add SPDX + a license file before any public release.
 
 ## 📑 Changelog
-See `CHANGELOG.md` for detailed history.
+See `CHANGELOG.md` for the history.
 
 ---
-_This README reflects the state after post-0.1.0 Tavern integration & navigation refinements._
+_This README reflects the state after post‑0.1.0 Tavern integration & navigation refinements._
