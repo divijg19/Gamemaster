@@ -197,17 +197,22 @@ pub fn create_world_map_view(
 
     // Build button rows: unlocked nodes are clickable; locked shown disabled (first few only)
     let mut components: Vec<CreateActionRow> = Vec::new();
-    for chunk in unlocked.chunks(5) {
+    let can_start = saga_profile.current_ap > 0;
+    // Cap unlocked rows to avoid exceeding Discord's 5-row limit (leave room for locked + nav).
+    for (unlocked_rows, chunk) in unlocked.chunks(5).enumerate() {
+        if unlocked_rows >= 3 {
+            break;
+        }
         let row = CreateActionRow::Buttons(
             chunk
                 .iter()
-                .map(|n| map_node_button(n, saga_profile.story_progress))
+                .map(|n| map_node_button(n, saga_profile.story_progress, can_start))
                 .collect(),
         );
         components.push(row);
     }
     // Show up to one row of locked nodes (disabled) for foreshadowing
-    if !locked.is_empty() {
+    if !locked.is_empty() && unlocked.chunks(5).take(3).count() <= 3 {
         let mut locked_buttons = Vec::new();
         for node in locked.iter().take(5) {
             let mut label = format!("SP{} {}", node.story_progress_required, node.name);
@@ -250,7 +255,7 @@ pub fn create_world_map_area_view(
             format!("`{}/{}`", saga_profile.current_ap, saga_profile.max_ap),
             true,
         )
-        .field("Legend", "E =Easy | = =Even | M =Mod | H =Hard", true)
+    .field("Legend", "E Easy • = Even • M Moderate • H Hard", true)
         .color(COLOR_SAGA_MAP)
         .footer(serenity::builder::CreateEmbedFooter::new(
             "Switch areas or pick a node to battle.",
@@ -321,15 +326,23 @@ pub fn create_world_map_area_view(
     }
     let mut components: Vec<CreateActionRow> = Vec::new();
     components.push(CreateActionRow::Buttons(area_buttons));
-    for chunk in unlocked.chunks(5) {
+    let can_start = saga_profile.current_ap > 0;
+    // In area view we already used 1 row for area nav; keep total <= 5.
+    let locked_present = !locked.is_empty();
+    // If we plan to show a locked row, allow up to 2 unlocked rows; else up to 3.
+    let max_unlocked_rows = if locked_present { 2 } else { 3 };
+    for (unlocked_rows, chunk) in unlocked.chunks(5).enumerate() {
+        if unlocked_rows >= max_unlocked_rows {
+            break;
+        }
         components.push(CreateActionRow::Buttons(
             chunk
                 .iter()
-                .map(|n| map_node_button(n, saga_profile.story_progress))
+                .map(|n| map_node_button(n, saga_profile.story_progress, can_start))
                 .collect(),
         ));
     }
-    if !locked.is_empty() {
+    if locked_present {
         let mut locked_buttons = Vec::new();
         for node in locked.iter().take(5) {
             let mut label = format!("SP{} {}", node.story_progress_required, node.name);
@@ -383,7 +396,7 @@ pub fn create_first_time_tutorial() -> (CreateEmbed, Vec<CreateActionRow>) {
 }
 
 // --- helpers ---
-fn map_node_button(node: &MapNode, player_sp: i32) -> CreateButton {
+fn map_node_button(node: &MapNode, player_sp: i32, can_start: bool) -> CreateButton {
     let mut base = format!("{} •1AP", node.name);
     base.truncate(20);
     let diff = difficulty_tag(node.story_progress_required, player_sp);
@@ -398,7 +411,7 @@ fn map_node_button(node: &MapNode, player_sp: i32) -> CreateButton {
         .label(base)
         .style(style)
         .emoji('🗺')
-        .disabled(false)
+        .disabled(!can_start)
 }
 
 /// Builds a Back + Refresh control row when depth > 1 (navigation inside a stack).
@@ -447,9 +460,18 @@ pub fn add_nav(components: &mut Vec<CreateActionRow>, active: &'static str) {
 
 // Small helper to truncate text with ellipsis.
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_string()
-    } else {
-        format!("{}…", &s[..max])
+    // Truncate by characters (not bytes) to avoid slicing on a UTF-8 boundary.
+    let mut chars = s.chars();
+    let mut out = String::new();
+    for _ in 0..max {
+        if let Some(c) = chars.next() {
+            out.push(c);
+        } else {
+            break;
+        }
     }
+    if out.len() < s.len() {
+        out.push('…');
+    }
+    out
 }

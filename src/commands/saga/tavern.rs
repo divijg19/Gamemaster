@@ -10,7 +10,7 @@ use ahash::AHasher;
 use chrono::{Datelike, Utc};
 use serenity::builder::{CreateActionRow, CreateEmbed};
 use serenity::model::id::UserId;
-use std::hash::Hasher;
+use std::hash::Hasher; // for rng.random()
 
 // Configurable parameters for the dynamic tavern.
 /// Base hire cost used for cost scaling (Common rarity baseline).
@@ -67,28 +67,6 @@ pub async fn get_daily_recruits(pool: &sqlx::PgPool) -> Vec<Unit> {
         recruitable.truncate(TAVERN_MAX_DAILY);
     }
     recruitable
-}
-
-/// Helper embed for a successful recruit hire (DRY for interaction handlers)
-pub fn recruit_success_embed(
-    unit_name: &str,
-    unit_cost: i64,
-    player_balance_after: i64,
-) -> CreateEmbed {
-    // Reuse generic success styling then append contextual field.
-    let mut embed = crate::ui::style::success_embed(
-        "Recruit Hired",
-        format!("**{}** joins your forces!", unit_name),
-    );
-    embed = embed.field(
-        "Cost",
-        format!(
-            "{} {} (Remaining: {} {})",
-            EMOJI_COIN, unit_cost, EMOJI_COIN, player_balance_after
-        ),
-        true,
-    );
-    embed
 }
 
 /// Creates the embed and components for the Tavern menu.
@@ -259,30 +237,45 @@ pub async fn build_tavern_state_cached(
     // Fetch cached or compute daily list
     let today = Utc::now().date_naive();
     let global_units: Vec<Unit> = {
-        let lock = app.tavern_daily_cache.write().await; // not mut until needed
-        if let Some((cached_date, units)) = lock.as_ref() {
+        // Fast path: read lock; only upgrade to write on miss/stale
+        let r = app.tavern_daily_cache.read().await;
+        if let Some((cached_date, units)) = r.as_ref() {
             if *cached_date == today {
                 units.clone()
             } else {
-                drop(lock); // release before recompute
+                drop(r);
                 let fresh = get_daily_recruits(&app.db).await;
                 let mut w = app.tavern_daily_cache.write().await;
                 *w = Some((today, fresh.clone()));
                 fresh
             }
         } else {
-            drop(lock);
+            drop(r);
             let fresh = get_daily_recruits(&app.db).await;
             let mut w = app.tavern_daily_cache.write().await;
             *w = Some((today, fresh.clone()));
             fresh
         }
     };
-    let global_ids: Vec<i32> = global_units.iter().map(|u| u.unit_id).collect();
+    // Gate pets until later story/quest progress: exclude pets if story_progress < 5
+    let story_progress = database::saga::get_story_progress(&app.db, user)
+        .await
+        .unwrap_or(0);
+    let gated_units: Vec<Unit> = global_units
+        .into_iter()
+        .filter(|u| {
+            if matches!(u.kind, crate::database::models::UnitKind::Pet) {
+                story_progress >= 5
+            } else {
+                true
+            }
+        })
+        .collect();
+    let global_ids: Vec<i32> = gated_units.iter().map(|u| u.unit_id).collect();
     let rotation_ids =
         database::tavern::get_or_generate_rotation(&app.db, user, &global_ids).await?;
     let map: std::collections::HashMap<i32, Unit> =
-        global_units.into_iter().map(|u| (u.unit_id, u)).collect();
+        gated_units.into_iter().map(|u| (u.unit_id, u)).collect();
     let mut ordered: Vec<Unit> = rotation_ids
         .iter()
         .filter_map(|id| map.get(id).cloned())
@@ -305,10 +298,49 @@ pub async fn build_tavern_state_cached(
     let can_reroll = database::tavern::can_reroll(&app.db, user, TAVERN_MAX_DAILY_REROLLS)
         .await
         .unwrap_or(false);
-    // Determine story progress to unlock extra recruits (call lightweight profile fetch)
-    let story_progress = database::saga::get_story_progress(&app.db, user)
-        .await
-        .unwrap_or(0);
+    // Bias rarity based on story progress: later progress slightly increases chance of higher rarities in rotation order.
+    // Make this ordering deterministic per-user-per-day by using a seeded hash as jitter instead of RNG.
+    {
+        // Weighting by rarity tier index + story factor
+        let weight_for = |r: UnitRarity| -> f32 {
+            let base = match r {
+                UnitRarity::Common => 1.0,
+                UnitRarity::Rare => 1.1,
+                UnitRarity::Epic => 1.2,
+                UnitRarity::Legendary => 1.3,
+                UnitRarity::Unique => 1.4,
+                UnitRarity::Mythical => 1.5,
+                UnitRarity::Fabled => 1.6,
+            };
+            let prog_bonus = (story_progress as f32 / 20.0).min(0.6); // up to +0.6
+            base + prog_bonus
+        };
+        let uid = user.get();
+        let year = today.year();
+        let ordinal = today.ordinal();
+
+        // Deterministic jitter in [0,1) per (user, day, unit)
+        let jitter_for = |unit_id: i32| -> f32 {
+            let mut h = AHasher::default();
+            h.write_u64(uid);
+            h.write_i32(year);
+            h.write_u32(ordinal);
+            h.write_i32(unit_id);
+            let v = h.finish();
+            // Map u64 to (0,1)
+            (v as f64 / (u64::MAX as f64)) as f32
+        };
+
+        ordered.sort_by(|a, b| {
+            let wa = weight_for(a.rarity);
+            let wb = weight_for(b.rarity);
+            let ja = jitter_for(a.unit_id);
+            let jb = jitter_for(b.unit_id);
+            let sa = ja * wa;
+            let sb = jb * wb;
+            sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
     let mut visible_cap = TAVERN_BASE_ROTATION;
     if story_progress >= TAVERN_UNLOCK_PROGRESS_1 {
         visible_cap += 1;

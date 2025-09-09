@@ -24,7 +24,11 @@ pub fn create_training_menu(
         embed = embed.description(
             "You don't have any units to train yet! Visit the Tavern in the `/saga` menu to recruit some.",
         );
-        return (embed, vec![]);
+        // Ensure navigation remains available even when there are no units.
+        return (
+            embed,
+            vec![crate::commands::saga::ui::global_nav_row("train")],
+        );
     }
 
     let mut select_menu_options = Vec::new();
