@@ -12,8 +12,6 @@ pub enum SagaView {
     /// Focused view of a single area id (persists across refresh/back until exited)
     MapArea(i32),
     Tavern,
-    Recruit,
-    Party,
 }
 
 impl SagaView {
@@ -53,13 +51,10 @@ impl SagaView {
                     &nodes, &profile, *area_id,
                 ))
             }
-            SagaView::Tavern | SagaView::Recruit => {
+            SagaView::Tavern => {
                 let (recruits, meta) =
                     commands::saga::tavern::build_tavern_state_cached(state, user).await?;
                 Ok(commands::saga::tavern::create_tavern_menu(&recruits, &meta))
-            }
-            SagaView::Party => {
-                Ok(commands::party::ui::create_party_view_with_bonds(state, user).await)
             }
         }
     }
@@ -143,7 +138,5 @@ fn view_marker(v: &SagaView) -> &'static str {
         SagaView::Map => "saga_map_view",
         SagaView::MapArea(_) => "saga_map_area_view",
         SagaView::Tavern => "saga_tavern_view",
-        SagaView::Recruit => "saga_recruit_view",
-        SagaView::Party => "saga_party_view",
     }
 }

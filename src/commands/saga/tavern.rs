@@ -1,13 +1,13 @@
 //! Contains the UI and logic for the Tavern.
-#![allow(unused_mut)]
 
 use crate::AppState;
+use crate::commands::economy::core::item::Item;
 use crate::database;
 use crate::database::models::{Unit, UnitRarity};
 use crate::ui::buttons::Btn;
 use crate::ui::style::{COLOR_SAGA_TAVERN, EMOJI_COIN};
 use ahash::AHasher;
-use chrono::{Datelike, Utc};
+use chrono::{Datelike, NaiveTime, Utc};
 use serenity::builder::{CreateActionRow, CreateEmbed};
 use serenity::model::id::UserId;
 use std::hash::Hasher; // for rng.random()
@@ -24,24 +24,27 @@ pub const TAVERN_UNLOCK_PROGRESS_2: i32 = 6;
 pub const TAVERN_MAX_DAILY: usize = 25; // still fetch a wider pool for future features / rerolls
 pub const TAVERN_REROLL_COST: i64 = 150; // coins per reroll (coins or future token)
 pub const TAVERN_MAX_DAILY_REROLLS: i32 = 3;
-pub const FAVOR_PER_HIRE: i32 = 5;
-pub const FAVOR_TIERS: [i32; 4] = [0, 50, 150, 400];
+pub const FAME_PER_HIRE: i32 = 5;
+pub const FAME_TIERS: [i32; 4] = [0, 50, 150, 400];
 
-/// Computes current favor tier index and progress (0..1) toward next tier.
-pub fn favor_tier(favor: i32) -> (usize, f32) {
+// Daily Shop rotation sizing
+pub const SHOP_DAILY_COUNT: usize = 3; // number of Small Arms items shown per day
+
+/// Computes current fame tier index and progress (0..1) toward next tier.
+pub fn fame_tier(fame: i32) -> (usize, f32) {
     let mut idx = 0usize;
-    for (i, thr) in FAVOR_TIERS.iter().enumerate().rev() {
-        if favor >= *thr {
+    for (i, thr) in FAME_TIERS.iter().enumerate().rev() {
+        if fame >= *thr {
             idx = i;
             break;
         }
     }
-    if idx + 1 >= FAVOR_TIERS.len() {
+    if idx + 1 >= FAME_TIERS.len() {
         return (idx, 1.0);
     }
-    let cur = FAVOR_TIERS[idx];
-    let next = FAVOR_TIERS[idx + 1];
-    let frac = (favor - cur) as f32 / (next - cur) as f32;
+    let cur = FAME_TIERS[idx];
+    let next = FAME_TIERS[idx + 1];
+    let frac = (fame - cur) as f32 / (next - cur) as f32;
     (idx, frac.clamp(0.0, 1.0))
 }
 
@@ -69,13 +72,87 @@ pub async fn get_daily_recruits(pool: &sqlx::PgPool) -> Vec<Unit> {
     recruitable
 }
 
+/// Returns a stable, per-user daily rotation of Small Arms shop items.
+/// Deterministic over (user_id, UTC day). Keep the list small to encourage revisits.
+pub fn get_daily_shop_items(user: UserId) -> Vec<Item> {
+    // Full candidate pool for the Small Arms shop (expand over time)
+    let mut all: Vec<Item> = vec![
+        Item::GreaterHealthPotion,
+        Item::XpBooster,
+        Item::ForestContractParchment,
+        Item::FrontierContractParchment,
+        Item::HealthPotion,
+        Item::StaminaDraft,
+        Item::FocusTonic,
+        Item::TamingLure,
+    ];
+    let today = Utc::now().date_naive();
+    // Stable deterministic shuffle by hashing (user, date, item id)
+    all.sort_by_key(|it| {
+        let mut h = AHasher::default();
+        h.write_u64(user.get());
+        h.write_i32(today.year());
+        h.write_u32(today.ordinal());
+        h.write_i32(*it as i32);
+        h.finish()
+    });
+    if all.len() > SHOP_DAILY_COUNT {
+        all.truncate(SHOP_DAILY_COUNT);
+    }
+    all
+}
+
+/// Human-friendly time remaining until next UTC midnight reset, e.g., "5h 12m".
+pub fn time_until_reset_str() -> String {
+    let now = Utc::now();
+    let today = now.date_naive();
+    let reset_naive = today
+        .succ_opt()
+        .unwrap_or(today)
+        .and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+    let reset = chrono::DateTime::<Utc>::from_naive_utc_and_offset(reset_naive, Utc);
+    let dur = reset.signed_duration_since(now);
+    let total_secs = dur.num_seconds().max(0);
+    let hours = total_secs / 3600;
+    let minutes = (total_secs % 3600) / 60;
+    if hours > 0 {
+        format!("{}h {}m", hours, minutes)
+    } else {
+        format!("{}m", minutes)
+    }
+}
+
+/// Fame tier perks: (shop_discount_rate, reroll_discount_rate, extra_visible_recruits)
+pub fn fame_perks(tier_idx: usize) -> (f32, f32, usize) {
+    match tier_idx {
+        0 => (0.0, 0.0, 0),
+        1 => (0.05, 0.0, 0),
+        2 => (0.10, 0.25, 1),
+        _ => (0.15, 0.50, 2),
+    }
+}
+
+fn round_up_to_5(v: i64) -> i64 {
+    if v <= 0 {
+        return 1;
+    }
+    let rem = v % 5;
+    if rem == 0 { v } else { v + (5 - rem) }
+}
+
+/// Apply a fame-based shop discount and round up to a sensible coin step.
+pub fn apply_shop_discount(base_cost: i64, rate: f32) -> i64 {
+    let discounted = ((base_cost as f32) * (1.0 - rate)).round() as i64;
+    round_up_to_5(discounted).max(1)
+}
+
 /// Creates the embed and components for the Tavern menu.
 #[derive(Debug, Clone)]
 pub struct TavernUiMeta {
     pub balance: i64,
-    pub favor: i32,
-    pub favor_tier: usize,
-    pub favor_progress: f32,
+    pub fame: i32,
+    pub fame_tier: usize,
+    pub fame_progress: f32,
     pub daily_rerolls_used: i32,
     pub max_daily_rerolls: i32,
     pub reroll_cost: i64,
@@ -105,20 +182,27 @@ pub fn create_tavern_menu(
         .count();
     let mut embed = CreateEmbed::new()
         .title("The Weary Dragon Tavern")
-        .description(format!("Daily rotation (UTC). Hire mercenaries to grow your forces. **{} / {} affordable** • Avg Cost: {} {}", affordable, recruits.len(), EMOJI_COIN, avg_cost))
+        .description(format!(
+            "Daily rotation (UTC). Resets in {}.\n**{} / {} affordable** • Avg Cost: {} {}",
+            time_until_reset_str(),
+            affordable,
+            recruits.len(),
+            EMOJI_COIN,
+            avg_cost
+        ))
         .field("Balance", format!("{} {}", EMOJI_COIN, meta.balance), true)
         .field(
-            "Favor",
+            "Fame",
             format!(
                 "{} pts • Tier {}/{} {}\n{}",
-                meta.favor,
-                meta.favor_tier,
-                FAVOR_TIERS.len() - 1,
-                favor_bar(meta.favor_progress),
-                if meta.favor_tier + 1 < FAVOR_TIERS.len() {
+                meta.fame,
+                meta.fame_tier,
+                FAME_TIERS.len() - 1,
+                fame_bar(meta.fame_progress),
+                if meta.fame_tier + 1 < FAME_TIERS.len() {
                     format!(
                         "{} to next tier",
-                        FAVOR_TIERS[meta.favor_tier + 1] - meta.favor
+                        FAME_TIERS[meta.fame_tier + 1] - meta.fame
                     )
                 } else {
                     "Max tier reached".to_string()
@@ -134,7 +218,7 @@ pub fn create_tavern_menu(
             ),
             true,
         )
-    .color(COLOR_SAGA_TAVERN);
+        .color(COLOR_SAGA_TAVERN);
     // Pagination removed (rotation <= 7 entries). Show all recruits provided.
     let page_slice = recruits;
 
@@ -193,6 +277,7 @@ pub fn create_tavern_menu(
     rows.push(CreateActionRow::Buttons(vec![
         Btn::secondary("saga_tavern_reroll", &reroll_label)
             .disabled(!meta.can_reroll || meta.balance < meta.reroll_cost || left == 0),
+        Btn::primary("saga_tavern_home", "🏰 Home"),
     ]));
     // Rarity filter buttons removed per spec (simplify UX).
     (embed, rows)
@@ -224,7 +309,7 @@ pub fn create_hire_confirmation(unit: &Unit, player_balance: i64) -> CreateEmbed
 }
 
 /// Build the ordered list of today's recruits for a given user (respecting per-user rerolls)
-/// along with the UI meta block (favor, rerolls, balance, etc.).
+/// along with the UI meta block (fame, rerolls, balance, etc.).
 // (legacy uncached builder removed; use build_tavern_state_cached)
 /// Cached variant that uses `AppState.tavern_daily_cache` to avoid re-sorting every call.
 pub async fn build_tavern_state_cached(
@@ -283,8 +368,8 @@ pub async fn build_tavern_state_cached(
     if ordered.is_empty() {
         ordered = map.values().cloned().collect();
     }
-    let (favor, daily_rerolls_used, last_reroll) =
-        database::tavern::get_or_create_favor(&app.db, user).await?;
+    let (fame, daily_rerolls_used, last_reroll) =
+        database::tavern::get_or_create_fame(&app.db, user).await?;
     let used_today = if let Some(ts) = last_reroll {
         if ts.date_naive() == today {
             daily_rerolls_used
@@ -294,10 +379,11 @@ pub async fn build_tavern_state_cached(
     } else {
         0
     };
-    let (tier_idx, prog) = favor_tier(favor);
+    let (tier_idx, prog) = fame_tier(fame);
     let can_reroll = database::tavern::can_reroll(&app.db, user, TAVERN_MAX_DAILY_REROLLS)
         .await
         .unwrap_or(false);
+    let (_shop_disc, reroll_disc, extra_visible) = fame_perks(tier_idx);
     // Bias rarity based on story progress: later progress slightly increases chance of higher rarities in rotation order.
     // Make this ordering deterministic per-user-per-day by using a seeded hash as jitter instead of RNG.
     {
@@ -341,7 +427,7 @@ pub async fn build_tavern_state_cached(
             sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
         });
     }
-    let mut visible_cap = TAVERN_BASE_ROTATION;
+    let mut visible_cap = TAVERN_BASE_ROTATION + extra_visible;
     if story_progress >= TAVERN_UNLOCK_PROGRESS_1 {
         visible_cap += 1;
     }
@@ -353,18 +439,18 @@ pub async fn build_tavern_state_cached(
     }
     let meta = TavernUiMeta {
         balance,
-        favor,
-        favor_tier: tier_idx,
-        favor_progress: prog,
+        fame,
+        fame_tier: tier_idx,
+        fame_progress: prog,
         daily_rerolls_used: used_today,
         max_daily_rerolls: TAVERN_MAX_DAILY_REROLLS,
-        reroll_cost: TAVERN_REROLL_COST,
+        reroll_cost: apply_shop_discount(TAVERN_REROLL_COST, reroll_disc),
         can_reroll,
     };
     Ok((ordered, meta))
 }
 
-fn favor_bar(frac: f32) -> String {
+fn fame_bar(frac: f32) -> String {
     let filled = (frac * 10.0).floor() as usize;
     let mut s = String::from("[");
     for i in 0..10 {
@@ -444,6 +530,16 @@ mod tests {
             assert!(c >= last, "Cost should not decrease going up rarities");
             last = c;
         }
+    }
+
+    #[test]
+    fn discount_application_is_sane() {
+        // 10% off 100 -> 90 (already multiple of 5)
+        assert_eq!(apply_shop_discount(100, 0.10), 90);
+        // 15% off 101 -> 85.85 -> 86 -> round up to 90
+        assert_eq!(apply_shop_discount(101, 0.15), 90);
+        // Never below 1
+        assert_eq!(apply_shop_discount(1, 0.90), 1);
     }
 }
 

@@ -1,7 +1,7 @@
 //! Battle resolution helpers extracted from saga/battle/game.rs for cleaner game loop.
 use crate::commands::economy::core::item::Item;
 use crate::database;
-use crate::database::models::{UnitKind, UnitRarity};
+use crate::database::models::{PlayerUnit, UnitKind, UnitRarity};
 use rand::Rng;
 use rand::rng;
 use serenity::model::id::UserId;
@@ -9,6 +9,17 @@ use sqlx::PgPool;
 
 pub struct NodeVictoryResult {
     pub victory_log: Vec<String>,
+}
+
+/// Input bundle for resolving a node victory. Grouping avoids passing many arguments.
+pub struct ResolveVictoryInput {
+    pub user_id: UserId,
+    pub node_id: i32,
+    pub node_name: String,
+    pub party_units: Vec<PlayerUnit>,
+    pub vitality_mitigated: i32,
+    pub enemy_unit_ids: Vec<i32>,
+    pub focus_active: bool,
 }
 
 /// Chance table for research drops based on rarity.
@@ -26,21 +37,16 @@ fn research_drop_chance(rarity: UnitRarity) -> f64 {
 /// Compute rewards, dynamic research additions, human defeat tracking, apply payouts, and return assembled log lines.
 pub async fn resolve_node_victory(
     db: &PgPool,
-    user_id: UserId,
-    node_id: i32,
-    node_name: &str,
-    party_units: &[database::models::PlayerUnit],
-    vitality_mitigated: i32,
-    enemy_unit_ids: &[i32],
+    input: ResolveVictoryInput,
 ) -> Result<NodeVictoryResult, String> {
     // Fetch node core data
-    let node = database::world::get_map_nodes_by_ids(db, &[node_id])
+    let node = database::world::get_map_nodes_by_ids(db, &[input.node_id])
         .await
         .map_err(|_| "Node lookup failed")?
         .into_iter()
         .next()
         .ok_or_else(|| "Node not found".to_string())?;
-    let rewards = database::world::get_rewards_for_node(db, node_id)
+    let rewards = database::world::get_rewards_for_node(db, input.node_id)
         .await
         .map_err(|_| "Reward lookup failed")?;
     let mut dynamic_loot: Vec<(Item, i64)> = Vec::new();
@@ -60,7 +66,7 @@ pub async fn resolve_node_victory(
     // Accumulate enemy rarity weights for reward scaling.
     let mut rarity_scaler: f64 = 0.0;
     let mut rarity_count: usize = 0;
-    if let Ok(enemy_units) = database::units::get_units_by_ids(db, enemy_unit_ids).await {
+    if let Ok(enemy_units) = database::units::get_units_by_ids(db, &input.enemy_unit_ids).await {
         let mut human_units: Vec<crate::database::models::Unit> = Vec::new();
         for meta in enemy_units.iter() {
             // Add to rarity scaling (all enemies contribute equally weight 1).
@@ -84,7 +90,11 @@ pub async fn resolve_node_victory(
                 )
             {
                 if let Some(research_item) = Item::research_item_for_unit(&meta.name) {
-                    let chance = research_drop_chance(meta.rarity);
+                    let mut chance = research_drop_chance(meta.rarity);
+                    // Apply focus buff multiplier if active
+                    if input.focus_active {
+                        chance = (chance * crate::constants::FOCUS_TONIC_BONUS_MULT).min(0.95);
+                    }
                     if chance > 0.0 {
                         let mut roll_rng = rng();
                         let roll: f64 = roll_rng.random();
@@ -99,7 +109,7 @@ pub async fn resolve_node_victory(
         }
         // Record defeats for humans after RNG loop (sequential, no RNG held across await)
         for h in human_units {
-            let _ = database::human::record_human_defeat(db, user_id, &h).await;
+            let _ = database::human::record_human_defeat(db, input.user_id, &h).await;
         }
     }
     // Derive average rarity multiplier if any enemies processed.
@@ -122,26 +132,31 @@ pub async fn resolve_node_victory(
     // Apply rewards
     let results = database::units::apply_battle_rewards(
         db,
-        user_id,
+        input.user_id,
         scaled_coins,
         &dynamic_loot,
-        party_units,
+        &input.party_units,
         scaled_xp,
     )
     .await
     .map_err(|_| "Apply rewards failed")?;
-    database::saga::advance_story_progress(db, user_id, node_id)
+    database::saga::advance_story_progress(db, input.user_id, input.node_id)
         .await
         .ok();
-    database::tasks::update_task_progress(db, user_id, &format!("WinBattle:{}", node_id), 1)
-        .await
-        .ok();
-    database::tasks::update_task_progress(db, user_id, "WinBattle", 1)
+    database::tasks::update_task_progress(
+        db,
+        input.user_id,
+        &format!("WinBattle:{}", input.node_id),
+        1,
+    )
+    .await
+    .ok();
+    database::tasks::update_task_progress(db, input.user_id, "WinBattle", 1)
         .await
         .ok();
 
     let mut log = vec![
-        format!("🎉 **Victory at the {}!**", node_name),
+        format!("🎉 **Victory at the {}!**", input.node_name),
         if (scaled_coins - node.reward_coins).abs() > 0 {
             format!(
                 "💰 You earned **{}** coins ({} base × {:.2} rarity).",
@@ -151,6 +166,14 @@ pub async fn resolve_node_victory(
             format!("💰 You earned **{}** coins.", scaled_coins)
         },
     ];
+    // Show Focus buff note when active to explain boosted research drop odds.
+    if input.focus_active {
+        let bonus = ((crate::constants::FOCUS_TONIC_BONUS_MULT - 1.0) * 100.0).round() as i32;
+        log.push(format!(
+            "🧠 Focus active (+{}% research drop chance this battle).",
+            bonus
+        ));
+    }
     if !dynamic_loot.is_empty() {
         let loot_str = dynamic_loot
             .iter()
@@ -159,15 +182,15 @@ pub async fn resolve_node_victory(
             .join(", ");
         log.push(format!("🎁 You found: **{}**!", loot_str));
     }
-    if vitality_mitigated > 0 {
+    if input.vitality_mitigated > 0 {
         log.push(format!(
             "🛡️ Vitality prevented **{}** damage this battle.",
-            vitality_mitigated
+            input.vitality_mitigated
         ));
     }
     log.push("\n--- **Party Members Gained XP** ---".to_string());
     for (idx, res) in results.iter().enumerate() {
-        if let Some(pu) = party_units.get(idx) {
+        if let Some(pu) = input.party_units.get(idx) {
             let name = pu.nickname.as_deref().unwrap_or(&pu.name);
             if res.did_level_up {
                 log.push(format!(

@@ -5,7 +5,7 @@ use super::hand_eval::evaluate_hand;
 use super::state::{GamePhase, HandRank, Player, PlayerStatus, PokerGame};
 use crate::commands::games::card::Rank;
 use crate::commands::games::deck::Deck;
-use crate::commands::games::engine::{Game, GamePayout, GameUpdate};
+use crate::commands::games::{Game, GamePayout, GameUpdate};
 use serenity::async_trait;
 use serenity::builder::{
     CreateActionRow, CreateEmbed, CreateInteractionResponse, CreateInteractionResponseMessage,

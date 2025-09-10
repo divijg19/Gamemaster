@@ -2,15 +2,15 @@
 //! adhering to the generic `Game` trait.
 
 use super::state::{GameState, Move, RoundOutcome};
-use crate::commands::games::engine::{Game, GamePayout, GameUpdate};
+use crate::commands::games::{Game, GamePayout, GameUpdate};
 use serenity::async_trait;
 use serenity::builder::{
     CreateActionRow, CreateEmbed, CreateEmbedFooter, CreateInteractionResponse,
     CreateInteractionResponseMessage,
 };
 // narrow padding supplied by Btn::narrow
-use serenity::model::application::ComponentInteraction;
 use crate::ui::buttons::Btn;
+use serenity::model::application::ComponentInteraction;
 use serenity::model::id::UserId;
 use serenity::prelude::Context;
 use sqlx::PgPool;
@@ -317,11 +317,17 @@ impl RpsGame {
         embed = embed.field("\u{200B}", challenge_text, false);
         let buttons = vec![
             Btn::success(
-                &format!("rps_accept_{}_{}", self.state.player1.id, self.state.player2.id),
+                &format!(
+                    "rps_accept_{}_{}",
+                    self.state.player1.id, self.state.player2.id
+                ),
                 "✅ Accept",
             ),
             Btn::danger(
-                &format!("rps_decline_{}_{}", self.state.player1.id, self.state.player2.id),
+                &format!(
+                    "rps_decline_{}_{}",
+                    self.state.player1.id, self.state.player2.id
+                ),
                 "❌ Decline",
             ),
         ];

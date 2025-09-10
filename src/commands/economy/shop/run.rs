@@ -3,7 +3,7 @@
 use super::game::ShopGame;
 use super::state::ShopSession;
 use crate::AppState;
-use crate::commands::games::engine::{Game, GameManager};
+use crate::commands::games::{Game, GameManager};
 use serenity::builder::{
     CreateCommand, CreateInteractionResponse, CreateInteractionResponseMessage, CreateMessage,
     EditMessage,

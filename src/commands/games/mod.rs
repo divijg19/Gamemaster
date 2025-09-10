@@ -14,5 +14,4 @@ pub mod engine;
 //    instead of the more verbose `use crate::commands::games::engine::Game;`.
 //    The `unused_imports` warning from clippy on this line is expected and can be ignored,
 //    as the purpose of this file is to export these items for external use.
-#[allow(unused_imports)]
 pub use engine::{Game, GameManager, GamePayout, GameUpdate};

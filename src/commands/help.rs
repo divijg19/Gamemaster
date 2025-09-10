@@ -277,8 +277,8 @@ const COMMANDS: &[CommandInfo] = &[
 ];
 
 /// Public helper returning all registered primary help command names.
-/// Exposed for integration tests to ensure help coverage. Marked allow(dead_code)
-/// because it's only referenced externally by tests.
+/// Exposed for integration tests to ensure help coverage. This is not
+/// referenced by the binary itself, so allow dead_code here intentionally.
 #[allow(dead_code)]
 pub fn all_command_names() -> Vec<&'static str> {
     COMMANDS.iter().map(|c| c.name).collect()

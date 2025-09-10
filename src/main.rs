@@ -1,4 +1,4 @@
-use crate::commands::games::engine::GameManager;
+use crate::commands::games::GameManager;
 use crate::handler::Handler;
 use crate::model::{AppState, ShardManagerContainer};
 use serenity::model::gateway::GatewayIntents;
@@ -84,6 +84,7 @@ async fn serenity(
         research_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
         nav_stacks: Arc::new(RwLock::new(std::collections::HashMap::new())),
         saga_profile_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
+        focus_buff_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
         tavern_daily_cache: Arc::new(RwLock::new(None)),
     });
     tracing::info!(target: "setup", "Shared application state initialized");

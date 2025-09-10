@@ -6,8 +6,13 @@ breaking changes in minor bumps (`0.x.0`). Dates use `YYYY-MM-DD`.
 
 ## [Unreleased]
 ### Added
-- Tavern rotation enhancements: deterministic daily list, per‑user persistence, favor tiers & progress, hire confirmation, two‑step reroll, rotation diff highlighting, rarity‑scaled hire costs (rounded), affordable stats (✔ markers, avg cost, affordable count).
+- Tavern rotation enhancements: deterministic daily list, per‑user persistence, fame tiers & progress, hire confirmation, two‑step reroll, rotation diff highlighting, rarity‑scaled hire costs (rounded), affordable stats (✔ markers, avg cost, affordable count).
 - In‑memory tavern daily cache (date keyed) reducing rebuild churn.
+- Tavern Home with sections (Goods, Games, Quests, Recruitment, Shop). Submenus wired:
+	- Goods: functional purchase flow (catalog, confirm/cancel) with atomic coin deduction + inventory add, balance-aware buttons.
+	- Shop (Small Arms): basic starter catalog (Greater Health Potion, XP Booster, Contract Parchments) with confirm/cancel and atomic purchase; Home/Recruitment/back rows consistent with Goods.
+	- Quests: integrated with the real Quest Board UI (accept buttons active), with Home/Recruitment/back rows.
+	- Consistent Home/back/refresh rows across all Tavern flows.
 - World map: node preview embeds; area grouping & navigation (A1..), focused area view (SagaView::MapArea) with persistent nav state.
 - Difficulty-based battle node button styling and legend.
 - Battle scaling: enemy stat scaling vs story progress gap; reward scaling (coins/XP) by avg enemy rarity (clamped ×2.25).
@@ -30,6 +35,7 @@ breaking changes in minor bumps (`0.x.0`). Dates use `YYYY-MM-DD`.
  - Prevented component overflow interaction failures by capping world map/area rows to 5.
  - Replaced explicit counter loops with `enumerate` to satisfy clippy; resolved minor lints in saga UI.
  - Training "no units" view no longer strands the user; global nav always present.
+- Hire flow hardening: confirm id parsing precedence, rotation membership validation, and early pet gating; Tavern now always renders a usable Back/Refresh.
 
 ### Removed
 - Legacy uncached tavern builder (`build_tavern_state`).
@@ -43,7 +49,7 @@ breaking changes in minor bumps (`0.x.0`). Dates use `YYYY-MM-DD`.
 - Expanded procedural encounters & node diversity.
 - Battle & map integration tests (snapshot, mitigation assertions).
 - Rate limiting remaining non-saga handlers.
- - Tavern reroll hardening: single-transaction flow combining balance deduction, rotation overwrite, and reroll counter update.
+- Tavern reroll hardening: implemented single-transaction flow combining balance deduction, rotation overwrite, and reroll counter update.
  - Integration test to verify persistence of fallback enemy generation for empty nodes.
 
 ## [0.1.0] - 2025-09-04

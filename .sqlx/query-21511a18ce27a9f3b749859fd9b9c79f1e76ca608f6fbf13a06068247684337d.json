@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT current_ap, max_ap, current_tp, max_tp FROM player_saga_profile WHERE user_id = $1 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "current_ap",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "max_ap",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "current_tp",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "max_tp",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "21511a18ce27a9f3b749859fd9b9c79f1e76ca608f6fbf13a06068247684337d"
+}
