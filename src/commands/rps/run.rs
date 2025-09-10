@@ -2,7 +2,7 @@
 
 use super::game::RpsGame;
 use super::state::{DuelFormat, GameState};
-use crate::commands::games::engine::{Game, GameManager};
+use crate::commands::games::{Game, GameManager};
 use serenity::builder::{
     CreateCommand, CreateCommandOption, CreateInteractionResponse,
     CreateInteractionResponseMessage, CreateMessage, EditInteractionResponse, EditMessage,

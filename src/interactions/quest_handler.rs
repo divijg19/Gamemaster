@@ -1,6 +1,6 @@
 //! Handles all component interactions for the `/quests` command family.
 
-use crate::commands::games::engine::GameManager;
+use crate::commands::games::GameManager;
 use crate::database;
 use crate::saga::battle::game::BattleGame;
 use crate::saga::battle::state::{BattleSession, BattleUnit};

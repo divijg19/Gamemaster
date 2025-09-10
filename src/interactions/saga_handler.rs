@@ -1,6 +1,6 @@
 //! Handles all component interactions for the `saga` command family.
 
-use crate::commands::games::engine::Game;
+use crate::commands::games::Game;
 use crate::saga::battle::game::BattleGame;
 // (✓) FIXED: Import the specific structs needed, removing the unused `BattlePhase`.
 use super::util::{defer_component, edit_component, handle_global_nav, handle_saga_back_refresh};
@@ -22,6 +22,324 @@ use tracing::instrument;
 // (Removed local edit helper; using util::edit_component for consistency.)
 
 // Local cache helpers removed (centralized in services::saga).
+
+// Centralized Tavern pricing for Goods and Small Arms menus.
+fn tavern_price(item: crate::commands::economy::core::item::Item) -> Option<i64> {
+    use crate::commands::economy::core::item::Item as I;
+    match item {
+        I::HealthPotion => Some(50),
+        I::FocusTonic => Some(125),
+        I::StaminaDraft => Some(125),
+        I::TamingLure => Some(200),
+        I::GreaterHealthPotion => Some(150),
+        I::XpBooster => item.properties().buy_price.or(Some(2000)),
+        I::ForestContractParchment => Some(300),
+        I::FrontierContractParchment => Some(500),
+        _ => None,
+    }
+}
+
+// Small helper: render the Tavern Goods view consistently, with optional notice line.
+async fn render_tavern_goods_view(
+    ctx: &Context,
+    component: &mut ComponentInteraction,
+    app_state: &Arc<AppState>,
+    notice: Option<String>,
+) {
+    use crate::commands::economy::core::item::Item;
+    use serenity::builder::{CreateActionRow, CreateEmbed};
+    let db = &app_state.db;
+    let catalog: Vec<Item> = vec![
+        Item::HealthPotion,
+        Item::FocusTonic,
+        Item::StaminaDraft,
+        Item::TamingLure,
+    ];
+    // Focus status for banner/disable
+    let focus_state = crate::services::cache::get_with_ttl_and_remaining(
+        &app_state.focus_buff_cache,
+        &component.user.id.get(),
+        std::time::Duration::from_secs(crate::constants::FOCUS_TONIC_TTL_SECS),
+    )
+    .await;
+    // Profile + discount
+    let profile = crate::database::economy::get_or_create_profile(db, component.user.id)
+        .await
+        .unwrap_or(crate::database::models::Profile {
+            balance: 0,
+            last_work: None,
+            work_streak: 0,
+            fishing_xp: 0,
+            fishing_level: 1,
+            mining_xp: 0,
+            mining_level: 1,
+            coding_xp: 0,
+            coding_level: 1,
+        });
+    let (_, meta_tmp) =
+        crate::commands::saga::tavern::build_tavern_state_cached(app_state, component.user.id)
+            .await
+            .unwrap_or((
+                Vec::new(),
+                crate::commands::saga::tavern::TavernUiMeta {
+                    balance: profile.balance,
+                    fame: 0,
+                    fame_tier: 0,
+                    fame_progress: 0.0,
+                    daily_rerolls_used: 0,
+                    max_daily_rerolls: crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS,
+                    reroll_cost: crate::commands::saga::tavern::TAVERN_REROLL_COST,
+                    can_reroll: false,
+                },
+            ));
+    let (shop_disc, _, _) = crate::commands::saga::tavern::fame_perks(meta_tmp.fame_tier);
+    let mut embed = CreateEmbed::new()
+        .title("Tavern Goods")
+        .description({
+            let mut s = format!(
+                "Buy consumables and aids.{}",
+                if shop_disc > 0.0 {
+                    format!(" Fame discount: -{}%", (shop_disc * 100.0) as i32)
+                } else {
+                    String::new()
+                }
+            );
+            if let Some((active, remaining)) = &focus_state
+                && *active
+            {
+                let mins = remaining.as_secs() / 60;
+                let secs = remaining.as_secs() % 60;
+                s.push_str(&format!(
+                    "\n🧠 Focus active: {:02}:{:02} remaining.",
+                    mins, secs
+                ));
+            }
+            if let Some(msg) = &notice {
+                s.push_str(&format!("\nℹ️ {}", msg));
+            }
+            s
+        })
+        .field(
+            "Balance",
+            format!("{} {}", crate::ui::style::EMOJI_COIN, profile.balance),
+            true,
+        )
+        .color(crate::ui::style::COLOR_SAGA_TAVERN);
+    let mut buy_buttons = Vec::new();
+    for item in &catalog {
+        let base = tavern_price(*item).unwrap_or(1_000_000);
+        let cost = crate::commands::saga::tavern::apply_shop_discount(base, shop_disc);
+        let label = format!("{} {}", item.emoji(), item.display_name());
+        let desc = item.properties().description;
+        embed = embed.field(
+            label,
+            format!("{}\nCost: {} {}", desc, crate::ui::style::EMOJI_COIN, cost),
+            true,
+        );
+        buy_buttons.push(
+            crate::ui::buttons::Btn::success(
+                &format!("saga_tavern_buy_{}", *item as i32),
+                &format!("Buy {} {}", item.emoji(), item.display_name()),
+            )
+            .disabled(profile.balance < cost),
+        );
+    }
+    let mut rows = vec![CreateActionRow::Buttons(buy_buttons)];
+    // Use row
+    use crate::database::economy::get_inventory_item_simple;
+    let mut use_buttons: Vec<serenity::builder::CreateButton> = Vec::new();
+    for use_item in [Item::FocusTonic, Item::StaminaDraft] {
+        let qty = get_inventory_item_simple(db, component.user.id, use_item)
+            .await
+            .ok()
+            .flatten()
+            .map(|i| i.quantity)
+            .unwrap_or(0);
+        let label = match use_item {
+            Item::FocusTonic => {
+                if let Some((active, remaining)) = &focus_state {
+                    if *active {
+                        let mins = remaining.as_secs() / 60;
+                        let secs = remaining.as_secs() % 60;
+                        format!(
+                            "{} Focus active ({:02}:{:02})",
+                            use_item.emoji(),
+                            mins,
+                            secs
+                        )
+                    } else {
+                        format!(
+                            "Use {} {} ({} in bag)",
+                            use_item.emoji(),
+                            use_item.display_name(),
+                            qty
+                        )
+                    }
+                } else {
+                    format!(
+                        "Use {} {} ({} in bag)",
+                        use_item.emoji(),
+                        use_item.display_name(),
+                        qty
+                    )
+                }
+            }
+            Item::StaminaDraft => format!(
+                "Use {} {} ({} in bag)",
+                use_item.emoji(),
+                use_item.display_name(),
+                qty
+            ),
+            _ => String::new(),
+        };
+        use_buttons.push(
+            crate::ui::buttons::Btn::primary(&format!("saga_tavern_use_{}", use_item.id()), &label)
+                .disabled(match use_item {
+                    Item::FocusTonic => {
+                        qty <= 0 || focus_state.as_ref().map(|(a, _)| *a).unwrap_or(false)
+                    }
+                    _ => qty <= 0,
+                }),
+        );
+    }
+    rows.push(CreateActionRow::Buttons(use_buttons));
+    // Home/Recruitment
+    rows.push(CreateActionRow::Buttons(vec![
+        crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
+        crate::ui::buttons::Btn::primary(crate::interactions::ids::SAGA_TAVERN, "🧭 Recruitment"),
+    ]));
+    // Back/Refresh + Global nav
+    let depth = app_state
+        .nav_stacks
+        .read()
+        .await
+        .get(&component.user.id.get())
+        .map(|s| s.stack.len())
+        .unwrap_or(1);
+    if let Some(row) = crate::commands::saga::ui::back_refresh_row(depth) {
+        rows.push(row);
+    }
+    rows.push(crate::commands::saga::ui::global_nav_row("saga"));
+    crate::interactions::util::edit_component(
+        ctx,
+        component,
+        "tavern.goods",
+        serenity::builder::EditInteractionResponse::new()
+            .embed(embed)
+            .components(rows),
+    )
+    .await;
+}
+
+// Small helper: render the Tavern Small Arms shop consistently, with optional notice line.
+async fn render_tavern_shop_view(
+    ctx: &Context,
+    component: &mut ComponentInteraction,
+    app_state: &Arc<AppState>,
+    notice: Option<String>,
+) {
+    use crate::commands::economy::core::item::Item;
+    use serenity::builder::{CreateActionRow, CreateEmbed};
+    let db = &app_state.db;
+    let catalog: Vec<Item> = crate::commands::saga::tavern::get_daily_shop_items(component.user.id);
+    let profile = crate::database::economy::get_or_create_profile(db, component.user.id)
+        .await
+        .unwrap_or(crate::database::models::Profile {
+            balance: 0,
+            last_work: None,
+            work_streak: 0,
+            fishing_xp: 0,
+            fishing_level: 1,
+            mining_xp: 0,
+            mining_level: 1,
+            coding_xp: 0,
+            coding_level: 1,
+        });
+    let (_, meta_tmp) =
+        crate::commands::saga::tavern::build_tavern_state_cached(app_state, component.user.id)
+            .await
+            .unwrap_or((
+                Vec::new(),
+                crate::commands::saga::tavern::TavernUiMeta {
+                    balance: profile.balance,
+                    fame: 0,
+                    fame_tier: 0,
+                    fame_progress: 0.0,
+                    daily_rerolls_used: 0,
+                    max_daily_rerolls: crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS,
+                    reroll_cost: crate::commands::saga::tavern::TAVERN_REROLL_COST,
+                    can_reroll: false,
+                },
+            ));
+    let (shop_disc, _, _) = crate::commands::saga::tavern::fame_perks(meta_tmp.fame_tier);
+    let mut embed = CreateEmbed::new()
+        .title("Tavern Shop — Small Arms")
+        .description({
+            let mut s = format!(
+                "Basic gear and parchments for newcomers. Rotates daily. Resets in {}.",
+                crate::commands::saga::tavern::time_until_reset_str()
+            );
+            if shop_disc > 0.0 {
+                s.push_str(&format!(" Fame discount: -{}%", (shop_disc * 100.0) as i32));
+            }
+            if let Some(msg) = &notice {
+                s.push_str(&format!("\nℹ️ {}", msg));
+            }
+            s
+        })
+        .field(
+            "Balance",
+            format!("{} {}", crate::ui::style::EMOJI_COIN, profile.balance),
+            true,
+        )
+        .color(crate::ui::style::COLOR_SAGA_TAVERN);
+    let mut buy_buttons = Vec::new();
+    for item in &catalog {
+        let base = tavern_price(*item).unwrap_or(1_000_000);
+        let cost = crate::commands::saga::tavern::apply_shop_discount(base, shop_disc);
+        let label = format!("{} {}", item.emoji(), item.display_name());
+        let desc = item.properties().description;
+        embed = embed.field(
+            label,
+            format!("{}\nCost: {} {}", desc, crate::ui::style::EMOJI_COIN, cost),
+            true,
+        );
+        buy_buttons.push(
+            crate::ui::buttons::Btn::success(
+                &format!("saga_tavern_shop_buy_{}", *item as i32),
+                &format!("Buy {} {}", item.emoji(), item.display_name()),
+            )
+            .disabled(profile.balance < cost),
+        );
+    }
+    let mut rows = vec![CreateActionRow::Buttons(buy_buttons)];
+    // Home + Recruitment row
+    rows.push(CreateActionRow::Buttons(vec![
+        crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
+        crate::ui::buttons::Btn::primary(crate::interactions::ids::SAGA_TAVERN, "🧭 Recruitment"),
+    ]));
+    // Back/Refresh + Global nav
+    let depth = app_state
+        .nav_stacks
+        .read()
+        .await
+        .get(&component.user.id.get())
+        .map(|s| s.stack.len())
+        .unwrap_or(1);
+    if let Some(row) = crate::commands::saga::ui::back_refresh_row(depth) {
+        rows.push(row);
+    }
+    rows.push(crate::commands::saga::ui::global_nav_row("saga"));
+    crate::interactions::util::edit_component(
+        ctx,
+        component,
+        "tavern.shop",
+        serenity::builder::EditInteractionResponse::new()
+            .embed(embed)
+            .components(rows),
+    )
+    .await;
+}
 
 #[instrument(level="debug", skip(ctx, component, app_state), fields(user_id = component.user.id.get(), cid = %component.data.custom_id))]
 pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_state: Arc<AppState>) {
@@ -151,7 +469,224 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             }
             return;
         }
-        // (Removed duplicate early tutorial handler; consolidated later in file around line ~630)
+        Some(&"tavern") if raw_id.starts_with("saga_tavern_use_") => {
+            use crate::commands::economy::core::item::Item;
+            // Parse item id
+            let id_str = raw_id.trim_start_matches("saga_tavern_use_");
+            let Some(item_id) = id_str.parse::<i32>().ok() else {
+                edit_component(
+                    ctx,
+                    component,
+                    "tavern.use.bad_id",
+                    EditInteractionResponse::new().content("Invalid item id."),
+                )
+                .await;
+                return;
+            };
+            let Some(item) = Item::from_i32(item_id) else {
+                edit_component(
+                    ctx,
+                    component,
+                    "tavern.use.unknown_item",
+                    EditInteractionResponse::new().content("Unknown item."),
+                )
+                .await;
+                return;
+            };
+            match item {
+                Item::FocusTonic => {
+                    // Atomically decrement inventory; on success, set buff cache
+                    let mut tx = match db.begin().await {
+                        Ok(t) => t,
+                        Err(e) => {
+                            edit_component(
+                                ctx,
+                                component,
+                                "tavern.use.tx_err",
+                                EditInteractionResponse::new()
+                                    .content(format!("Failed to use item: {}", e)),
+                            )
+                            .await;
+                            return;
+                        }
+                    };
+                    // Ensure the user has at least 1
+                    match crate::database::economy::add_to_inventory(
+                        &mut tx,
+                        component.user.id,
+                        Item::FocusTonic,
+                        -1,
+                    )
+                    .await
+                    {
+                        Ok(()) => {
+                            let _ = tx.commit().await;
+                            // Set focus buff active in TTL cache
+                            crate::services::cache::insert(
+                                &app_state.focus_buff_cache,
+                                component.user.id.get(),
+                                true,
+                            )
+                            .await;
+                            // Re-render goods with confirmation banner
+                            component.data.custom_id = "saga_tavern_goods".into();
+                            render_tavern_goods_view(
+                                ctx,
+                                component,
+                                &app_state,
+                                Some("Focus Tonic used. Buff active.".to_string()),
+                            )
+                            .await;
+                        }
+                        Err(_) => {
+                            let _ = tx.rollback().await;
+                            edit_component(
+                                ctx,
+                                component,
+                                "tavern.use.focus.fail",
+                                EditInteractionResponse::new()
+                                    .content("You don't have a Focus Tonic."),
+                            )
+                            .await;
+                        }
+                    }
+                }
+                Item::StaminaDraft => {
+                    // Attempt to restore AP if not full; else restore TP up to a small amount.
+                    // Start a transaction to deduct the item, then update saga profile accordingly.
+                    let mut tx = match db.begin().await {
+                        Ok(t) => t,
+                        Err(e) => {
+                            edit_component(
+                                ctx,
+                                component,
+                                "tavern.use.tx_err",
+                                EditInteractionResponse::new()
+                                    .content(format!("Failed to use item: {}", e)),
+                            )
+                            .await;
+                            return;
+                        }
+                    };
+                    // Check inventory quantity FOR UPDATE
+                    match crate::database::economy::get_inventory_item(
+                        &mut tx,
+                        component.user.id,
+                        Item::StaminaDraft,
+                    )
+                    .await
+                    {
+                        Ok(Some(inv)) if inv.quantity > 0 => {
+                            // Deduct 1 now
+                            if let Err(e) = crate::database::economy::add_to_inventory(
+                                &mut tx,
+                                component.user.id,
+                                Item::StaminaDraft,
+                                -1,
+                            )
+                            .await
+                            {
+                                let _ = tx.rollback().await;
+                                edit_component(
+                                    ctx,
+                                    component,
+                                    "tavern.use.stamina.fail",
+                                    EditInteractionResponse::new()
+                                        .content(format!("Could not consume item: {}", e)),
+                                )
+                                .await;
+                                return;
+                            }
+                            // Fetch current saga profile inside tx and decide restoration
+                            let uid = component.user.id.get() as i64;
+                            // Lock profile row
+                            let current = sqlx::query!("SELECT current_ap, max_ap, current_tp, max_tp FROM player_saga_profile WHERE user_id = $1 FOR UPDATE", uid).fetch_one(&mut *tx).await;
+                            if let Ok(p) = current {
+                                let mut new_ap = p.current_ap;
+                                let mut new_tp = p.current_tp;
+                                let restore_msg = if p.current_ap < p.max_ap {
+                                    new_ap = (p.current_ap + 1).min(p.max_ap);
+                                    format!("Restored 1 AP (now {}/{}).", new_ap, p.max_ap)
+                                } else if p.current_tp < p.max_tp {
+                                    let add = 5i32.min(p.max_tp - p.current_tp);
+                                    new_tp = p.current_tp + add;
+                                    format!("Restored {} TP (now {}/{}).", add, new_tp, p.max_tp)
+                                } else {
+                                    let _ = tx.rollback().await;
+                                    edit_component(
+                                        ctx,
+                                        component,
+                                        "tavern.use.stamina.full",
+                                        EditInteractionResponse::new()
+                                            .content("Your AP and TP are already full."),
+                                    )
+                                    .await;
+                                    return;
+                                };
+                                // Apply update
+                                if let Err(e) = sqlx::query!("UPDATE player_saga_profile SET current_ap = $1, current_tp = $2 WHERE user_id = $3", new_ap, new_tp, uid).execute(&mut *tx).await {
+                                    let _ = tx.rollback().await;
+                                    edit_component(ctx, component, "tavern.use.stamina.fail2", EditInteractionResponse::new().content(format!("Could not update profile: {}", e))).await;
+                                    return;
+                                }
+                                if tx.commit().await.is_ok() {
+                                    // Invalidate saga profile cache so fresh values render
+                                    app_state.invalidate_user_caches(component.user.id).await;
+                                    // Re-render goods after success with a short confirmation notice
+                                    component.data.custom_id = "saga_tavern_goods".into();
+                                    render_tavern_goods_view(
+                                        ctx,
+                                        component,
+                                        &app_state,
+                                        Some(restore_msg),
+                                    )
+                                    .await;
+                                } else {
+                                    edit_component(
+                                        ctx,
+                                        component,
+                                        "tavern.use.stamina.commit",
+                                        EditInteractionResponse::new()
+                                            .content("Failed to commit stamina use."),
+                                    )
+                                    .await;
+                                }
+                            } else {
+                                let _ = tx.rollback().await;
+                                edit_component(
+                                    ctx,
+                                    component,
+                                    "tavern.use.stamina.no_profile",
+                                    EditInteractionResponse::new()
+                                        .content("No saga profile found."),
+                                )
+                                .await;
+                            }
+                        }
+                        _ => {
+                            let _ = tx.rollback().await;
+                            edit_component(
+                                ctx,
+                                component,
+                                "tavern.use.stamina.none",
+                                EditInteractionResponse::new()
+                                    .content("You don't have a Stamina Draft."),
+                            )
+                            .await;
+                        }
+                    }
+                }
+                _ => {
+                    edit_component(
+                        ctx,
+                        component,
+                        "tavern.use.unsupported",
+                        EditInteractionResponse::new().content("This item can't be used here."),
+                    )
+                    .await;
+                }
+            }
+        }
         // Map view activation
         Some(&"map") => {
             // Guard: need party + 1 AP
@@ -185,8 +720,13 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 .await;
                 return;
             }
-            if let Ok((embed, mut components)) =
-                push_and_render(SagaView::Map, &app_state, component.user.id, MAX_NAV_DEPTH).await
+            if let Ok((embed, mut components)) = crate::saga::view::push_and_render(
+                crate::saga::view::SagaView::Map,
+                &app_state,
+                component.user.id,
+                15,
+            )
+            .await
             {
                 let depth = app_state
                     .nav_stacks
@@ -217,234 +757,6 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 .await;
             }
         }
-        Some(&"recruit") => {
-            if let Ok((embed, mut components)) = push_and_render(
-                SagaView::Recruit,
-                &app_state,
-                component.user.id,
-                MAX_NAV_DEPTH,
-            )
-            .await
-            {
-                let depth = app_state
-                    .nav_stacks
-                    .read()
-                    .await
-                    .get(&component.user.id.get())
-                    .map(|s| s.stack.len())
-                    .unwrap_or(1);
-                if let Some(row) = back_refresh_row(depth) {
-                    components.push(row);
-                }
-                edit_component(
-                    ctx,
-                    component,
-                    "recruit.render",
-                    EditInteractionResponse::new()
-                        .embed(embed)
-                        .components(components),
-                )
-                .await;
-            } else {
-                edit_component(
-                    ctx,
-                    component,
-                    "recruit.render_err",
-                    EditInteractionResponse::new().content("Failed to render recruit view."),
-                )
-                .await;
-            }
-        }
-        Some(&"team") => {
-            if let Ok((embed, mut components)) = push_and_render(
-                SagaView::Party,
-                &app_state,
-                component.user.id,
-                MAX_NAV_DEPTH,
-            )
-            .await
-            {
-                let depth = app_state
-                    .nav_stacks
-                    .read()
-                    .await
-                    .get(&component.user.id.get())
-                    .map(|s| s.stack.len())
-                    .unwrap_or(1);
-                if let Some(row) = back_refresh_row(depth) {
-                    components.push(row);
-                }
-                edit_component(
-                    ctx,
-                    component,
-                    "team.render",
-                    EditInteractionResponse::new()
-                        .embed(embed)
-                        .components(components),
-                )
-                .await;
-            } else {
-                edit_component(
-                    ctx,
-                    component,
-                    "team.render_err",
-                    EditInteractionResponse::new().content("Failed to render party view."),
-                )
-                .await;
-            }
-        }
-        Some(&"hire") if raw_id.starts_with("saga_hire_") => {
-            // Step 1: confirmation
-            let unit_id = match raw_id.trim_start_matches("saga_hire_").parse::<i32>() {
-                Ok(v) => v,
-                Err(_) => {
-                    edit_component(
-                        ctx,
-                        component,
-                        "hire.bad_id",
-                        EditInteractionResponse::new().content("Invalid recruit id."),
-                    )
-                    .await;
-                    return;
-                }
-            };
-            let unit = match crate::database::units::get_units_by_ids(db, &[unit_id]).await {
-                Ok(mut list) if !list.is_empty() => list.remove(0),
-                _ => {
-                    edit_component(
-                        ctx,
-                        component,
-                        "hire.unit_missing",
-                        EditInteractionResponse::new()
-                            .content("That recruit is no longer available."),
-                    )
-                    .await;
-                    return;
-                }
-            };
-            let balance = crate::database::economy::get_or_create_profile(db, component.user.id)
-                .await
-                .map(|p| p.balance)
-                .unwrap_or(0);
-            let embed = crate::commands::saga::tavern::create_hire_confirmation(&unit, balance);
-            use serenity::builder::CreateActionRow;
-            let unit_cost = crate::commands::saga::tavern::hire_cost_for_rarity(unit.rarity);
-            let confirm_row = CreateActionRow::Buttons(vec![
-                crate::ui::buttons::Btn::success(
-                    &format!("saga_hire_confirm_{}", unit_id),
-                    "✅ Confirm",
-                )
-                .disabled(balance < unit_cost),
-                crate::ui::buttons::Btn::secondary("saga_tavern_cancel", "❌ Cancel"),
-            ]);
-            edit_component(
-                ctx,
-                component,
-                "hire.confirm",
-                EditInteractionResponse::new().embed(embed).components(vec![
-                    confirm_row,
-                    crate::commands::saga::ui::global_nav_row("saga"),
-                ]),
-            )
-            .await;
-        }
-        Some(&"hire") if raw_id.starts_with("saga_hire_confirm_") => {
-            // Step 2: perform hire
-            let unit_id = match raw_id
-                .trim_start_matches("saga_hire_confirm_")
-                .parse::<i32>()
-            {
-                Ok(v) => v,
-                Err(_) => {
-                    edit_component(
-                        ctx,
-                        component,
-                        "hireC.bad_id",
-                        EditInteractionResponse::new().content("Invalid recruit id."),
-                    )
-                    .await;
-                    return;
-                }
-            };
-            // Look up unit again for up-to-date rarity & cost (simple second fetch acceptable here)
-            let unit_cost = match crate::database::units::get_units_by_ids(db, &[unit_id]).await {
-                Ok(list) if !list.is_empty() => {
-                    let u = &list[0];
-                    crate::commands::saga::tavern::hire_cost_for_rarity(u.rarity)
-                }
-                _ => crate::commands::saga::tavern::HIRE_COST,
-            };
-            match crate::database::units::hire_unit(db, component.user.id, unit_id, unit_cost).await
-            {
-                Ok(name) => {
-                    let _ = crate::database::tavern::add_favor(
-                        db,
-                        component.user.id,
-                        crate::commands::saga::tavern::FAVOR_PER_HIRE,
-                    )
-                    .await;
-                    let profile =
-                        crate::database::economy::get_or_create_profile(db, component.user.id)
-                            .await
-                            .ok();
-                    let balance = profile.as_ref().map(|p| p.balance).unwrap_or(0);
-                    let (recruits, meta) =
-                        match crate::commands::saga::tavern::build_tavern_state_cached(
-                            &app_state,
-                            component.user.id,
-                        )
-                        .await
-                        {
-                            Ok(v) => v,
-                            Err(_) => (
-                                Vec::new(),
-                                crate::commands::saga::tavern::TavernUiMeta {
-                                    balance,
-                                    favor: 0,
-                                    favor_tier: 0,
-                                    favor_progress: 0.0,
-                                    daily_rerolls_used: 0,
-                                    max_daily_rerolls:
-                                        crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS,
-                                    reroll_cost: crate::commands::saga::tavern::TAVERN_REROLL_COST,
-                                    can_reroll: false,
-                                },
-                            ),
-                        };
-                    let (mut tavern_embed, tavern_components) =
-                        crate::commands::saga::tavern::create_tavern_menu(&recruits, &meta);
-                    tavern_embed = tavern_embed.field(
-                        "Recruit Hired",
-                        format!(
-                            "{} joins you! (Cost {} {})",
-                            name,
-                            crate::ui::style::EMOJI_COIN,
-                            unit_cost
-                        ),
-                        false,
-                    );
-                    edit_component(
-                        ctx,
-                        component,
-                        "hireC.ok",
-                        EditInteractionResponse::new()
-                            .embed(tavern_embed)
-                            .components(tavern_components),
-                    )
-                    .await;
-                }
-                Err(e) => {
-                    edit_component(
-                        ctx,
-                        component,
-                        "hireC.fail",
-                        EditInteractionResponse::new()
-                            .content(format!("Could not hire recruit: {}", e)),
-                    )
-                    .await;
-                }
-            }
-        }
         Some(&"tavern") if raw_id == "saga_tavern_cancel" => {
             // Session pagination removed; simply re-render current tavern state.
             let (recruits, meta) = match crate::commands::saga::tavern::build_tavern_state_cached(
@@ -458,9 +770,9 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     Vec::new(),
                     crate::commands::saga::tavern::TavernUiMeta {
                         balance: 0,
-                        favor: 0,
-                        favor_tier: 0,
-                        favor_progress: 0.0,
+                        fame: 0,
+                        fame_tier: 0,
+                        fame_progress: 0.0,
                         daily_rerolls_used: 0,
                         max_daily_rerolls: crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS,
                         reroll_cost: crate::commands::saga::tavern::TAVERN_REROLL_COST,
@@ -468,8 +780,18 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     },
                 ),
             };
-            let (embed, components) =
+            let (embed, mut components) =
                 crate::commands::saga::tavern::create_tavern_menu(&recruits, &meta);
+            let depth = app_state
+                .nav_stacks
+                .read()
+                .await
+                .get(&component.user.id.get())
+                .map(|s| s.stack.len())
+                .unwrap_or(1);
+            if let Some(row) = back_refresh_row(depth) {
+                components.push(row);
+            }
             edit_component(
                 ctx,
                 component,
@@ -511,6 +833,823 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 .await;
             }
         }
+        Some(&"tavern") if raw_id == "saga_tavern_home" => {
+            // Render a simple Tavern home menu with placeholder categories
+            use serenity::builder::CreateActionRow;
+            let embed = serenity::builder::CreateEmbed::new()
+                .title("Tavern — Common Room")
+                .description("Welcome to The Weary Dragon. What would you like to do?")
+                .color(crate::ui::style::COLOR_SAGA_TAVERN)
+                .field("1) Beers, Liquor, Food, Bait", "Consumables, buffs, and taming aids (coming soon)", false)
+                .field("2) Tavern Games", "Blackjack, Poker, and more (existing mini‑games)", false)
+                .field("3) Quests", "Meet NPCs, guilds, and mysterious patrons; earn fame and rewards (integrated with quest system)", false)
+                .field("4) Recruitment", "Hire mercenaries; Fame shown in UI (was Favor)", false)
+                .field("5) Small Arms & Petty Equipment", "Basic gear until you find better shops", false);
+            let buttons = vec![
+                crate::ui::buttons::Btn::secondary("saga_tavern_goods", "🍺 Goods"),
+                crate::ui::buttons::Btn::secondary("saga_tavern_games", "🎲 Games"),
+                crate::ui::buttons::Btn::secondary("saga_tavern_quests", "🗺 Quests"),
+                crate::ui::buttons::Btn::primary(
+                    crate::interactions::ids::SAGA_TAVERN,
+                    "🧭 Recruitment",
+                ),
+                crate::ui::buttons::Btn::secondary("saga_tavern_shop", "🗡 Shop"),
+            ];
+            let depth = app_state
+                .nav_stacks
+                .read()
+                .await
+                .get(&component.user.id.get())
+                .map(|s| s.stack.len())
+                .unwrap_or(1);
+            let mut rows = vec![CreateActionRow::Buttons(buttons)];
+            if let Some(row) = back_refresh_row(depth) {
+                rows.push(row);
+            }
+            rows.push(crate::commands::saga::ui::global_nav_row("saga"));
+            edit_component(
+                ctx,
+                component,
+                "tavern.home",
+                EditInteractionResponse::new().embed(embed).components(rows),
+            )
+            .await;
+        }
+        Some(&"tavern") if raw_id == "saga_tavern_goods" => {
+            // Unified goods renderer
+            render_tavern_goods_view(ctx, component, &app_state, None).await;
+        }
+        // Tavern: Hire flow (confirm/cancel/commit)
+        Some(&"tavern") if raw_id.starts_with("saga_hire_") => {
+            use serenity::builder::CreateActionRow;
+            let id_str = raw_id.trim_start_matches("saga_hire_");
+            let Some(unit_id) = id_str.parse::<i32>().ok() else {
+                edit_component(
+                    ctx,
+                    component,
+                    "tavern.hire.bad_id",
+                    EditInteractionResponse::new().content("Invalid unit id."),
+                )
+                .await;
+                return;
+            };
+            // Load unit and user balance
+            let units = crate::database::units::get_units_by_ids(db, &[unit_id]).await;
+            let Some(unit) = units.ok().and_then(|mut v| v.pop()) else {
+                edit_component(
+                    ctx,
+                    component,
+                    "tavern.hire.not_found",
+                    EditInteractionResponse::new().content("Unit not found."),
+                )
+                .await;
+                return;
+            };
+            if !unit.is_recruitable {
+                edit_component(
+                    ctx,
+                    component,
+                    "tavern.hire.unrecruitable",
+                    EditInteractionResponse::new().content("This unit cannot be hired."),
+                )
+                .await;
+                return;
+            }
+            let balance = crate::database::economy::get_or_create_profile(db, component.user.id)
+                .await
+                .map(|p| p.balance)
+                .unwrap_or(0);
+            // Reuse existing helper to build a consistent confirmation embed
+            let embed = crate::commands::saga::tavern::create_hire_confirmation(&unit, balance);
+            let can_afford =
+                balance >= crate::commands::saga::tavern::hire_cost_for_rarity(unit.rarity);
+            let buttons = vec![
+                crate::ui::buttons::Btn::success(
+                    &format!("saga_hire_confirm_{}", unit.unit_id),
+                    "✅ Confirm",
+                )
+                .disabled(!can_afford),
+                crate::ui::buttons::Btn::secondary("saga_hire_cancel", "❌ Cancel"),
+            ];
+            let mut rows = vec![CreateActionRow::Buttons(buttons)];
+            // Home + Recruitment row
+            rows.push(CreateActionRow::Buttons(vec![
+                crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
+                crate::ui::buttons::Btn::primary(
+                    crate::interactions::ids::SAGA_TAVERN,
+                    "🧭 Recruitment",
+                ),
+            ]));
+            // Back/Refresh + Global nav
+            let depth = app_state
+                .nav_stacks
+                .read()
+                .await
+                .get(&component.user.id.get())
+                .map(|s| s.stack.len())
+                .unwrap_or(1);
+            if let Some(row) = back_refresh_row(depth) {
+                rows.push(row);
+            }
+            rows.push(crate::commands::saga::ui::global_nav_row("saga"));
+            edit_component(
+                ctx,
+                component,
+                "tavern.hire.confirm",
+                EditInteractionResponse::new().embed(embed).components(rows),
+            )
+            .await;
+        }
+        Some(&"tavern") if raw_id == "saga_hire_cancel" => {
+            // Re-render the recruitment menu via build_tavern_state_cached
+            let (recruits, meta) = crate::commands::saga::tavern::build_tavern_state_cached(
+                &app_state,
+                component.user.id,
+            )
+            .await
+            .unwrap_or((
+                Vec::new(),
+                crate::commands::saga::tavern::TavernUiMeta {
+                    balance: 0,
+                    fame: 0,
+                    fame_tier: 0,
+                    fame_progress: 0.0,
+                    daily_rerolls_used: 0,
+                    max_daily_rerolls: crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS,
+                    reroll_cost: crate::commands::saga::tavern::TAVERN_REROLL_COST,
+                    can_reroll: false,
+                },
+            ));
+            let (embed, mut components) =
+                crate::commands::saga::tavern::create_tavern_menu(&recruits, &meta);
+            let depth = app_state
+                .nav_stacks
+                .read()
+                .await
+                .get(&component.user.id.get())
+                .map(|s| s.stack.len())
+                .unwrap_or(1);
+            if let Some(row) = back_refresh_row(depth) {
+                components.push(row);
+            }
+            edit_component(
+                ctx,
+                component,
+                "tavern.hire.cancel",
+                EditInteractionResponse::new()
+                    .embed(embed)
+                    .components(components),
+            )
+            .await;
+        }
+        Some(&"tavern") if raw_id.starts_with("saga_hire_confirm_") => {
+            // Commit hire: charge coins atomically and add unit + fame
+            let id_str = raw_id.trim_start_matches("saga_hire_confirm_");
+            let Some(unit_id) = id_str.parse::<i32>().ok() else {
+                edit_component(
+                    ctx,
+                    component,
+                    "tavern.hireC.bad_id",
+                    EditInteractionResponse::new().content("Invalid unit id."),
+                )
+                .await;
+                return;
+            };
+            // Need unit rarity to compute cost
+            let units = crate::database::units::get_units_by_ids(db, &[unit_id]).await;
+            let Some(unit) = units.ok().and_then(|mut v| v.pop()) else {
+                edit_component(
+                    ctx,
+                    component,
+                    "tavern.hireC.not_found",
+                    EditInteractionResponse::new().content("Unit not found."),
+                )
+                .await;
+                return;
+            };
+            if !unit.is_recruitable {
+                edit_component(
+                    ctx,
+                    component,
+                    "tavern.hireC.unrecruitable",
+                    EditInteractionResponse::new().content("This unit cannot be hired."),
+                )
+                .await;
+                return;
+            }
+            let cost = crate::commands::saga::tavern::hire_cost_for_rarity(unit.rarity);
+            match crate::database::units::hire_unit(db, component.user.id, unit_id, cost).await {
+                Ok(name) => {
+                    // Award small fame for hiring
+                    let _ = crate::database::tavern::add_fame(
+                        db,
+                        component.user.id,
+                        crate::commands::saga::tavern::FAME_PER_HIRE,
+                    )
+                    .await;
+                    // Re-render with fresh state
+                    let (recruits, meta) =
+                        crate::commands::saga::tavern::build_tavern_state_cached(
+                            &app_state,
+                            component.user.id,
+                        )
+                        .await
+                        .unwrap_or((
+                            Vec::new(),
+                            crate::commands::saga::tavern::TavernUiMeta {
+                                balance: 0,
+                                fame: 0,
+                                fame_tier: 0,
+                                fame_progress: 0.0,
+                                daily_rerolls_used: 0,
+                                max_daily_rerolls:
+                                    crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS,
+                                reroll_cost: crate::commands::saga::tavern::TAVERN_REROLL_COST,
+                                can_reroll: false,
+                            },
+                        ));
+                    let notice = format!(
+                        "Hired {}! Gained {} Fame.",
+                        name,
+                        crate::commands::saga::tavern::FAME_PER_HIRE
+                    );
+                    let (mut embed, mut components) =
+                        crate::commands::saga::tavern::create_tavern_menu(&recruits, &meta);
+                    embed = embed.field("Notice", notice, false);
+                    let depth = app_state
+                        .nav_stacks
+                        .read()
+                        .await
+                        .get(&component.user.id.get())
+                        .map(|s| s.stack.len())
+                        .unwrap_or(1);
+                    if let Some(row) = back_refresh_row(depth) {
+                        components.push(row);
+                    }
+                    edit_component(
+                        ctx,
+                        component,
+                        "tavern.hire.success",
+                        EditInteractionResponse::new()
+                            .embed(embed)
+                            .components(components),
+                    )
+                    .await;
+                }
+                Err(e) => {
+                    edit_component(
+                        ctx,
+                        component,
+                        "tavern.hire.fail",
+                        EditInteractionResponse::new()
+                            .content(format!("Could not hire unit: {}", e)),
+                    )
+                    .await;
+                }
+            }
+        }
+        Some(&"tavern") if raw_id.starts_with("saga_tavern_buy_") => {
+            use crate::commands::economy::core::item::Item;
+            use serenity::builder::{CreateActionRow, CreateEmbed};
+            let id_str = raw_id.trim_start_matches("saga_tavern_buy_");
+            let Some(item_id) = id_str.parse::<i32>().ok() else {
+                edit_component(
+                    ctx,
+                    component,
+                    "tavern.buy.bad_id",
+                    EditInteractionResponse::new().content("Invalid item id."),
+                )
+                .await;
+                return;
+            };
+            let Some(item) = Item::from_i32(item_id) else {
+                edit_component(
+                    ctx,
+                    component,
+                    "tavern.buy.unknown_item",
+                    EditInteractionResponse::new().content("Unknown item."),
+                )
+                .await;
+                return;
+            };
+            // Compute balance first (needed for fallback meta), then apply fame-based discount
+            let balance = crate::database::economy::get_or_create_profile(db, component.user.id)
+                .await
+                .map(|p| p.balance)
+                .unwrap_or(0);
+            let (_, meta_tmp) = crate::commands::saga::tavern::build_tavern_state_cached(
+                &app_state,
+                component.user.id,
+            )
+            .await
+            .unwrap_or((
+                Vec::new(),
+                crate::commands::saga::tavern::TavernUiMeta {
+                    balance,
+                    fame: 0,
+                    fame_tier: 0,
+                    fame_progress: 0.0,
+                    daily_rerolls_used: 0,
+                    max_daily_rerolls: crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS,
+                    reroll_cost: crate::commands::saga::tavern::TAVERN_REROLL_COST,
+                    can_reroll: false,
+                },
+            ));
+            let (shop_disc, _, _) = crate::commands::saga::tavern::fame_perks(meta_tmp.fame_tier);
+            let base = tavern_price(item).unwrap_or(1_000_000);
+            let cost: i64 = crate::commands::saga::tavern::apply_shop_discount(base, shop_disc);
+            let mut embed = CreateEmbed::new()
+                .title("Confirm Purchase")
+                .description(format!(
+                    "Buy {} {} for {} {}?\n{}",
+                    item.emoji(),
+                    item.display_name(),
+                    crate::ui::style::EMOJI_COIN,
+                    cost,
+                    item.properties().description
+                ))
+                .field(
+                    "Your Balance",
+                    format!("{} {}", crate::ui::style::EMOJI_COIN, balance),
+                    true,
+                )
+                .color(crate::ui::style::COLOR_SAGA_TAVERN);
+            if balance < cost {
+                embed = embed.field("Note", "You cannot afford this.", false);
+            }
+            let buttons = vec![
+                crate::ui::buttons::Btn::success(
+                    &format!("saga_tavern_buy_confirm_{}", item_id),
+                    "✅ Confirm",
+                )
+                .disabled(balance < cost),
+                crate::ui::buttons::Btn::secondary("saga_tavern_buy_cancel", "❌ Cancel"),
+            ];
+            let mut rows = vec![CreateActionRow::Buttons(buttons)];
+            // Home + Recruitment
+            rows.push(CreateActionRow::Buttons(vec![
+                crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
+                crate::ui::buttons::Btn::primary(
+                    crate::interactions::ids::SAGA_TAVERN,
+                    "🧭 Recruitment",
+                ),
+            ]));
+            // Back/Refresh + Global nav
+            let depth = app_state
+                .nav_stacks
+                .read()
+                .await
+                .get(&component.user.id.get())
+                .map(|s| s.stack.len())
+                .unwrap_or(1);
+            if let Some(row) = back_refresh_row(depth) {
+                rows.push(row);
+            }
+            rows.push(crate::commands::saga::ui::global_nav_row("saga"));
+            edit_component(
+                ctx,
+                component,
+                "tavern.buy.confirm",
+                EditInteractionResponse::new().embed(embed).components(rows),
+            )
+            .await;
+        }
+        Some(&"tavern") if raw_id == "saga_tavern_buy_cancel" => {
+            // Re-render goods via unified renderer
+            component.data.custom_id = "saga_tavern_goods".into();
+            render_tavern_goods_view(ctx, component, &app_state, None).await;
+        }
+        Some(&"tavern") if raw_id.starts_with("saga_tavern_buy_confirm_") => {
+            use crate::commands::economy::core::item::Item;
+            let id_str = raw_id.trim_start_matches("saga_tavern_buy_confirm_");
+            let Some(item_id) = id_str.parse::<i32>().ok() else {
+                edit_component(
+                    ctx,
+                    component,
+                    "tavern.buyC.bad_id",
+                    EditInteractionResponse::new().content("Invalid item id."),
+                )
+                .await;
+                return;
+            };
+            let Some(item) = Item::from_i32(item_id) else {
+                edit_component(
+                    ctx,
+                    component,
+                    "tavern.buyC.unknown_item",
+                    EditInteractionResponse::new().content("Unknown item."),
+                )
+                .await;
+                return;
+            };
+            // Apply fame-based discount for Goods purchases
+            let profile_balance =
+                crate::database::economy::get_or_create_profile(db, component.user.id)
+                    .await
+                    .map(|p| p.balance)
+                    .unwrap_or(0);
+            let (_, meta_tmp) = crate::commands::saga::tavern::build_tavern_state_cached(
+                &app_state,
+                component.user.id,
+            )
+            .await
+            .unwrap_or((
+                Vec::new(),
+                crate::commands::saga::tavern::TavernUiMeta {
+                    balance: profile_balance,
+                    fame: 0,
+                    fame_tier: 0,
+                    fame_progress: 0.0,
+                    daily_rerolls_used: 0,
+                    max_daily_rerolls: crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS,
+                    reroll_cost: crate::commands::saga::tavern::TAVERN_REROLL_COST,
+                    can_reroll: false,
+                },
+            ));
+            let (shop_disc, _, _) = crate::commands::saga::tavern::fame_perks(meta_tmp.fame_tier);
+            let base = tavern_price(item).unwrap_or(1_000_000);
+            let cost: i64 = crate::commands::saga::tavern::apply_shop_discount(base, shop_disc);
+            // Atomic purchase
+            let mut tx = match db.begin().await {
+                Ok(t) => t,
+                Err(e) => {
+                    edit_component(
+                        ctx,
+                        component,
+                        "tavern.buyC.tx_err",
+                        EditInteractionResponse::new()
+                            .content(format!("Failed to start purchase: {}", e)),
+                    )
+                    .await;
+                    return;
+                }
+            };
+            let res = {
+                match crate::database::economy::add_balance(&mut tx, component.user.id, -cost).await
+                {
+                    Ok(()) => {
+                        crate::database::economy::add_to_inventory(
+                            &mut tx,
+                            component.user.id,
+                            item,
+                            1,
+                        )
+                        .await
+                    }
+                    Err(e) => Err(e),
+                }
+            };
+            match res {
+                Ok(()) => {
+                    if tx.commit().await.is_err() {
+                        edit_component(
+                            ctx,
+                            component,
+                            "tavern.buyC.commit_err",
+                            EditInteractionResponse::new().content("Purchase failed to commit."),
+                        )
+                        .await;
+                        return;
+                    }
+                    // Re-render goods with a succinct purchase notice
+                    component.data.custom_id = "saga_tavern_goods".into();
+                    let notice = Some(format!(
+                        "You bought {} for {} {}.",
+                        item.display_name(),
+                        crate::ui::style::EMOJI_COIN,
+                        cost
+                    ));
+                    render_tavern_goods_view(ctx, component, &app_state, notice).await;
+                }
+                Err(_) => {
+                    // Likely insufficient funds or race; rollback auto on drop
+                    let _ = tx.rollback().await;
+                    edit_component(
+                        ctx,
+                        component,
+                        "tavern.buyC.fail",
+                        EditInteractionResponse::new()
+                            .content("Could not complete purchase (balance changed?)."),
+                    )
+                    .await;
+                }
+            }
+        }
+        Some(&"tavern") if raw_id == "saga_tavern_games" => {
+            use serenity::builder::{CreateActionRow, CreateEmbed};
+            let embed = CreateEmbed::new()
+                .title("Tavern Games")
+                .description("Challenge the house or friends.")
+                .field("Blackjack", "Play vs the dealer.", true)
+                .field("Poker", "WIP.", true)
+                .color(crate::ui::style::COLOR_SAGA_TAVERN);
+            let buttons = vec![
+                crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
+                crate::ui::buttons::Btn::primary(
+                    crate::interactions::ids::SAGA_TAVERN,
+                    "🧭 Recruitment",
+                ),
+            ];
+            let depth = app_state
+                .nav_stacks
+                .read()
+                .await
+                .get(&component.user.id.get())
+                .map(|s| s.stack.len())
+                .unwrap_or(1);
+            let mut rows = vec![CreateActionRow::Buttons(buttons)];
+            if let Some(row) = back_refresh_row(depth) {
+                rows.push(row);
+            }
+            rows.push(crate::commands::saga::ui::global_nav_row("saga"));
+            edit_component(
+                ctx,
+                component,
+                "tavern.games",
+                EditInteractionResponse::new().embed(embed).components(rows),
+            )
+            .await;
+        }
+        Some(&"tavern") if raw_id == "saga_tavern_quests" => {
+            // Wire to real quest board UI
+            match crate::database::quests::get_or_refresh_quest_board(db, component.user.id).await {
+                Ok(board) => {
+                    let (mut embed, mut rows) =
+                        crate::commands::quests::ui::create_quest_board_embed(&board);
+                    embed = embed.title("Tavern — Quest Offers");
+                    // Prepend Home + Recruitment row
+                    rows.insert(
+                        0,
+                        serenity::builder::CreateActionRow::Buttons(vec![
+                            crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
+                            crate::ui::buttons::Btn::primary(
+                                crate::interactions::ids::SAGA_TAVERN,
+                                "🧭 Recruitment",
+                            ),
+                        ]),
+                    );
+                    // Insert back/refresh before global nav if possible
+                    let depth = app_state
+                        .nav_stacks
+                        .read()
+                        .await
+                        .get(&component.user.id.get())
+                        .map(|s| s.stack.len())
+                        .unwrap_or(1);
+                    if let Some(row) = back_refresh_row(depth) {
+                        // Keep under 5 rows: ensure we don't exceed by removing extra if needed
+                        if rows.len() >= 4 {
+                            // remove last non-global row if too many (accepts stay)
+                            let _ = rows.pop();
+                        }
+                        rows.insert(1, row);
+                    }
+                    edit_component(
+                        ctx,
+                        component,
+                        "tavern.quests",
+                        EditInteractionResponse::new().embed(embed).components(rows),
+                    )
+                    .await;
+                }
+                Err(e) => {
+                    edit_component(
+                        ctx,
+                        component,
+                        "tavern.quests.err",
+                        EditInteractionResponse::new()
+                            .content(format!("Failed to load quest board: {}", e)),
+                    )
+                    .await;
+                }
+            }
+        }
+        Some(&"tavern") if raw_id == "saga_tavern_shop" => {
+            render_tavern_shop_view(ctx, component, &app_state, None).await;
+        }
+        Some(&"tavern") if raw_id.starts_with("saga_tavern_shop_buy_") => {
+            use crate::commands::economy::core::item::Item;
+            use serenity::builder::{CreateActionRow, CreateEmbed};
+            let id_str = raw_id.trim_start_matches("saga_tavern_shop_buy_");
+            let Some(item_id) = id_str.parse::<i32>().ok() else {
+                edit_component(
+                    ctx,
+                    component,
+                    "tavern.shop.bad_id",
+                    EditInteractionResponse::new().content("Invalid item id."),
+                )
+                .await;
+                return;
+            };
+            let Some(item) = Item::from_i32(item_id) else {
+                edit_component(
+                    ctx,
+                    component,
+                    "tavern.shop.unknown_item",
+                    EditInteractionResponse::new().content("Unknown item."),
+                )
+                .await;
+                return;
+            };
+            // Price via centralized helper with fame-based discount (to match listing and charge)
+            let balance = crate::database::economy::get_or_create_profile(db, component.user.id)
+                .await
+                .map(|p| p.balance)
+                .unwrap_or(0);
+            let (_, meta_tmp) = crate::commands::saga::tavern::build_tavern_state_cached(
+                &app_state,
+                component.user.id,
+            )
+            .await
+            .unwrap_or((
+                Vec::new(),
+                crate::commands::saga::tavern::TavernUiMeta {
+                    balance,
+                    fame: 0,
+                    fame_tier: 0,
+                    fame_progress: 0.0,
+                    daily_rerolls_used: 0,
+                    max_daily_rerolls: crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS,
+                    reroll_cost: crate::commands::saga::tavern::TAVERN_REROLL_COST,
+                    can_reroll: false,
+                },
+            ));
+            let (shop_disc, _, _) = crate::commands::saga::tavern::fame_perks(meta_tmp.fame_tier);
+            let base = tavern_price(item).unwrap_or(1_000_000);
+            let cost: i64 = crate::commands::saga::tavern::apply_shop_discount(base, shop_disc);
+            let mut embed = CreateEmbed::new()
+                .title("Confirm Purchase — Small Arms")
+                .description(format!(
+                    "Buy {} {} for {} {}?\n{}",
+                    item.emoji(),
+                    item.display_name(),
+                    crate::ui::style::EMOJI_COIN,
+                    cost,
+                    item.properties().description
+                ))
+                .field(
+                    "Your Balance",
+                    format!("{} {}", crate::ui::style::EMOJI_COIN, balance),
+                    true,
+                )
+                .color(crate::ui::style::COLOR_SAGA_TAVERN);
+            if balance < cost {
+                embed = embed.field("Note", "You cannot afford this.", false);
+            }
+            let buttons = vec![
+                crate::ui::buttons::Btn::success(
+                    &format!("saga_tavern_shop_buy_confirm_{}", item_id),
+                    "✅ Confirm",
+                )
+                .disabled(balance < cost),
+                crate::ui::buttons::Btn::secondary("saga_tavern_shop_buy_cancel", "❌ Cancel"),
+            ];
+            let mut rows = vec![CreateActionRow::Buttons(buttons)];
+            rows.push(CreateActionRow::Buttons(vec![
+                crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
+                crate::ui::buttons::Btn::primary(
+                    crate::interactions::ids::SAGA_TAVERN,
+                    "🧭 Recruitment",
+                ),
+            ]));
+            let depth = app_state
+                .nav_stacks
+                .read()
+                .await
+                .get(&component.user.id.get())
+                .map(|s| s.stack.len())
+                .unwrap_or(1);
+            if let Some(row) = back_refresh_row(depth) {
+                rows.push(row);
+            }
+            rows.push(crate::commands::saga::ui::global_nav_row("saga"));
+            edit_component(
+                ctx,
+                component,
+                "tavern.shop.confirm",
+                EditInteractionResponse::new().embed(embed).components(rows),
+            )
+            .await;
+        }
+        Some(&"tavern") if raw_id == "saga_tavern_shop_buy_cancel" => {
+            component.data.custom_id = "saga_tavern_shop".into();
+            render_tavern_shop_view(ctx, component, &app_state, None).await;
+        }
+        Some(&"tavern") if raw_id.starts_with("saga_tavern_shop_buy_confirm_") => {
+            use crate::commands::economy::core::item::Item;
+            let id_str = raw_id.trim_start_matches("saga_tavern_shop_buy_confirm_");
+            let Some(item_id) = id_str.parse::<i32>().ok() else {
+                edit_component(
+                    ctx,
+                    component,
+                    "tavern.shopC.bad_id",
+                    EditInteractionResponse::new().content("Invalid item id."),
+                )
+                .await;
+                return;
+            };
+            let Some(item) = Item::from_i32(item_id) else {
+                edit_component(
+                    ctx,
+                    component,
+                    "tavern.shopC.unknown_item",
+                    EditInteractionResponse::new().content("Unknown item."),
+                )
+                .await;
+                return;
+            };
+            // Centralized price + fame discount
+            let profile_balance =
+                crate::database::economy::get_or_create_profile(db, component.user.id)
+                    .await
+                    .map(|p| p.balance)
+                    .unwrap_or(0);
+            let (_, meta_tmp) = crate::commands::saga::tavern::build_tavern_state_cached(
+                &app_state,
+                component.user.id,
+            )
+            .await
+            .unwrap_or((
+                Vec::new(),
+                crate::commands::saga::tavern::TavernUiMeta {
+                    balance: profile_balance,
+                    fame: 0,
+                    fame_tier: 0,
+                    fame_progress: 0.0,
+                    daily_rerolls_used: 0,
+                    max_daily_rerolls: crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS,
+                    reroll_cost: crate::commands::saga::tavern::TAVERN_REROLL_COST,
+                    can_reroll: false,
+                },
+            ));
+            let (shop_disc, _, _) = crate::commands::saga::tavern::fame_perks(meta_tmp.fame_tier);
+            let base = tavern_price(item).unwrap_or(1_000_000);
+            let cost: i64 = crate::commands::saga::tavern::apply_shop_discount(base, shop_disc);
+            let mut tx = match db.begin().await {
+                Ok(t) => t,
+                Err(e) => {
+                    edit_component(
+                        ctx,
+                        component,
+                        "tavern.shopC.tx_err",
+                        EditInteractionResponse::new()
+                            .content(format!("Failed to start purchase: {}", e)),
+                    )
+                    .await;
+                    return;
+                }
+            };
+            let res = {
+                match crate::database::economy::add_balance(&mut tx, component.user.id, -cost).await
+                {
+                    Ok(()) => {
+                        crate::database::economy::add_to_inventory(
+                            &mut tx,
+                            component.user.id,
+                            item,
+                            1,
+                        )
+                        .await
+                    }
+                    Err(e) => Err(e),
+                }
+            };
+            match res {
+                Ok(()) => {
+                    if tx.commit().await.is_err() {
+                        edit_component(
+                            ctx,
+                            component,
+                            "tavern.shopC.commit_err",
+                            EditInteractionResponse::new().content("Purchase failed to commit."),
+                        )
+                        .await;
+                        return;
+                    }
+                    // Re-render shop with success message via unified renderer
+                    component.data.custom_id = "saga_tavern_shop".into();
+                    let notice = Some(format!(
+                        "You bought {} {} for {} {}.",
+                        item.emoji(),
+                        item.display_name(),
+                        crate::ui::style::EMOJI_COIN,
+                        cost
+                    ));
+                    render_tavern_shop_view(ctx, component, &app_state, notice).await;
+                }
+                Err(_) => {
+                    let _ = tx.rollback().await;
+                    edit_component(
+                        ctx,
+                        component,
+                        "tavern.shopC.fail",
+                        EditInteractionResponse::new()
+                            .content("Could not complete purchase (balance changed?)."),
+                    )
+                    .await;
+                }
+            }
+        }
         // Removed pagination / filter handling branch
         Some(&"tavern") if raw_id == "saga_tavern_reroll" => {
             use crate::commands::saga::tavern::{TAVERN_MAX_DAILY_REROLLS, TAVERN_REROLL_COST};
@@ -534,9 +1673,9 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 Vec::new(),
                 crate::commands::saga::tavern::TavernUiMeta {
                     balance,
-                    favor: 0,
-                    favor_tier: 0,
-                    favor_progress: 0.0,
+                    fame: 0,
+                    fame_tier: 0,
+                    fame_progress: 0.0,
                     daily_rerolls_used: 0,
                     max_daily_rerolls: TAVERN_MAX_DAILY_REROLLS,
                     reroll_cost: TAVERN_REROLL_COST,
@@ -544,18 +1683,21 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 },
             ));
             let left = (meta.max_daily_rerolls - meta.daily_rerolls_used).max(0);
-            let mut embed = serenity::builder::CreateEmbed::new()
+            let embed = serenity::builder::CreateEmbed::new()
                 .title("Confirm Reroll")
                 .description(format!(
-                    "Spend {} {} to reshuffle your personal rotation. {} rerolls left today.",
+                    "Spend {} {} to reshuffle your personal rotation. {} rerolls left today. Resets in {}.",
                     meta.reroll_cost,
                     crate::ui::style::EMOJI_COIN,
-                    left
+                    left,
+                    crate::commands::saga::tavern::time_until_reset_str()
                 ))
                 .color(crate::ui::style::COLOR_SAGA_TAVERN);
-            if !can_reroll_now || balance < meta.reroll_cost || left == 0 {
-                embed = embed.field("Note", "You cannot reroll right now.", false);
-            }
+            let embed = if !can_reroll_now || balance < meta.reroll_cost || left == 0 {
+                embed.field("Note", "You cannot reroll right now.", false)
+            } else {
+                embed
+            };
             let buttons = vec![
                 crate::ui::buttons::Btn::danger("saga_tavern_reroll_confirm", "Confirm Reroll")
                     .disabled(!can_reroll_now || balance < meta.reroll_cost || left == 0),
@@ -582,17 +1724,27 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 Vec::new(),
                 crate::commands::saga::tavern::TavernUiMeta {
                     balance: 0,
-                    favor: 0,
-                    favor_tier: 0,
-                    favor_progress: 0.0,
+                    fame: 0,
+                    fame_tier: 0,
+                    fame_progress: 0.0,
                     daily_rerolls_used: 0,
                     max_daily_rerolls: crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS,
                     reroll_cost: crate::commands::saga::tavern::TAVERN_REROLL_COST,
                     can_reroll: false,
                 },
             ));
-            let (embed, components) =
+            let (embed, mut components) =
                 crate::commands::saga::tavern::create_tavern_menu(&recruits, &meta);
+            let depth = app_state
+                .nav_stacks
+                .read()
+                .await
+                .get(&component.user.id.get())
+                .map(|s| s.stack.len())
+                .unwrap_or(1);
+            if let Some(row) = back_refresh_row(depth) {
+                components.push(row);
+            }
             edit_component(
                 ctx,
                 component,
@@ -604,32 +1756,36 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             .await;
         }
         Some(&"tavern") if raw_id == "saga_tavern_reroll_confirm" => {
-            use crate::commands::saga::tavern::{TAVERN_MAX_DAILY_REROLLS, TAVERN_REROLL_COST};
+            use crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS;
             if let Ok(profile) =
                 crate::database::economy::get_or_create_profile(db, component.user.id).await
             {
-                if profile.balance < TAVERN_REROLL_COST {
+                // Use discounted reroll cost based on fame
+                let (_, meta_now) = crate::commands::saga::tavern::build_tavern_state_cached(
+                    &app_state,
+                    component.user.id,
+                )
+                .await
+                .unwrap_or((
+                    Vec::new(),
+                    crate::commands::saga::tavern::TavernUiMeta {
+                        balance: profile.balance,
+                        fame: 0,
+                        fame_tier: 0,
+                        fame_progress: 0.0,
+                        daily_rerolls_used: 0,
+                        max_daily_rerolls: TAVERN_MAX_DAILY_REROLLS,
+                        reroll_cost: crate::commands::saga::tavern::TAVERN_REROLL_COST,
+                        can_reroll: false,
+                    },
+                ));
+                let reroll_cost_now = meta_now.reroll_cost;
+                if profile.balance < reroll_cost_now {
                     edit_component(
                         ctx,
                         component,
                         "tavern.reroll.no_funds",
                         EditInteractionResponse::new().content("Not enough coins to reroll."),
-                    )
-                    .await;
-                    return;
-                }
-                if let Ok(false) = crate::database::tavern::can_reroll(
-                    db,
-                    component.user.id,
-                    TAVERN_MAX_DAILY_REROLLS,
-                )
-                .await
-                {
-                    edit_component(
-                        ctx,
-                        component,
-                        "tavern.reroll.limit",
-                        EditInteractionResponse::new().content("Reroll limit reached today."),
                     )
                     .await;
                     return;
@@ -645,9 +1801,9 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                         Vec::new(),
                         crate::commands::saga::tavern::TavernUiMeta {
                             balance: profile.balance,
-                            favor: 0,
-                            favor_tier: 0,
-                            favor_progress: 0.0,
+                            fame: 0,
+                            fame_tier: 0,
+                            fame_progress: 0.0,
                             daily_rerolls_used: 0,
                             max_daily_rerolls:
                                 crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS,
@@ -659,30 +1815,6 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     old_units.iter().map(|u| u.unit_id).collect();
                 let global = crate::commands::saga::tavern::get_daily_recruits(db).await;
                 let rotation: Vec<i32> = global.iter().map(|u| u.unit_id).collect();
-                // Deduct coins in a short transaction to reduce double-charge risk.
-                if let Ok(mut tx) = db.begin().await {
-                    if crate::database::economy::add_balance(
-                        &mut tx,
-                        component.user.id,
-                        -TAVERN_REROLL_COST,
-                    )
-                    .await
-                    .is_ok()
-                    {
-                        let _ = tx.commit().await;
-                    } else {
-                        let _ = tx.rollback().await;
-                        edit_component(
-                            ctx,
-                            component,
-                            "tavern.reroll.balance_race",
-                            EditInteractionResponse::new()
-                                .content("Balance changed; reroll aborted."),
-                        )
-                        .await;
-                        return;
-                    }
-                }
                 // Shuffle rotation deterministically for the reroll.
                 let mut rotation = rotation.clone();
                 {
@@ -690,10 +1822,30 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     let mut rng = rand::rng();
                     rotation.shuffle(&mut rng);
                 }
-                let _ =
-                    crate::database::tavern::overwrite_rotation(db, component.user.id, &rotation)
+                // Perform atomic reroll (deduct, overwrite, increment counters)
+                match crate::database::tavern::transactional_reroll(
+                    db,
+                    component.user.id,
+                    &rotation,
+                    reroll_cost_now,
+                    TAVERN_MAX_DAILY_REROLLS,
+                )
+                .await
+                {
+                    Ok(()) => {}
+                    Err(_) => {
+                        edit_component(
+                            ctx,
+                            component,
+                            "tavern.reroll.failed",
+                            EditInteractionResponse::new().content(
+                                "Cannot reroll right now (limit reached or balance changed).",
+                            ),
+                        )
                         .await;
-                let _ = crate::database::tavern::consume_reroll(db, component.user.id).await;
+                        return;
+                    }
+                }
                 let (resolved_units, meta) =
                     crate::commands::saga::tavern::build_tavern_state_cached(
                         &app_state,
@@ -703,14 +1855,14 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     .unwrap_or((
                         Vec::new(),
                         crate::commands::saga::tavern::TavernUiMeta {
-                            balance: profile.balance.saturating_sub(TAVERN_REROLL_COST),
-                            favor: 0,
-                            favor_tier: 0,
-                            favor_progress: 0.0,
+                            balance: profile.balance.saturating_sub(reroll_cost_now),
+                            fame: 0,
+                            fame_tier: 0,
+                            fame_progress: 0.0,
                             daily_rerolls_used: 0,
                             max_daily_rerolls:
                                 crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS,
-                            reroll_cost: crate::commands::saga::tavern::TAVERN_REROLL_COST,
+                            reroll_cost: reroll_cost_now,
                             can_reroll: false,
                         },
                     ));

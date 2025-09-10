@@ -4,7 +4,7 @@ A feature-rich Discord game bot written in Rust (Serenity + SQLx + Tokio) featur
 
 ## ✨ Features
 - **Gamemaster Saga**: Turn-based progression with Action Points (AP), Training Points (TP), world map nodes, quests, and battles.
-- **Tavern Recruitment**: Deterministic daily rotation (date‑seeded), per‑user rotation persistence, favor tiers & progress, rarity‑scaled hire costs, affordable count & average cost stats, two‑step reroll confirmation with remaining count, rotation diff highlighting.
+- **Tavern Recruitment**: Deterministic daily rotation (date‑seeded), per‑user rotation persistence, fame tiers & progress, rarity‑scaled hire costs, affordable count & average cost stats, two‑step reroll confirmation with remaining count, rotation diff highlighting.
 - **Party & Army Management**: Maintain a 5‑unit active party plus a larger army roster; rarity & leveling determine power.
 - **Bonding System**: Equip (bond) one unit onto another for stat augment bonuses; cached & summarized in the party UI.
 - **Research System**: Passive bonuses unlocked by collecting research data drops (TTL caches for performance).
@@ -91,7 +91,7 @@ Current coverage includes leveling, TP recharge, cache stats, and first‑time t
 - Rate limiting across remaining non‑saga handlers
 - Quest reward variety & scaling
 - Admin telemetry & live metrics command
-- Additional Tavern UX polish (highlight newest rotation changes, richer favor tiers)
+- Additional Tavern UX polish (highlight newest rotation changes, richer fame tiers)
 - Tavern reroll hardening: make reroll fully transactional (deduct coins + overwrite rotation + increment counter in one DB transaction)
 
 ## 🧩 Contributing

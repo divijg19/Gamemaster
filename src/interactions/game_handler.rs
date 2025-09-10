@@ -2,7 +2,7 @@
 //! This includes RPS, Blackjack, Poker, the Shop, and Battles.
 
 use crate::AppState;
-use crate::commands::games::engine::{Game, GameManager};
+use crate::commands::games::{Game, GameManager};
 use serenity::builder::EditInteractionResponse;
 use serenity::model::application::ComponentInteraction;
 use serenity::prelude::Context;

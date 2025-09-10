@@ -14,6 +14,7 @@ static HIT_COUNTER: tokio::sync::OnceCell<tokio::sync::RwLock<u64>> =
 static MISS_COUNTER: tokio::sync::OnceCell<tokio::sync::RwLock<u64>> =
     tokio::sync::OnceCell::const_new();
 
+#[inline]
 async fn inc(hit: bool) {
     let cell = if hit { &HIT_COUNTER } else { &MISS_COUNTER };
     let lock = cell
@@ -24,6 +25,7 @@ async fn inc(hit: bool) {
 }
 
 /// Expose counters for diagnostics (hit, miss)
+#[inline]
 pub async fn cache_stats() -> (u64, u64) {
     let h = if let Some(lock) = HIT_COUNTER.get() {
         *lock.read().await
@@ -38,6 +40,7 @@ pub async fn cache_stats() -> (u64, u64) {
     (h, m)
 }
 
+#[inline]
 pub async fn get_with_ttl<K, V>(
     map: &RwLock<HashMap<K, (Instant, V)>>,
     key: &K,
@@ -60,17 +63,51 @@ where
     // Entry expired: acquire write lock to remove (avoid holding write unless needed)
     let mut write = map.write().await;
     if let Some((ts, _)) = write.get(key)
-        && ts.elapsed() >= ttl {
-            write.remove(key);
-        }
+        && ts.elapsed() >= ttl
+    {
+        write.remove(key);
+    }
     inc(false).await;
     None
 }
 
 /// Insert / overwrite a value in the TTL cache with current timestamp.
+#[inline]
 pub async fn insert<K, V>(map: &RwLock<HashMap<K, (Instant, V)>>, key: K, value: V)
 where
     K: Eq + Hash,
 {
     map.write().await.insert(key, (Instant::now(), value));
+}
+
+/// Fetch a cloned value and the remaining TTL for a key if present and not expired.
+/// Returns None if missing or expired. If expired, removes the entry.
+#[inline]
+pub async fn get_with_ttl_and_remaining<K, V>(
+    map: &RwLock<HashMap<K, (Instant, V)>>,
+    key: &K,
+    ttl: Duration,
+) -> Option<(V, Duration)>
+where
+    K: Eq + Hash + Clone,
+    V: Clone,
+{
+    // Fast path read
+    if let Some((ts, val)) = map.read().await.get(key).cloned() {
+        let elapsed = ts.elapsed();
+        if elapsed < ttl {
+            let remaining = ttl.saturating_sub(elapsed);
+            return Some((val, remaining));
+        }
+    } else {
+        return None;
+    }
+    // Expired: cleanup
+    let mut write = map.write().await;
+    if let Some((ts, _)) = write.get(key)
+        && ts.elapsed() >= ttl
+    {
+        write.remove(key);
+    }
+    None
 }

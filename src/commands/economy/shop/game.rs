@@ -3,7 +3,7 @@
 use super::logic::buy_item;
 use super::state::ShopSession;
 use crate::commands::economy::core::item::{Item, ItemCategory};
-use crate::commands::games::engine::{Game, GameUpdate};
+use crate::commands::games::{Game, GameUpdate};
 use serenity::async_trait;
 use serenity::builder::{
     CreateActionRow, CreateEmbed, CreateInteractionResponse, CreateInteractionResponseFollowup,

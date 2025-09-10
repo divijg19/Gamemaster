@@ -1,6 +1,7 @@
 //! Handles rendering the battle state into a Discord embed.
 
 use super::state::{BattlePhase, BattleSession, BattleUnit};
+use crate::commands::economy::core::item::Item;
 use crate::ui::buttons::Btn;
 use serenity::builder::{CreateActionRow, CreateEmbed};
 
@@ -51,7 +52,7 @@ pub fn render_battle(
         ))
         .color(color);
 
-    // (✓) MODIFIED: The entire component layout is now determined by the battle phase.
+    // Component layout is determined by the battle phase.
     let components = match session.phase {
         BattlePhase::PlayerTurn => {
             let living_enemies: Vec<_> = session
@@ -86,8 +87,8 @@ pub fn render_battle(
             buttons.push(Btn::danger("battle_flee", "🏃 Flee"));
             vec![CreateActionRow::Buttons(buttons)]
         }
-        // (✓) MODIFIED: In these phases, show the buttons but disable them so the user knows what's available.
-        BattlePhase::EnemyTurn | BattlePhase::PlayerSelectingItem => {
+        // During enemy turn, show the buttons but disabled so the user knows what's available.
+        BattlePhase::EnemyTurn => {
             vec![CreateActionRow::Buttons(vec![
                 Btn::primary("disabled_attack", "⚔️ Attack").disabled(true),
                 Btn::secondary("disabled_item", "🎒 Item").disabled(true),
@@ -95,28 +96,43 @@ pub fn render_battle(
                 Btn::danger("disabled_flee", "🏃 Flee").disabled(true),
             ])]
         }
-        // (✓) MODIFIED: When the battle is won, show a "Claim Rewards" button.
+        // Item selection menu phase
+        BattlePhase::PlayerSelectingItem => {
+            let hp_id = Item::HealthPotion as i32;
+            let ghp_id = Item::GreaterHealthPotion as i32;
+            vec![
+                CreateActionRow::Buttons(vec![
+                    Btn::success(
+                        &format!("battle_item_use_{}", hp_id),
+                        "✨ Use Health Potion",
+                    ),
+                    Btn::success(
+                        &format!("battle_item_use_{}", ghp_id),
+                        "✨ Use Greater Health Potion",
+                    ),
+                ]),
+                CreateActionRow::Buttons(vec![Btn::secondary("battle_item_cancel", "↩ Back")]),
+            ]
+        }
+        // When the battle is won, show a "Claim Rewards" button.
         BattlePhase::Victory => {
             vec![
                 CreateActionRow::Buttons(vec![Btn::success(
                     "battle_claim_rewards",
                     "🎁 Claim Rewards",
                 )]),
-                CreateActionRow::Buttons(vec![
-                    Btn::secondary(crate::interactions::ids::SAGA_MAP, "↩ Map"),
-                    Btn::secondary(crate::interactions::ids::SAGA_TAVERN, "🍺 Tavern"),
-                ]),
-            ]
-        }
-        // (✓) MODIFIED: When the battle is lost, show a simple "Close" button.
-        BattlePhase::Defeat => {
-            vec![
                 CreateActionRow::Buttons(vec![Btn::secondary("battle_close", "❌ Close")]),
                 CreateActionRow::Buttons(vec![
                     Btn::secondary(crate::interactions::ids::SAGA_MAP, "↩ Map"),
                     Btn::secondary(crate::interactions::ids::SAGA_TAVERN, "🍺 Tavern"),
                 ]),
             ]
+        }
+        BattlePhase::Defeat => {
+            vec![CreateActionRow::Buttons(vec![Btn::secondary(
+                "battle_close",
+                "❌ Close",
+            )])]
         }
     };
 

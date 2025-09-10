@@ -2,7 +2,7 @@
 //! These structs are used as `TypeMapKey`s to store shared state in Serenity's global context.
 
 // (✓) CORRECTED: Use the full, correct path to the generic GameManager.
-use crate::commands::games::engine::GameManager;
+use crate::commands::games::GameManager;
 // (✓) CORRECTED: Use the concrete PgPool type directly.
 use crate::database::models::UnitRarity;
 use crate::ui::NavStack;
@@ -40,6 +40,8 @@ type UserResearchCache = HashMap<u64, UserResearchCacheEntry>;
 // Saga profile short-lived cache (avoids rapid duplicate AP/TP queries on refresh spam)
 type SagaProfileCacheEntry = (Instant, crate::database::models::SagaProfile);
 type SagaProfileCache = HashMap<u64, SagaProfileCacheEntry>;
+// Focus buff per-user short-lived cache (Instant, active)
+type FocusBuffCache = HashMap<u64, (Instant, bool)>;
 // Tavern daily rotation cache (date, units)
 type TavernDailyCacheInner = Option<(chrono::NaiveDate, Vec<crate::database::models::Unit>)>;
 
@@ -76,6 +78,8 @@ pub struct AppState {
     pub nav_stacks: Arc<RwLock<HashMap<u64, NavStack>>>,
     /// Short TTL cache for saga profiles to smooth rapid refresh interaction bursts.
     pub saga_profile_cache: Arc<RwLock<SagaProfileCache>>,
+    /// Short TTL cache indicating Focus Tonic buff is active for a user.
+    pub focus_buff_cache: Arc<RwLock<FocusBuffCache>>,
     /// Cached global tavern rotation (date, units) to avoid re-sorting each request.
     pub tavern_daily_cache: Arc<RwLock<TavernDailyCacheInner>>,
     // Removed tavern_sessions (pagination / rarity filters removed from Tavern UX).

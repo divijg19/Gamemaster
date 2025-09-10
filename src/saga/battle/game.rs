@@ -1,6 +1,6 @@
 //! Implements the `Game` trait for a battle session.
 
-use crate::commands::games::engine::{Game, GameUpdate};
+use crate::commands::games::{Game, GameUpdate};
 use crate::database;
 use crate::database::battle;
 use crate::database::models::UnitKind;
@@ -205,6 +205,128 @@ impl Game for BattleGame {
                 self.session.log.push("You open your bag...".to_string());
                 GameUpdate::ReRender
             }
+            "battle_item_cancel" => {
+                self.session.phase = BattlePhase::PlayerTurn;
+                self.session.log.push("You close your bag.".to_string());
+                GameUpdate::ReRender
+            }
+            cid if cid.starts_with("battle_item_use_") => {
+                // Parse item id suffix
+                let item_id_str = cid.trim_start_matches("battle_item_use_");
+                let item_id: i32 = match item_id_str.parse() {
+                    Ok(v) => v,
+                    Err(_) => {
+                        self.session
+                            .log
+                            .push("⚠️ That item cannot be used.".to_string());
+                        return GameUpdate::ReRender;
+                    }
+                };
+                use crate::commands::economy::core::item::Item;
+                let Some(item) = Item::from_i32(item_id) else {
+                    self.session.log.push("⚠️ Unknown item.".to_string());
+                    return GameUpdate::ReRender;
+                };
+                // Only allow health potions in-battle for now
+                let heal_amount = match item {
+                    Item::HealthPotion => 30,
+                    Item::GreaterHealthPotion => 80,
+                    _ => 0,
+                };
+                if heal_amount == 0 {
+                    self.session
+                        .log
+                        .push("⚠️ You cannot use that here.".to_string());
+                    return GameUpdate::ReRender;
+                }
+                // Determine if any ally can benefit before consuming inventory
+                let target_exists = self
+                    .session
+                    .player_party
+                    .iter()
+                    .any(|u| u.current_hp > 0 && u.current_hp < u.max_hp);
+                if !target_exists {
+                    self.session
+                        .log
+                        .push("🧪 You are already at full health.".to_string());
+                    return GameUpdate::ReRender;
+                }
+                // Consume from inventory and apply effect atomically
+                let mut tx = match db.begin().await {
+                    Ok(t) => t,
+                    Err(_) => {
+                        self.session
+                            .log
+                            .push("⚠️ Could not access your bag.".to_string());
+                        return GameUpdate::ReRender;
+                    }
+                };
+                match database::economy::get_inventory_item(&mut tx, interaction.user.id, item)
+                    .await
+                {
+                    Ok(Some(it)) if it.quantity > 0 => {
+                        if database::economy::add_to_inventory(
+                            &mut tx,
+                            interaction.user.id,
+                            item,
+                            -1,
+                        )
+                        .await
+                        .is_err()
+                        {
+                            let _ = tx.rollback().await;
+                            self.session
+                                .log
+                                .push("⚠️ Something went wrong using that item.".to_string());
+                            return GameUpdate::ReRender;
+                        }
+                    }
+                    _ => {
+                        let _ = tx.rollback().await;
+                        self.session
+                            .log
+                            .push("⚠️ You don't have that item.".to_string());
+                        return GameUpdate::ReRender;
+                    }
+                }
+                if tx.commit().await.is_err() {
+                    self.session
+                        .log
+                        .push("⚠️ Failed to use the item.".to_string());
+                    return GameUpdate::ReRender;
+                }
+                // Apply healing to the first living ally
+                if let Some(unit) = self
+                    .session
+                    .player_party
+                    .iter_mut()
+                    .find(|u| u.current_hp > 0 && u.current_hp < u.max_hp)
+                {
+                    let before = unit.current_hp;
+                    unit.current_hp = (unit.current_hp + heal_amount).min(unit.max_hp);
+                    let healed = unit.current_hp - before;
+                    self.session.log.push(format!(
+                        "🧪 Used {} on {} (+{} HP).",
+                        item.display_name(),
+                        unit.name,
+                        healed
+                    ));
+                } else {
+                    self.session
+                        .log
+                        .push("🧪 You are already at full health.".to_string());
+                }
+                // Advance flow: end player phase and let enemy act
+                if logic::process_enemy_turn(&mut self.session) == BattleOutcome::PlayerDefeat {
+                    self.session.phase = BattlePhase::Defeat;
+                    self.session.log.push("---".to_string());
+                    self.session
+                        .log
+                        .push("Your party has been defeated.".to_string());
+                    return GameUpdate::ReRender;
+                }
+                GameUpdate::ReRender
+            }
             "battle_flee" => GameUpdate::GameOver {
                 message: "You fled from the battle.".to_string(),
                 payouts: vec![],
@@ -240,19 +362,36 @@ impl Game for BattleGame {
                     }
                 } else {
                     // --- This is a NORMAL NODE BATTLE victory ---
+                    // Check Focus Tonic buff (TTL cache) for this user
+                    let focus_active: bool = if let Some(state) =
+                        crate::model::AppState::from_ctx(ctx).await
+                    {
+                        crate::services::cache::get_with_ttl(
+                            &state.focus_buff_cache,
+                            &interaction.user.id.get(),
+                            std::time::Duration::from_secs(crate::constants::FOCUS_TONIC_TTL_SECS),
+                        )
+                        .await
+                        .unwrap_or_default()
+                    } else {
+                        false
+                    };
                     match battle::resolve_node_victory(
                         db,
-                        interaction.user.id,
-                        self.node_id,
-                        &self.node_name,
-                        &self.party_members,
-                        self.session.vitality_mitigated,
-                        &self
-                            .session
-                            .enemy_party
-                            .iter()
-                            .map(|e| e.unit_id)
-                            .collect::<Vec<_>>(),
+                        crate::database::battle::ResolveVictoryInput {
+                            user_id: interaction.user.id,
+                            node_id: self.node_id,
+                            node_name: self.node_name.clone(),
+                            party_units: self.party_members.clone(),
+                            vitality_mitigated: self.session.vitality_mitigated,
+                            enemy_unit_ids: self
+                                .session
+                                .enemy_party
+                                .iter()
+                                .map(|e| e.unit_id)
+                                .collect::<Vec<_>>(),
+                            focus_active,
+                        },
                     )
                     .await
                     {

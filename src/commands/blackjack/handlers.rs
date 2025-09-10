@@ -2,7 +2,7 @@
 
 use super::state::{BlackjackGame, GamePhase, Hand, HandStatus, Player};
 use crate::commands::games::card::Rank;
-use crate::commands::games::engine::GameUpdate;
+use crate::commands::games::GameUpdate;
 use serenity::builder::{CreateInteractionResponse, CreateInteractionResponseMessage};
 use serenity::model::application::ComponentInteraction;
 use serenity::prelude::Context;
