@@ -198,9 +198,11 @@ pub fn create_world_map_view(
     // Build button rows: unlocked nodes are clickable; locked shown disabled (first few only)
     let mut components: Vec<CreateActionRow> = Vec::new();
     let can_start = saga_profile.current_ap > 0;
-    // Cap unlocked rows to avoid exceeding Discord's 5-row limit (leave room for locked + nav).
+    // Leave space for Back+Refresh and global nav rows by limiting unlocked rows to 2 when a locked row is present.
+    let locked_present = !locked.is_empty();
+    let max_unlocked_rows = if locked_present { 2 } else { 3 };
     for (unlocked_rows, chunk) in unlocked.chunks(5).enumerate() {
-        if unlocked_rows >= 3 {
+        if unlocked_rows >= max_unlocked_rows {
             break;
         }
         let row = CreateActionRow::Buttons(
@@ -212,7 +214,7 @@ pub fn create_world_map_view(
         components.push(row);
     }
     // Show up to one row of locked nodes (disabled) for foreshadowing
-    if !locked.is_empty() && unlocked.chunks(5).take(3).count() <= 3 {
+    if locked_present {
         let mut locked_buttons = Vec::new();
         for node in locked.iter().take(5) {
             let mut label = format!("SP{} {}", node.story_progress_required, node.name);
@@ -327,10 +329,10 @@ pub fn create_world_map_area_view(
     let mut components: Vec<CreateActionRow> = Vec::new();
     components.push(CreateActionRow::Buttons(area_buttons));
     let can_start = saga_profile.current_ap > 0;
-    // In area view we already used 1 row for area nav; keep total <= 5.
+    // In area view we already used 1 row for area nav; also leave space for Back+Refresh and global nav.
     let locked_present = !locked.is_empty();
-    // If we plan to show a locked row, allow up to 2 unlocked rows; else up to 3.
-    let max_unlocked_rows = if locked_present { 2 } else { 3 };
+    // If we plan to show a locked row, allow up to 1 unlocked row; else up to 2.
+    let max_unlocked_rows = if locked_present { 1 } else { 2 };
     for (unlocked_rows, chunk) in unlocked.chunks(5).enumerate() {
         if unlocked_rows >= max_unlocked_rows {
             break;
@@ -414,15 +416,40 @@ fn map_node_button(node: &MapNode, player_sp: i32, can_start: bool) -> CreateBut
         .disabled(!can_start)
 }
 
-/// Builds a Back + Refresh control row when depth > 1 (navigation inside a stack).
+/// Builds a Back + Refresh control row when there's any view in the stack (non-root).
 pub fn back_refresh_row(depth: usize) -> Option<CreateActionRow> {
-    if depth > 1 {
+    if depth >= 1 {
         Some(CreateActionRow::Buttons(vec![
             Btn::danger(SAGA_BACK, &format!("{} Back", EMOJI_BACK)),
             Btn::secondary(SAGA_REFRESH, &format!("{} Refresh", EMOJI_REFRESH)),
         ]))
     } else {
         None
+    }
+}
+
+/// Inserts the Back+Refresh row before the global nav row if present; otherwise appends it.
+/// This keeps the control row consistently placed across saga embeds.
+pub fn insert_back_before_nav(
+    components: &mut Vec<CreateActionRow>,
+    depth: usize,
+    active: &'static str,
+) {
+    if let Some(back_row) = back_refresh_row(depth) {
+        // Find a global nav row heuristically by looking for its custom_id in Debug output.
+        // This mirrors the add_nav() heuristic and avoids deep enum matching.
+        let needle = format!("nav_{}", active);
+        if let Some(pos) = components
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, row)| format!("{:?}", row).contains(&needle))
+            .map(|(i, _)| i)
+        {
+            components.insert(pos, back_row);
+        } else {
+            components.push(back_row);
+        }
     }
 }
 
@@ -447,11 +474,12 @@ pub fn global_nav_row(active: &'static str) -> CreateActionRow {
 
 /// Convenience helper to append the global nav row if not already present.
 pub fn add_nav(components: &mut Vec<CreateActionRow>, active: &'static str) {
-    // Simple check: look for any button row whose first button custom_id starts with "nav_saga".
+    // Simple check: look for any button row containing a nav_* button (saga/party/train).
     let has_nav = components.iter().any(|row| {
         // Serenity doesn't expose direct introspection of buttons here without matching variants; rely on Debug fallback.
-        // Fallback heuristic: format row and look for "nav_saga" substring (cheap & fine for low frequency calls).
-        format!("{:?}", row).contains("nav_saga")
+        // Fallback heuristic: format row and look for a generic "nav_" substring.
+        let s = format!("{:?}", row);
+        s.contains("nav_")
     });
     if !has_nav {
         components.push(global_nav_row(active));

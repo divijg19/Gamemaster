@@ -110,7 +110,6 @@ pub async fn handle_saga_back_refresh(
     c: &ComponentInteraction,
     app_state: &crate::AppState,
 ) -> bool {
-    use crate::commands::saga::ui::back_refresh_row;
     use serenity::builder::EditInteractionResponse as EIR;
     if c.data.custom_id == "saga_back" {
         {
@@ -145,7 +144,18 @@ pub async fn handle_saga_back_refresh(
             // Touch dynamic type & context fields to keep trait surface and struct fields alive.
             let _ = nav_box.as_any().type_id();
             let _ = (&ctxbag.db, ctxbag.user_id);
-            let (embed, components) = nav_box.render(&ctxbag).await;
+            let (embed, mut components) = nav_box.render(&ctxbag).await;
+            // Insert Back+Refresh before global nav consistently for non-Tavern saga views.
+            if nav_box.id() != "saga_tavern_view" {
+                let depth = app_state
+                    .nav_stacks
+                    .read()
+                    .await
+                    .get(&c.user.id.get())
+                    .map(|s| s.stack.len())
+                    .unwrap_or(1);
+                crate::commands::saga::ui::insert_back_before_nav(&mut components, depth, "saga");
+            }
             edit_component(
                 ctx,
                 c,
@@ -185,15 +195,15 @@ pub async fn handle_saga_back_refresh(
             let _ = nav_box.as_any().type_id();
             let _ = (&ctxbag.db, ctxbag.user_id);
             let (embed, mut components) = nav_box.render(&ctxbag).await;
-            let depth = app_state
-                .nav_stacks
-                .read()
-                .await
-                .get(&c.user.id.get())
-                .map(|s| s.stack.len())
-                .unwrap_or(1);
-            if let Some(row) = back_refresh_row(depth) {
-                components.push(row);
+            if nav_box.id() != "saga_tavern_view" {
+                let depth = app_state
+                    .nav_stacks
+                    .read()
+                    .await
+                    .get(&c.user.id.get())
+                    .map(|s| s.stack.len())
+                    .unwrap_or(1);
+                crate::commands::saga::ui::insert_back_before_nav(&mut components, depth, "saga");
             }
             edit_component(
                 ctx,
