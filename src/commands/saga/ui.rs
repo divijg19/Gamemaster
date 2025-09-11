@@ -458,6 +458,15 @@ pub fn add_nav(components: &mut Vec<CreateActionRow>, active: &'static str) {
     }
 }
 
+/// Tavern-specific unified navigation row: "↩ Saga" (always enabled) + Refresh.
+/// This replaces the standard Back+Refresh row and avoids disabling Saga.
+pub fn tavern_saga_row() -> CreateActionRow {
+    CreateActionRow::Buttons(vec![
+        Btn::primary(NAV_SAGA, &format!("{} Saga", EMOJI_BACK)),
+        Btn::secondary(SAGA_REFRESH, &format!("{} Refresh", EMOJI_REFRESH)),
+    ])
+}
+
 // Small helper to truncate text with ellipsis.
 fn truncate(s: &str, max: usize) -> String {
     // Truncate by characters (not bytes) to avoid slicing on a UTF-8 boundary.

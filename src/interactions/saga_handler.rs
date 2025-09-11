@@ -12,6 +12,7 @@ use crate::services::cache as cache_service;
 use crate::ui::style::error_embed;
 // NavState no longer needed directly after SagaView migration
 use crate::{AppState, database};
+use chrono::Datelike;
 use serenity::builder::EditInteractionResponse;
 use serenity::model::application::ComponentInteraction;
 use serenity::prelude::Context;
@@ -206,20 +207,10 @@ async fn render_tavern_goods_view(
     // Home/Recruitment
     rows.push(CreateActionRow::Buttons(vec![
         crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
-        crate::ui::buttons::Btn::primary(crate::interactions::ids::SAGA_TAVERN, "🧭 Recruitment"),
+        crate::ui::buttons::Btn::primary(crate::interactions::ids::SAGA_RECRUIT, "🧭 Recruitment"),
     ]));
-    // Back/Refresh + Global nav
-    let depth = app_state
-        .nav_stacks
-        .read()
-        .await
-        .get(&component.user.id.get())
-        .map(|s| s.stack.len())
-        .unwrap_or(1);
-    if let Some(row) = crate::commands::saga::ui::back_refresh_row(depth) {
-        rows.push(row);
-    }
-    rows.push(crate::commands::saga::ui::global_nav_row("saga"));
+    // Tavern-specific nav row: ↩ Saga + Refresh (Saga not disabled)
+    rows.push(crate::commands::saga::ui::tavern_saga_row());
     crate::interactions::util::edit_component(
         ctx,
         component,
@@ -316,20 +307,9 @@ async fn render_tavern_shop_view(
     // Home + Recruitment row
     rows.push(CreateActionRow::Buttons(vec![
         crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
-        crate::ui::buttons::Btn::primary(crate::interactions::ids::SAGA_TAVERN, "🧭 Recruitment"),
+        crate::ui::buttons::Btn::primary(crate::interactions::ids::SAGA_RECRUIT, "🧭 Recruitment"),
     ]));
-    // Back/Refresh + Global nav
-    let depth = app_state
-        .nav_stacks
-        .read()
-        .await
-        .get(&component.user.id.get())
-        .map(|s| s.stack.len())
-        .unwrap_or(1);
-    if let Some(row) = crate::commands::saga::ui::back_refresh_row(depth) {
-        rows.push(row);
-    }
-    rows.push(crate::commands::saga::ui::global_nav_row("saga"));
+    rows.push(crate::commands::saga::ui::tavern_saga_row());
     crate::interactions::util::edit_component(
         ctx,
         component,
@@ -337,6 +317,56 @@ async fn render_tavern_shop_view(
         serenity::builder::EditInteractionResponse::new()
             .embed(embed)
             .components(rows),
+    )
+    .await;
+}
+
+// Central Tavern Home renderer (Common Room menu)
+async fn render_tavern_home_view(
+    ctx: &Context,
+    component: &mut ComponentInteraction,
+    _app_state: &Arc<AppState>,
+) {
+    use serenity::builder::{CreateActionRow, CreateEmbed};
+    let embed = CreateEmbed::new()
+        .title("Tavern — Common Room")
+        .description("Welcome to The Weary Dragon. What would you like to do?")
+        .color(crate::ui::style::COLOR_SAGA_TAVERN)
+        .field(
+            "1) Beers, Liquor, Food, Bait",
+            "Consumables, buffs, and taming aids",
+            false,
+        )
+        .field("2) Tavern Games", "Blackjack, Poker, and more", false)
+        .field(
+            "3) Quests",
+            "Meet NPCs, guilds, and mysterious patrons",
+            false,
+        )
+        .field(
+            "4) Recruitment",
+            "Hire mercenaries; Fame shown in UI",
+            false,
+        )
+        .field(
+            "5) Small Arms & Petty Equipment",
+            "Basic gear until you find better shops",
+            false,
+        );
+    let buttons = vec![
+        crate::ui::buttons::Btn::secondary("saga_tavern_goods", "🍺 Goods"),
+        crate::ui::buttons::Btn::secondary("saga_tavern_games", "🎲 Games"),
+        crate::ui::buttons::Btn::secondary("saga_tavern_quests", "🗺 Quests"),
+        crate::ui::buttons::Btn::primary(crate::interactions::ids::SAGA_RECRUIT, "🧭 Recruitment"),
+        crate::ui::buttons::Btn::secondary("saga_tavern_shop", "🗡 Shop"),
+    ];
+    let mut rows = vec![CreateActionRow::Buttons(buttons)];
+    rows.push(crate::commands::saga::ui::tavern_saga_row());
+    edit_component(
+        ctx,
+        component,
+        "tavern.home",
+        EditInteractionResponse::new().embed(embed).components(rows),
     )
     .await;
 }
@@ -446,7 +476,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                         .disabled(!ap_ok),
                         crate::ui::buttons::Btn::secondary("nav_saga", "↩ Saga"),
                     ]));
-                    components.push(crate::commands::saga::ui::global_nav_row("saga"));
+                    components.push(crate::commands::saga::ui::tavern_saga_row());
                     edit_component(
                         ctx,
                         component,
@@ -728,14 +758,15 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             )
             .await
             {
-                let depth = app_state
-                    .nav_stacks
-                    .read()
-                    .await
-                    .get(&component.user.id.get())
-                    .map(|s| s.stack.len())
-                    .unwrap_or(1);
-                if let Some(row) = back_refresh_row(depth) {
+                if let Some(row) = back_refresh_row(
+                    app_state
+                        .nav_stacks
+                        .read()
+                        .await
+                        .get(&component.user.id.get())
+                        .map(|s| s.stack.len())
+                        .unwrap_or(1),
+                ) {
                     components.push(row);
                 }
                 edit_component(
@@ -782,16 +813,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             };
             let (embed, mut components) =
                 crate::commands::saga::tavern::create_tavern_menu(&recruits, &meta);
-            let depth = app_state
-                .nav_stacks
-                .read()
-                .await
-                .get(&component.user.id.get())
-                .map(|s| s.stack.len())
-                .unwrap_or(1);
-            if let Some(row) = back_refresh_row(depth) {
-                components.push(row);
-            }
+            components.push(crate::commands::saga::ui::tavern_saga_row());
             edit_component(
                 ctx,
                 component,
@@ -802,8 +824,19 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             )
             .await;
         }
-        // Open Tavern view (push onto nav stack) initial
+        // Open Tavern home menu (choices) instead of jumping to recruitment
         Some(&"tavern") if raw_id == crate::interactions::ids::SAGA_TAVERN => {
+            render_tavern_home_view(ctx, component, &app_state).await;
+        }
+        Some(&"tavern") if raw_id == "saga_tavern_home" => {
+            render_tavern_home_view(ctx, component, &app_state).await;
+        }
+        Some(&"tavern") if raw_id == "saga_tavern_goods" => {
+            // Unified goods renderer
+            render_tavern_goods_view(ctx, component, &app_state, None).await;
+        }
+        // Recruitment entry: open the recruitment (rotation) view
+        Some(&"recruit") if raw_id == crate::interactions::ids::SAGA_RECRUIT => {
             if let Ok((embed, mut components)) = push_and_render(
                 SagaView::Tavern,
                 &app_state,
@@ -812,20 +845,11 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             )
             .await
             {
-                let depth = app_state
-                    .nav_stacks
-                    .read()
-                    .await
-                    .get(&component.user.id.get())
-                    .map(|s| s.stack.len())
-                    .unwrap_or(1);
-                if let Some(row) = back_refresh_row(depth) {
-                    components.push(row);
-                }
+                components.push(crate::commands::saga::ui::tavern_saga_row());
                 edit_component(
                     ctx,
                     component,
-                    "tavern.open",
+                    "tavern.recruit",
                     EditInteractionResponse::new()
                         .embed(embed)
                         .components(components),
@@ -833,53 +857,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 .await;
             }
         }
-        Some(&"tavern") if raw_id == "saga_tavern_home" => {
-            // Render a simple Tavern home menu with placeholder categories
-            use serenity::builder::CreateActionRow;
-            let embed = serenity::builder::CreateEmbed::new()
-                .title("Tavern — Common Room")
-                .description("Welcome to The Weary Dragon. What would you like to do?")
-                .color(crate::ui::style::COLOR_SAGA_TAVERN)
-                .field("1) Beers, Liquor, Food, Bait", "Consumables, buffs, and taming aids (coming soon)", false)
-                .field("2) Tavern Games", "Blackjack, Poker, and more (existing mini‑games)", false)
-                .field("3) Quests", "Meet NPCs, guilds, and mysterious patrons; earn fame and rewards (integrated with quest system)", false)
-                .field("4) Recruitment", "Hire mercenaries; Fame shown in UI (was Favor)", false)
-                .field("5) Small Arms & Petty Equipment", "Basic gear until you find better shops", false);
-            let buttons = vec![
-                crate::ui::buttons::Btn::secondary("saga_tavern_goods", "🍺 Goods"),
-                crate::ui::buttons::Btn::secondary("saga_tavern_games", "🎲 Games"),
-                crate::ui::buttons::Btn::secondary("saga_tavern_quests", "🗺 Quests"),
-                crate::ui::buttons::Btn::primary(
-                    crate::interactions::ids::SAGA_TAVERN,
-                    "🧭 Recruitment",
-                ),
-                crate::ui::buttons::Btn::secondary("saga_tavern_shop", "🗡 Shop"),
-            ];
-            let depth = app_state
-                .nav_stacks
-                .read()
-                .await
-                .get(&component.user.id.get())
-                .map(|s| s.stack.len())
-                .unwrap_or(1);
-            let mut rows = vec![CreateActionRow::Buttons(buttons)];
-            if let Some(row) = back_refresh_row(depth) {
-                rows.push(row);
-            }
-            rows.push(crate::commands::saga::ui::global_nav_row("saga"));
-            edit_component(
-                ctx,
-                component,
-                "tavern.home",
-                EditInteractionResponse::new().embed(embed).components(rows),
-            )
-            .await;
-        }
-        Some(&"tavern") if raw_id == "saga_tavern_goods" => {
-            // Unified goods renderer
-            render_tavern_goods_view(ctx, component, &app_state, None).await;
-        }
-        // Tavern: Hire flow (confirm/cancel/commit)
+        // Tavern: Hire flow (confirm)
         Some(&"tavern") if raw_id.starts_with("saga_hire_") => {
             use serenity::builder::CreateActionRow;
             let id_str = raw_id.trim_start_matches("saga_hire_");
@@ -936,22 +914,11 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             rows.push(CreateActionRow::Buttons(vec![
                 crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
                 crate::ui::buttons::Btn::primary(
-                    crate::interactions::ids::SAGA_TAVERN,
+                    crate::interactions::ids::SAGA_RECRUIT,
                     "🧭 Recruitment",
                 ),
             ]));
-            // Back/Refresh + Global nav
-            let depth = app_state
-                .nav_stacks
-                .read()
-                .await
-                .get(&component.user.id.get())
-                .map(|s| s.stack.len())
-                .unwrap_or(1);
-            if let Some(row) = back_refresh_row(depth) {
-                rows.push(row);
-            }
-            rows.push(crate::commands::saga::ui::global_nav_row("saga"));
+            rows.push(crate::commands::saga::ui::tavern_saga_row());
             edit_component(
                 ctx,
                 component,
@@ -982,16 +949,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             ));
             let (embed, mut components) =
                 crate::commands::saga::tavern::create_tavern_menu(&recruits, &meta);
-            let depth = app_state
-                .nav_stacks
-                .read()
-                .await
-                .get(&component.user.id.get())
-                .map(|s| s.stack.len())
-                .unwrap_or(1);
-            if let Some(row) = back_refresh_row(depth) {
-                components.push(row);
-            }
+            components.push(crate::commands::saga::ui::tavern_saga_row());
             edit_component(
                 ctx,
                 component,
@@ -1076,16 +1034,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     let (mut embed, mut components) =
                         crate::commands::saga::tavern::create_tavern_menu(&recruits, &meta);
                     embed = embed.field("Notice", notice, false);
-                    let depth = app_state
-                        .nav_stacks
-                        .read()
-                        .await
-                        .get(&component.user.id.get())
-                        .map(|s| s.stack.len())
-                        .unwrap_or(1);
-                    if let Some(row) = back_refresh_row(depth) {
-                        components.push(row);
-                    }
+                    components.push(crate::commands::saga::ui::tavern_saga_row());
                     edit_component(
                         ctx,
                         component,
@@ -1190,22 +1139,11 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             rows.push(CreateActionRow::Buttons(vec![
                 crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
                 crate::ui::buttons::Btn::primary(
-                    crate::interactions::ids::SAGA_TAVERN,
+                    crate::interactions::ids::SAGA_RECRUIT,
                     "🧭 Recruitment",
                 ),
             ]));
-            // Back/Refresh + Global nav
-            let depth = app_state
-                .nav_stacks
-                .read()
-                .await
-                .get(&component.user.id.get())
-                .map(|s| s.stack.len())
-                .unwrap_or(1);
-            if let Some(row) = back_refresh_row(depth) {
-                rows.push(row);
-            }
-            rows.push(crate::commands::saga::ui::global_nav_row("saga"));
+            rows.push(crate::commands::saga::ui::tavern_saga_row());
             edit_component(
                 ctx,
                 component,
@@ -1346,22 +1284,12 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             let buttons = vec![
                 crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
                 crate::ui::buttons::Btn::primary(
-                    crate::interactions::ids::SAGA_TAVERN,
+                    crate::interactions::ids::SAGA_RECRUIT,
                     "🧭 Recruitment",
                 ),
             ];
-            let depth = app_state
-                .nav_stacks
-                .read()
-                .await
-                .get(&component.user.id.get())
-                .map(|s| s.stack.len())
-                .unwrap_or(1);
             let mut rows = vec![CreateActionRow::Buttons(buttons)];
-            if let Some(row) = back_refresh_row(depth) {
-                rows.push(row);
-            }
-            rows.push(crate::commands::saga::ui::global_nav_row("saga"));
+            rows.push(crate::commands::saga::ui::tavern_saga_row());
             edit_component(
                 ctx,
                 component,
@@ -1383,27 +1311,13 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                         serenity::builder::CreateActionRow::Buttons(vec![
                             crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
                             crate::ui::buttons::Btn::primary(
-                                crate::interactions::ids::SAGA_TAVERN,
+                                crate::interactions::ids::SAGA_RECRUIT,
                                 "🧭 Recruitment",
                             ),
                         ]),
                     );
-                    // Insert back/refresh before global nav if possible
-                    let depth = app_state
-                        .nav_stacks
-                        .read()
-                        .await
-                        .get(&component.user.id.get())
-                        .map(|s| s.stack.len())
-                        .unwrap_or(1);
-                    if let Some(row) = back_refresh_row(depth) {
-                        // Keep under 5 rows: ensure we don't exceed by removing extra if needed
-                        if rows.len() >= 4 {
-                            // remove last non-global row if too many (accepts stay)
-                            let _ = rows.pop();
-                        }
-                        rows.insert(1, row);
-                    }
+                    // Insert Tavern-specific Saga row after the header row
+                    rows.insert(1, crate::commands::saga::ui::tavern_saga_row());
                     edit_component(
                         ctx,
                         component,
@@ -1508,21 +1422,11 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             rows.push(CreateActionRow::Buttons(vec![
                 crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
                 crate::ui::buttons::Btn::primary(
-                    crate::interactions::ids::SAGA_TAVERN,
+                    crate::interactions::ids::SAGA_RECRUIT,
                     "🧭 Recruitment",
                 ),
             ]));
-            let depth = app_state
-                .nav_stacks
-                .read()
-                .await
-                .get(&component.user.id.get())
-                .map(|s| s.stack.len())
-                .unwrap_or(1);
-            if let Some(row) = back_refresh_row(depth) {
-                rows.push(row);
-            }
-            rows.push(crate::commands::saga::ui::global_nav_row("saga"));
+            rows.push(crate::commands::saga::ui::tavern_saga_row());
             edit_component(
                 ctx,
                 component,
@@ -1735,16 +1639,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             ));
             let (embed, mut components) =
                 crate::commands::saga::tavern::create_tavern_menu(&recruits, &meta);
-            let depth = app_state
-                .nav_stacks
-                .read()
-                .await
-                .get(&component.user.id.get())
-                .map(|s| s.stack.len())
-                .unwrap_or(1);
-            if let Some(row) = back_refresh_row(depth) {
-                components.push(row);
-            }
+            components.push(crate::commands::saga::ui::tavern_saga_row());
             edit_component(
                 ctx,
                 component,
@@ -1815,13 +1710,20 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     old_units.iter().map(|u| u.unit_id).collect();
                 let global = crate::commands::saga::tavern::get_daily_recruits(db).await;
                 let rotation: Vec<i32> = global.iter().map(|u| u.unit_id).collect();
-                // Shuffle rotation deterministically for the reroll.
+                // Deterministic per-user-per-day shuffle using splitmix64 key ordering
+                let today = chrono::Utc::now().date_naive();
+                let seed = component.user.id.get()
+                    ^ (((today.year() as u64) << 32) ^ (today.ordinal() as u64));
                 let mut rotation = rotation.clone();
-                {
-                    use rand::seq::SliceRandom;
-                    let mut rng = rand::rng();
-                    rotation.shuffle(&mut rng);
-                }
+                rotation.sort_by(|a, b| {
+                    let ka = crate::commands::saga::tavern::splitmix64(
+                        seed ^ (*a as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+                    );
+                    let kb = crate::commands::saga::tavern::splitmix64(
+                        seed ^ (*b as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+                    );
+                    ka.cmp(&kb).then_with(|| a.cmp(b))
+                });
                 // Perform atomic reroll (deduct, overwrite, increment counters)
                 match crate::database::tavern::transactional_reroll(
                     db,
@@ -1956,14 +1858,15 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             )
             .await
             {
-                let depth = app_state
-                    .nav_stacks
-                    .read()
-                    .await
-                    .get(&component.user.id.get())
-                    .map(|s| s.stack.len())
-                    .unwrap_or(1);
-                if let Some(row) = crate::commands::saga::ui::back_refresh_row(depth) {
+                if let Some(row) = crate::commands::saga::ui::back_refresh_row(
+                    app_state
+                        .nav_stacks
+                        .read()
+                        .await
+                        .get(&component.user.id.get())
+                        .map(|s| s.stack.len())
+                        .unwrap_or(1),
+                ) {
                     comps.push(row);
                 }
                 edit_component(

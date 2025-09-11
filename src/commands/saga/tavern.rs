@@ -6,11 +6,18 @@ use crate::database;
 use crate::database::models::{Unit, UnitRarity};
 use crate::ui::buttons::Btn;
 use crate::ui::style::{COLOR_SAGA_TAVERN, EMOJI_COIN};
-use ahash::AHasher;
 use chrono::{Datelike, NaiveTime, Utc};
 use serenity::builder::{CreateActionRow, CreateEmbed};
 use serenity::model::id::UserId;
-use std::hash::Hasher; // for rng.random()
+// deterministic key helper for stable daily orderings
+#[inline]
+pub(crate) fn splitmix64(mut x: u64) -> u64 {
+    x = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    let mut z = x;
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
 
 // Configurable parameters for the dynamic tavern.
 /// Base hire cost used for cost scaling (Common rarity baseline).
@@ -57,13 +64,12 @@ pub async fn get_daily_recruits(pool: &sqlx::PgPool) -> Vec<Unit> {
         .unwrap_or_default();
     let mut recruitable: Vec<Unit> = all.into_iter().filter(|u| u.is_recruitable).collect();
     let today = Utc::now().date_naive();
-    // Stable deterministic shuffle: hash(date + unit_id) and sort by that.
-    recruitable.sort_by_key(|u| {
-        let mut h = AHasher::default();
-        h.write_i32(today.year());
-        h.write_u32(today.ordinal());
-        h.write_i32(u.unit_id);
-        h.finish()
+    // Stable deterministic shuffle: sort by a splitmix64(date, unit_id) key
+    let seed = ((today.year() as u64) << 32) ^ (today.ordinal() as u64);
+    recruitable.sort_by(|a, b| {
+        let ka = splitmix64(seed ^ (a.unit_id as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        let kb = splitmix64(seed ^ (b.unit_id as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        ka.cmp(&kb).then_with(|| a.unit_id.cmp(&b.unit_id))
     });
     // Truncate to daily maximum
     if recruitable.len() > TAVERN_MAX_DAILY {
@@ -87,14 +93,12 @@ pub fn get_daily_shop_items(user: UserId) -> Vec<Item> {
         Item::TamingLure,
     ];
     let today = Utc::now().date_naive();
-    // Stable deterministic shuffle by hashing (user, date, item id)
-    all.sort_by_key(|it| {
-        let mut h = AHasher::default();
-        h.write_u64(user.get());
-        h.write_i32(today.year());
-        h.write_u32(today.ordinal());
-        h.write_i32(*it as i32);
-        h.finish()
+    // Stable deterministic shuffle key: user, date, item id combined via splitmix64
+    let seed = user.get() ^ ((today.year() as u64) << 32) ^ (today.ordinal() as u64);
+    all.sort_by(|a, b| {
+        let ka = splitmix64(seed ^ ((*a as i32) as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        let kb = splitmix64(seed ^ ((*b as i32) as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        ka.cmp(&kb).then_with(|| (*a as i32).cmp(&(*b as i32)))
     });
     if all.len() > SHOP_DAILY_COUNT {
         all.truncate(SHOP_DAILY_COUNT);
@@ -260,10 +264,16 @@ pub fn create_tavern_menu(
         );
     }
 
-    // Paging controls (if multiple pages)
+    // Action rows
     let mut rows: Vec<CreateActionRow> = Vec::new();
-    rows.push(crate::commands::saga::ui::global_nav_row("saga"));
-    rows.push(CreateActionRow::Buttons(hire_buttons));
+    // Chunk hire buttons to a maximum of 5 per row (Discord limit)
+    for chunk in hire_buttons.chunks(5) {
+        let mut row_btns = Vec::new();
+        for btn in chunk {
+            row_btns.push(btn.clone());
+        }
+        rows.push(CreateActionRow::Buttons(row_btns));
+    }
     // Reroll button with dynamic label/state
     let left = (meta.max_daily_rerolls - meta.daily_rerolls_used).max(0);
     let reroll_label = if left > 0 {
@@ -279,6 +289,8 @@ pub fn create_tavern_menu(
             .disabled(!meta.can_reroll || meta.balance < meta.reroll_cost || left == 0),
         Btn::primary("saga_tavern_home", "🏰 Home"),
     ]));
+    // Tavern-specific nav row (↩ Saga + Refresh), Saga is never disabled here
+    rows.push(crate::commands::saga::ui::tavern_saga_row());
     // Rarity filter buttons removed per spec (simplify UX).
     (embed, rows)
 }
@@ -406,15 +418,10 @@ pub async fn build_tavern_state_cached(
         let ordinal = today.ordinal();
 
         // Deterministic jitter in [0,1) per (user, day, unit)
+        let base_seed = (uid) ^ (((year as u64) << 32) ^ (ordinal as u64));
         let jitter_for = |unit_id: i32| -> f32 {
-            let mut h = AHasher::default();
-            h.write_u64(uid);
-            h.write_i32(year);
-            h.write_u32(ordinal);
-            h.write_i32(unit_id);
-            let v = h.finish();
-            // Map u64 to (0,1)
-            (v as f64 / (u64::MAX as f64)) as f32
+            let key = splitmix64(base_seed ^ (unit_id as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+            (key as f64 / (u64::MAX as f64)) as f32
         };
 
         ordered.sort_by(|a, b| {
@@ -424,7 +431,10 @@ pub async fn build_tavern_state_cached(
             let jb = jitter_for(b.unit_id);
             let sa = ja * wa;
             let sb = jb * wb;
-            sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+            match sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal) {
+                std::cmp::Ordering::Equal => a.unit_id.cmp(&b.unit_id),
+                other => other,
+            }
         });
     }
     let mut visible_cap = TAVERN_BASE_ROTATION + extra_visible;
