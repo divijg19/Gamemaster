@@ -3,9 +3,9 @@
 use crate::commands::economy::core::item::Item;
 use crate::database::models::PlayerQuestStatus;
 use crate::database::quests::QuestBoardEntry;
+use crate::ui::buttons::Btn;
 use serenity::builder::{CreateActionRow, CreateEmbed, CreateEmbedFooter};
 use serenity::model::Colour;
-use crate::ui::buttons::Btn;
 
 /// Creates the embed and interactive components for the Quest Board.
 /// # Returns

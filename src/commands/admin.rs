@@ -104,23 +104,24 @@ pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
         match (&sub.name[..], &sub.value) {
             ("markhuman", Val::SubCommand(nested)) => {
                 if let Some(arg) = nested.iter().find(|o| o.name == "unit_id")
-                    && let Val::Integer(unit_id_ref) = &arg.value {
-                        let unit_id = *unit_id_ref;
-                        if unit_id > 0 {
-                            match database::units::mark_units_as_human(db, &[unit_id as i32]).await
-                            {
-                                Ok(n) => notes.push(format!("Marked {} unit(s) as Human", n)),
-                                Err(e) => notes.push(format!("Mark error: {}", e)),
-                            }
+                    && let Val::Integer(unit_id_ref) = &arg.value
+                {
+                    let unit_id = *unit_id_ref;
+                    if unit_id > 0 {
+                        match database::units::mark_units_as_human(db, &[unit_id as i32]).await {
+                            Ok(n) => notes.push(format!("Marked {} unit(s) as Human", n)),
+                            Err(e) => notes.push(format!("Mark error: {}", e)),
                         }
                     }
+                }
             }
             ("diaguser", Val::SubCommand(nested)) => {
                 let mut target: i64 = interaction.user.id.get() as i64; // base user id
                 if let Some(arg) = nested.iter().find(|o| o.name == "user_id")
-                    && let Val::Integer(user_id_val) = &arg.value {
-                        target = *user_id_val;
-                    }
+                    && let Val::Integer(user_id_val) = &arg.value
+                {
+                    target = *user_id_val;
+                }
                 notes.push(format!("-- Saga Diagnostics for user {} --", target));
                 use sqlx::Error;
                 use sqlx::Row;
@@ -152,9 +153,10 @@ pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
                             host = *v as i32;
                         }
                     } else if o.name == "equip"
-                        && let Val::Integer(v) = &o.value {
-                            equip = *v as i32;
-                        }
+                        && let Val::Integer(v) = &o.value
+                    {
+                        equip = *v as i32;
+                    }
                 }
                 if host > 0 && equip > 0 {
                     match database::units::bond_units(db, interaction.user.id, host, equip).await {
@@ -165,18 +167,16 @@ pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
             }
             ("researchunit", Val::SubCommand(nested)) => {
                 if let Some(arg) = nested.iter().find(|o| o.name == "unit_id")
-                    && let Val::Integer(uid_ref) = &arg.value {
-                        let uid = *uid_ref;
-                        if let Ok(count) = database::units::get_research_progress(
-                            db,
-                            interaction.user.id,
-                            uid as i32,
-                        )
-                        .await
-                        {
-                            notes.push(format!("Research progress unit {} = {}", uid, count));
-                        }
+                    && let Val::Integer(uid_ref) = &arg.value
+                {
+                    let uid = *uid_ref;
+                    if let Ok(count) =
+                        database::units::get_research_progress(db, interaction.user.id, uid as i32)
+                            .await
+                    {
+                        notes.push(format!("Research progress unit {} = {}", uid, count));
                     }
+                }
             }
             ("cachestats", _) => {
                 let (hits, misses) = crate::services::cache::cache_stats().await;

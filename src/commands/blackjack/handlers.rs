@@ -1,8 +1,8 @@
 //! Handles all `ComponentInteraction` events for the Blackjack game.
 
 use super::state::{BlackjackGame, GamePhase, Hand, HandStatus, Player};
-use crate::commands::games::card::Rank;
 use crate::commands::games::GameUpdate;
+use crate::commands::games::card::Rank;
 use serenity::builder::{CreateInteractionResponse, CreateInteractionResponseMessage};
 use serenity::model::application::ComponentInteraction;
 use serenity::prelude::Context;

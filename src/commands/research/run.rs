@@ -1,6 +1,6 @@
 use crate::database;
-use serenity::builder::{CreateActionRow, CreateCommand, CreateEmbed};
 use crate::ui::buttons::Btn;
+use serenity::builder::{CreateActionRow, CreateCommand, CreateEmbed};
 use serenity::model::application::CommandInteraction;
 use serenity::model::channel::Message;
 use serenity::prelude::Context;

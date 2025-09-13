@@ -18,8 +18,125 @@ use serenity::prelude::Context;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::instrument;
+// Small helper: render a DRY ante selector for card games (Blackjack/Poker) started via Tavern.
+async fn render_ante_selector(
+    ctx: &Context,
+    component: &mut ComponentInteraction,
+    game_key: &str, // "blackjack" | "poker"
+    title: &str,
+    note: &str,
+    balance: i64,
+) {
+    use serenity::builder::{CreateActionRow, CreateEmbed};
+    let embed = CreateEmbed::new()
+        .title(format!("{} — Select Ante", title))
+        .description(note)
+        .field(
+            "Your Balance",
+            format!("{} {}", crate::ui::style::EMOJI_COIN, balance),
+            true,
+        )
+        .color(crate::ui::style::COLOR_SAGA_TAVERN);
+    // Common ante options; always cap by balance for All-in and disable overs
+    let ante_vals = [10, 100, 1000];
+    let mut ante_btns = Vec::new();
+    for v in ante_vals {
+        ante_btns.push(
+            crate::ui::buttons::Btn::primary(
+                &format!(
+                    "{}{}_{}",
+                    crate::interactions::ids::SAGA_TAVERN_GAMES_ANTE_PREFIX,
+                    game_key,
+                    v
+                ),
+                &format!("Bet {} {}", crate::ui::style::EMOJI_COIN, v),
+            )
+            .disabled(balance < v),
+        );
+    }
+    let all_in = balance.max(0);
+    let mut rows = vec![CreateActionRow::Buttons(ante_btns)];
+    rows.push(CreateActionRow::Buttons(vec![
+        crate::ui::buttons::Btn::primary(
+            &format!(
+                "{}{}_{}",
+                crate::interactions::ids::SAGA_TAVERN_GAMES_ANTE_PREFIX,
+                game_key,
+                all_in
+            ),
+            &format!("All-in {} {}", crate::ui::style::EMOJI_COIN, all_in),
+        )
+        .disabled(all_in <= 0),
+        crate::ui::buttons::Btn::secondary(
+            crate::interactions::ids::SAGA_TAVERN_GAMES_ANTE_CANCEL,
+            "Cancel",
+        ),
+    ]));
+    // Tavern nav row (↩ Saga + Refresh)
+    rows.push(crate::commands::saga::ui::tavern_saga_row());
+    edit_component(
+        ctx,
+        component,
+        "tavern.games.ante",
+        EditInteractionResponse::new().embed(embed).components(rows),
+    )
+    .await;
+}
 
 // (Removed local edit helper; using util::edit_component for consistency.)
+// Small helper: render the Tavern Games main menu consistently.
+async fn render_tavern_games_view(
+    ctx: &Context,
+    component: &mut ComponentInteraction,
+    _app_state: &Arc<AppState>,
+) {
+    use serenity::builder::{CreateActionRow, CreateEmbed};
+    let embed = CreateEmbed::new()
+        .title("Tavern Games")
+        .description("Challenge the house or friends.")
+        .field("Blackjack", "Play vs the dealer.", true)
+        .field("Poker", "WIP.", true)
+        .field(
+            "Arm Wrestling",
+            "Pick a party member. Tests Strength.",
+            true,
+        )
+        .field("Darts", "Pick a party member. Tests Dexterity.", true)
+        .color(crate::ui::style::COLOR_SAGA_TAVERN);
+    let buttons = vec![
+        crate::ui::buttons::Btn::secondary(crate::interactions::ids::SAGA_TAVERN_HOME, "🏰 Tavern"),
+        crate::ui::buttons::Btn::primary(crate::interactions::ids::SAGA_RECRUIT, "🧭 Recruitment"),
+    ];
+    let mut rows = vec![CreateActionRow::Buttons(buttons)];
+    rows.push(CreateActionRow::Buttons(vec![
+        crate::ui::buttons::Btn::primary(
+            crate::interactions::ids::SAGA_TAVERN_GAMES_BLACKJACK,
+            "🃏 Blackjack",
+        ),
+        crate::ui::buttons::Btn::primary(
+            crate::interactions::ids::SAGA_TAVERN_GAMES_POKER,
+            "🂡 Poker",
+        ),
+    ]));
+    rows.push(CreateActionRow::Buttons(vec![
+        crate::ui::buttons::Btn::secondary(
+            crate::interactions::ids::SAGA_TAVERN_GAMES_ARM,
+            "💪 Arm Wrestling",
+        ),
+        crate::ui::buttons::Btn::secondary(
+            crate::interactions::ids::SAGA_TAVERN_GAMES_DARTS,
+            "🎯 Darts",
+        ),
+    ]));
+    rows.push(crate::commands::saga::ui::tavern_saga_row());
+    edit_component(
+        ctx,
+        component,
+        "tavern.games",
+        EditInteractionResponse::new().embed(embed).components(rows),
+    )
+    .await;
+}
 
 // Local cache helpers removed (centralized in services::saga).
 
@@ -117,6 +234,7 @@ async fn render_tavern_goods_view(
             if let Some(msg) = &notice {
                 s.push_str(&format!("\nℹ️ {}", msg));
             }
+            s.push_str("\nDisabled buttons indicate you don’t meet the requirement (e.g., insufficient coins or an effect already active).");
             s
         })
         .field(
@@ -138,7 +256,11 @@ async fn render_tavern_goods_view(
         );
         buy_buttons.push(
             crate::ui::buttons::Btn::success(
-                &format!("saga_tavern_buy_{}", item.id()),
+                &format!(
+                    "{}{}",
+                    crate::interactions::ids::SAGA_TAVERN_BUY_PREFIX,
+                    item.id()
+                ),
                 &format!("Buy {} {}", item.emoji(), item.display_name()),
             )
             .disabled(profile.balance < cost),
@@ -193,19 +315,26 @@ async fn render_tavern_goods_view(
             _ => String::new(),
         };
         use_buttons.push(
-            crate::ui::buttons::Btn::primary(&format!("saga_tavern_use_{}", use_item.id()), &label)
-                .disabled(match use_item {
-                    Item::FocusTonic => {
-                        qty <= 0 || focus_state.as_ref().map(|(a, _)| *a).unwrap_or(false)
-                    }
-                    _ => qty <= 0,
-                }),
+            crate::ui::buttons::Btn::primary(
+                &format!(
+                    "{}{}",
+                    crate::interactions::ids::SAGA_TAVERN_USE_PREFIX,
+                    use_item.id()
+                ),
+                &label,
+            )
+            .disabled(match use_item {
+                Item::FocusTonic => {
+                    qty <= 0 || focus_state.as_ref().map(|(a, _)| *a).unwrap_or(false)
+                }
+                _ => qty <= 0,
+            }),
         );
     }
     rows.push(CreateActionRow::Buttons(use_buttons));
     // Home/Recruitment
     rows.push(CreateActionRow::Buttons(vec![
-        crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
+        crate::ui::buttons::Btn::secondary(crate::interactions::ids::SAGA_TAVERN_HOME, "🏰 Tavern"),
         crate::ui::buttons::Btn::primary(crate::interactions::ids::SAGA_RECRUIT, "🧭 Recruitment"),
     ]));
     // Tavern-specific nav row: ↩ Saga + Refresh (Saga not disabled)
@@ -296,7 +425,11 @@ async fn render_tavern_shop_view(
         );
         buy_buttons.push(
             crate::ui::buttons::Btn::success(
-                &format!("saga_tavern_shop_buy_{}", *item as i32),
+                &format!(
+                    "{}{}",
+                    crate::interactions::ids::SAGA_TAVERN_SHOP_BUY_PREFIX,
+                    *item as i32
+                ),
                 &format!("Buy {} {}", item.emoji(), item.display_name()),
             )
             .disabled(profile.balance < cost),
@@ -305,7 +438,7 @@ async fn render_tavern_shop_view(
     let mut rows = vec![CreateActionRow::Buttons(buy_buttons)];
     // Home + Recruitment row
     rows.push(CreateActionRow::Buttons(vec![
-        crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
+        crate::ui::buttons::Btn::secondary(crate::interactions::ids::SAGA_TAVERN_HOME, "🏰 Tavern"),
         crate::ui::buttons::Btn::primary(crate::interactions::ids::SAGA_RECRUIT, "🧭 Recruitment"),
     ]));
     rows.push(crate::commands::saga::ui::tavern_saga_row());
@@ -329,7 +462,7 @@ async fn render_tavern_home_view(
     use serenity::builder::{CreateActionRow, CreateEmbed};
     let embed = CreateEmbed::new()
         .title("Tavern — Common Room")
-        .description("Welcome to The Weary Dragon. What would you like to do?")
+        .description("Your home away from home. Choose a section below.")
         .color(crate::ui::style::COLOR_SAGA_TAVERN)
         .field(
             "1) Beers, Liquor, Food, Bait",
@@ -353,11 +486,11 @@ async fn render_tavern_home_view(
             false,
         );
     let buttons = vec![
-        crate::ui::buttons::Btn::secondary("saga_tavern_goods", "🍺 Goods"),
-        crate::ui::buttons::Btn::secondary("saga_tavern_games", "🎲 Games"),
-        crate::ui::buttons::Btn::primary("saga_tavern_quests", "🗺 Quests"),
+        crate::ui::buttons::Btn::secondary(crate::interactions::ids::SAGA_TAVERN_GOODS, "🍺 Goods"),
+        crate::ui::buttons::Btn::secondary(crate::interactions::ids::SAGA_TAVERN_GAMES, "🎲 Games"),
+        crate::ui::buttons::Btn::primary(crate::interactions::ids::SAGA_TAVERN_QUESTS, "🗺 Quests"),
         crate::ui::buttons::Btn::primary(crate::interactions::ids::SAGA_RECRUIT, "🧭 Recruitment"),
-        crate::ui::buttons::Btn::secondary("saga_tavern_shop", "🗡 Shop"),
+        crate::ui::buttons::Btn::secondary(crate::interactions::ids::SAGA_TAVERN_SHOP, "🗡 Shop"),
     ];
     let mut rows = vec![CreateActionRow::Buttons(buttons)];
     rows.push(crate::commands::saga::ui::tavern_saga_row());
@@ -391,9 +524,12 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
     }
 
     match custom_id_parts.get(1) {
-        Some(&"preview") if raw_id.starts_with("saga_preview_") => {
+        Some(&"preview") if crate::interactions::ids::is_saga_preview(raw_id) => {
             // Preview a node's enemies & rewards without spending AP.
-            let node_id = match raw_id.trim_start_matches("saga_preview_").parse::<i32>() {
+            let node_id = match raw_id
+                .trim_start_matches(crate::interactions::ids::SAGA_PREVIEW_PREFIX)
+                .parse::<i32>()
+            {
                 Ok(v) => v,
                 Err(_) => {
                     edit_component(
@@ -426,20 +562,55 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                             format!("💰 {} | XP {}", node.reward_coins, node.reward_unit_xp),
                             true,
                         )
-                        .color(0x2F3136);
+                        .color(crate::ui::style::COLOR_SAGA_MAP);
+                    // Fetch profile once for difficulty + AP checks
+                    let profile_opt = crate::services::saga::get_saga_profile(
+                        &app_state,
+                        component.user.id,
+                        false,
+                    )
+                    .await;
+                    // Show a compact difficulty tag (E, =, M, H) similar to map UI
+                    if let Some(profile) = &profile_opt {
+                        let tag = if node.story_progress_required > profile.story_progress + 2 {
+                            "HARD"
+                        } else if node.story_progress_required > profile.story_progress {
+                            "MOD"
+                        } else if node.story_progress_required + 2 < profile.story_progress {
+                            "EASY"
+                        } else {
+                            "EVEN"
+                        };
+                        let sym = match tag {
+                            "EASY" => "E",
+                            "EVEN" => "=",
+                            "MOD" => "M",
+                            "HARD" => "H",
+                            _ => "?",
+                        };
+                        embed = embed.field("Difficulty", format!("{} ({})", sym, tag), true);
+                    }
                     if !enemies.is_empty() {
+                        let shown = 10usize;
                         let enemy_lines = enemies
                             .iter()
                             .map(|e| format!("- {} ({:?})", e.name, e.rarity))
-                            .take(10)
+                            .take(shown)
                             .collect::<Vec<_>>()
                             .join("\n");
-                        embed = embed.field("Enemies", enemy_lines, false);
+                        let extra = enemies.len().saturating_sub(shown);
+                        let val = if extra > 0 {
+                            format!("{}\n… and {} more", enemy_lines, extra)
+                        } else {
+                            enemy_lines
+                        };
+                        embed = embed.field("Enemies", val, false);
                     }
                     if !rewards.is_empty() {
+                        let shown = 10usize;
                         let reward_lines = rewards
                             .iter()
-                            .take(10)
+                            .take(shown)
                             .map(|r| {
                                 format!(
                                     "• Item {} x{} ({}%)",
@@ -450,26 +621,39 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                             })
                             .collect::<Vec<_>>()
                             .join("\n");
-                        embed = embed.field("Possible Drops", reward_lines, false);
+                        let extra = rewards.len().saturating_sub(shown);
+                        let val = if extra > 0 {
+                            format!("{}\n… and {} more", reward_lines, extra)
+                        } else {
+                            reward_lines
+                        };
+                        embed = embed.field("Possible Drops", val, false);
                     }
                     let mut components = Vec::new();
                     // Provide a Start Battle button (spends AP) reflecting AP availability.
-                    let ap_ok = crate::services::saga::get_saga_profile(
-                        &app_state,
-                        component.user.id,
-                        false,
-                    )
-                    .await
-                    .map(|p| p.current_ap > 0)
-                    .unwrap_or(false);
+                    let ap_ok = profile_opt
+                        .as_ref()
+                        .map(|p| p.current_ap > 0)
+                        .unwrap_or(false);
                     let start_label = if ap_ok {
                         "⚔ Start Battle (1 AP)"
                     } else {
                         "⚔ Start Battle (No AP)"
                     };
+                    if !ap_ok {
+                        embed = embed.field(
+                            "Action Points",
+                            "You need 1 AP to start this battle.",
+                            false,
+                        );
+                    }
                     components.push(serenity::builder::CreateActionRow::Buttons(vec![
                         crate::ui::buttons::Btn::primary(
-                            &format!("saga_node_{}", node.node_id),
+                            &format!(
+                                "{}{}",
+                                crate::interactions::ids::SAGA_NODE_PREFIX,
+                                node.node_id
+                            ),
                             start_label,
                         )
                         .disabled(!ap_ok),
@@ -510,10 +694,11 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             }
             return;
         }
-        Some(&"tavern") if raw_id.starts_with("saga_tavern_use_") => {
+        Some(&"tavern") if raw_id.starts_with(crate::interactions::ids::SAGA_TAVERN_USE_PREFIX) => {
             use crate::commands::economy::core::item::Item;
             // Parse item id
-            let id_str = raw_id.trim_start_matches("saga_tavern_use_");
+            let id_str =
+                raw_id.trim_start_matches(crate::interactions::ids::SAGA_TAVERN_USE_PREFIX);
             let Some(item_id) = id_str.parse::<i32>().ok() else {
                 edit_component(
                     ctx,
@@ -570,7 +755,8 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                             )
                             .await;
                             // Re-render goods with confirmation banner
-                            component.data.custom_id = "saga_tavern_goods".into();
+                            component.data.custom_id =
+                                crate::interactions::ids::SAGA_TAVERN_GOODS.into();
                             render_tavern_goods_view(
                                 ctx,
                                 component,
@@ -674,7 +860,8 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                                     // Invalidate saga profile cache so fresh values render
                                     app_state.invalidate_user_caches(component.user.id).await;
                                     // Re-render goods after success with a short confirmation notice
-                                    component.data.custom_id = "saga_tavern_goods".into();
+                                    component.data.custom_id =
+                                        crate::interactions::ids::SAGA_TAVERN_GOODS.into();
                                     render_tavern_goods_view(
                                         ctx,
                                         component,
@@ -796,7 +983,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 .await;
             }
         }
-        Some(&"tavern") if raw_id == "saga_tavern_cancel" => {
+        Some(&"tavern") if raw_id == crate::interactions::ids::SAGA_TAVERN_CANCEL => {
             // Session pagination removed; simply re-render current tavern state.
             let (recruits, meta) = match crate::commands::saga::tavern::build_tavern_state_cached(
                 &app_state,
@@ -836,10 +1023,10 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
         Some(&"tavern") if raw_id == crate::interactions::ids::SAGA_TAVERN => {
             render_tavern_home_view(ctx, component, &app_state).await;
         }
-        Some(&"tavern") if raw_id == "saga_tavern_home" => {
+        Some(&"tavern") if raw_id == crate::interactions::ids::SAGA_TAVERN_HOME => {
             render_tavern_home_view(ctx, component, &app_state).await;
         }
-        Some(&"tavern") if raw_id == "saga_tavern_goods" => {
+        Some(&"tavern") if raw_id == crate::interactions::ids::SAGA_TAVERN_GOODS => {
             // Unified goods renderer
             render_tavern_goods_view(ctx, component, &app_state, None).await;
         }
@@ -866,9 +1053,9 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             }
         }
         // Tavern: Hire flow (confirm)
-        Some(_) if raw_id.starts_with("saga_hire_") => {
+        Some(_) if raw_id.starts_with(crate::interactions::ids::SAGA_HIRE_PREFIX) => {
             use serenity::builder::CreateActionRow;
-            let id_str = raw_id.trim_start_matches("saga_hire_");
+            let id_str = raw_id.trim_start_matches(crate::interactions::ids::SAGA_HIRE_PREFIX);
             let Some(unit_id) = id_str.parse::<i32>().ok() else {
                 edit_component(
                     ctx,
@@ -911,16 +1098,26 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 balance >= crate::commands::saga::tavern::hire_cost_for_rarity(unit.rarity);
             let buttons = vec![
                 crate::ui::buttons::Btn::success(
-                    &format!("saga_hire_confirm_{}", unit.unit_id),
+                    &format!(
+                        "{}{}",
+                        crate::interactions::ids::SAGA_HIRE_CONFIRM_PREFIX,
+                        unit.unit_id
+                    ),
                     "✅ Confirm",
                 )
                 .disabled(!can_afford),
-                crate::ui::buttons::Btn::secondary("saga_hire_cancel", "❌ Cancel"),
+                crate::ui::buttons::Btn::secondary(
+                    crate::interactions::ids::SAGA_HIRE_CANCEL,
+                    "❌ Cancel",
+                ),
             ];
             let mut rows = vec![CreateActionRow::Buttons(buttons)];
             // Home + Recruitment row
             rows.push(CreateActionRow::Buttons(vec![
-                crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
+                crate::ui::buttons::Btn::secondary(
+                    crate::interactions::ids::SAGA_TAVERN_HOME,
+                    "🏰 Tavern",
+                ),
                 crate::ui::buttons::Btn::primary(
                     crate::interactions::ids::SAGA_RECRUIT,
                     "🧭 Recruitment",
@@ -935,7 +1132,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             )
             .await;
         }
-        Some(_) if raw_id == "saga_hire_cancel" => {
+        Some(_) if raw_id == crate::interactions::ids::SAGA_HIRE_CANCEL => {
             // Re-render the recruitment menu via build_tavern_state_cached
             let (recruits, meta) = crate::commands::saga::tavern::build_tavern_state_cached(
                 &app_state,
@@ -968,9 +1165,10 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             )
             .await;
         }
-        Some(_) if raw_id.starts_with("saga_hire_confirm_") => {
+        Some(_) if raw_id.starts_with(crate::interactions::ids::SAGA_HIRE_CONFIRM_PREFIX) => {
             // Commit hire: charge coins atomically and add unit + fame
-            let id_str = raw_id.trim_start_matches("saga_hire_confirm_");
+            let id_str =
+                raw_id.trim_start_matches(crate::interactions::ids::SAGA_HIRE_CONFIRM_PREFIX);
             let Some(unit_id) = id_str.parse::<i32>().ok() else {
                 edit_component(
                     ctx,
@@ -1065,10 +1263,11 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 }
             }
         }
-        Some(&"tavern") if raw_id.starts_with("saga_tavern_buy_") => {
+        Some(&"tavern") if raw_id.starts_with(crate::interactions::ids::SAGA_TAVERN_BUY_PREFIX) => {
             use crate::commands::economy::core::item::Item;
             use serenity::builder::{CreateActionRow, CreateEmbed};
-            let id_str = raw_id.trim_start_matches("saga_tavern_buy_");
+            let id_str =
+                raw_id.trim_start_matches(crate::interactions::ids::SAGA_TAVERN_BUY_PREFIX);
             let Some(item_id) = id_str.parse::<i32>().ok() else {
                 edit_component(
                     ctx,
@@ -1136,16 +1335,26 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             }
             let buttons = vec![
                 crate::ui::buttons::Btn::success(
-                    &format!("saga_tavern_buy_confirm_{}", item_id),
+                    &format!(
+                        "{}{}",
+                        crate::interactions::ids::SAGA_TAVERN_BUY_CONFIRM_PREFIX,
+                        item_id
+                    ),
                     "✅ Confirm",
                 )
                 .disabled(balance < cost),
-                crate::ui::buttons::Btn::secondary("saga_tavern_buy_cancel", "❌ Cancel"),
+                crate::ui::buttons::Btn::secondary(
+                    crate::interactions::ids::SAGA_TAVERN_BUY_CANCEL,
+                    "❌ Cancel",
+                ),
             ];
             let mut rows = vec![CreateActionRow::Buttons(buttons)];
             // Home + Recruitment
             rows.push(CreateActionRow::Buttons(vec![
-                crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
+                crate::ui::buttons::Btn::secondary(
+                    crate::interactions::ids::SAGA_TAVERN_HOME,
+                    "🏰 Tavern",
+                ),
                 crate::ui::buttons::Btn::primary(
                     crate::interactions::ids::SAGA_RECRUIT,
                     "🧭 Recruitment",
@@ -1160,14 +1369,17 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             )
             .await;
         }
-        Some(&"tavern") if raw_id == "saga_tavern_buy_cancel" => {
+        Some(&"tavern") if raw_id == crate::interactions::ids::SAGA_TAVERN_BUY_CANCEL => {
             // Re-render goods via unified renderer
-            component.data.custom_id = "saga_tavern_goods".into();
+            component.data.custom_id = crate::interactions::ids::SAGA_TAVERN_GOODS.into();
             render_tavern_goods_view(ctx, component, &app_state, None).await;
         }
-        Some(&"tavern") if raw_id.starts_with("saga_tavern_buy_confirm_") => {
+        Some(&"tavern")
+            if raw_id.starts_with(crate::interactions::ids::SAGA_TAVERN_BUY_CONFIRM_PREFIX) =>
+        {
             use crate::commands::economy::core::item::Item;
-            let id_str = raw_id.trim_start_matches("saga_tavern_buy_confirm_");
+            let id_str =
+                raw_id.trim_start_matches(crate::interactions::ids::SAGA_TAVERN_BUY_CONFIRM_PREFIX);
             let Some(item_id) = id_str.parse::<i32>().ok() else {
                 edit_component(
                     ctx,
@@ -1258,7 +1470,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                         return;
                     }
                     // Re-render goods with a succinct purchase notice
-                    component.data.custom_id = "saga_tavern_goods".into();
+                    component.data.custom_id = crate::interactions::ids::SAGA_TAVERN_GOODS.into();
                     let notice = Some(format!(
                         "You bought {} for {} {}.",
                         item.display_name(),
@@ -1281,44 +1493,93 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 }
             }
         }
-        Some(&"tavern") if raw_id == "saga_tavern_games" => {
-            use serenity::builder::{CreateActionRow, CreateEmbed};
-            let embed = CreateEmbed::new()
-                .title("Tavern Games")
-                .description("Challenge the house or friends.")
-                .field("Blackjack", "Play vs the dealer.", true)
-                .field("Poker", "WIP.", true)
-                .field(
-                    "Arm Wrestling",
-                    "Pick a party member. Tests Strength.",
-                    true,
-                )
-                .field("Darts", "Pick a party member. Tests Dexterity.", true)
-                .color(crate::ui::style::COLOR_SAGA_TAVERN);
-            let buttons = vec![
-                crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
-                crate::ui::buttons::Btn::primary(
-                    crate::interactions::ids::SAGA_RECRUIT,
-                    "🧭 Recruitment",
-                ),
-            ];
-            let mut rows = vec![CreateActionRow::Buttons(buttons)];
-            // Stat-based mini-games
-            rows.push(CreateActionRow::Buttons(vec![
-                crate::ui::buttons::Btn::secondary("saga_tavern_games_arm", "💪 Arm Wrestling"),
-                crate::ui::buttons::Btn::secondary("saga_tavern_games_darts", "🎯 Darts"),
-            ]));
-            rows.push(crate::commands::saga::ui::tavern_saga_row());
-            edit_component(
+        Some(&"tavern") if raw_id == crate::interactions::ids::SAGA_TAVERN_GAMES => {
+            render_tavern_games_view(ctx, component, &app_state).await;
+        }
+        Some(&"tavern") if raw_id == crate::interactions::ids::SAGA_TAVERN_GAMES_BLACKJACK => {
+            // Show ante selector (DRY) for Blackjack
+            let balance = crate::database::economy::get_or_create_profile(db, component.user.id)
+                .await
+                .map(|p| p.balance)
+                .unwrap_or(0);
+            render_ante_selector(
                 ctx,
                 component,
-                "tavern.games",
-                EditInteractionResponse::new().embed(embed).components(rows),
+                "blackjack",
+                "Blackjack",
+                "Pick an ante to start a table.",
+                balance,
             )
             .await;
         }
+        Some(&"tavern") if raw_id == crate::interactions::ids::SAGA_TAVERN_GAMES_POKER => {
+            // Show ante selector (DRY) for Poker
+            let balance = crate::database::economy::get_or_create_profile(db, component.user.id)
+                .await
+                .map(|p| p.balance)
+                .unwrap_or(0);
+            render_ante_selector(
+                ctx,
+                component,
+                "poker",
+                "Poker",
+                "Pick an ante to start a table.",
+                balance,
+            )
+            .await;
+        }
+        Some(&"tavern") if raw_id == crate::interactions::ids::SAGA_TAVERN_GAMES_ANTE_CANCEL => {
+            // Return to the Games menu without async recursion
+            render_tavern_games_view(ctx, component, &app_state).await;
+            return;
+        }
         Some(&"tavern")
-            if raw_id == "saga_tavern_games_arm" || raw_id == "saga_tavern_games_darts" =>
+            if raw_id.starts_with(crate::interactions::ids::SAGA_TAVERN_GAMES_ANTE_PREFIX) =>
+        {
+            // Parse ante selection and start the game
+            match crate::interactions::ids::parse_tavern_ante_id(raw_id)
+                .map(|(g, a)| (g.as_str().to_owned(), a))
+            {
+                Some((game_key, amount)) if game_key == "blackjack" => {
+                    use crate::commands::blackjack::state::BlackjackGame;
+                    let game = BlackjackGame::new(Arc::new(component.user.clone()), amount);
+                    let mut gm = app_state.game_manager.write().await;
+                    let (content, embed, components) = game.render();
+                    let builder = EditInteractionResponse::new()
+                        .content(content)
+                        .embed(embed)
+                        .components(components);
+                    if let Ok(msg) = component.edit_response(&ctx.http, builder).await {
+                        gm.start_game(msg.id, Box::new(game));
+                    }
+                }
+                Some((game_key, amount)) if game_key == "poker" => {
+                    use crate::commands::poker::state::PokerGame;
+                    let game = PokerGame::new(Arc::new(component.user.clone()), amount);
+                    let mut gm = app_state.game_manager.write().await;
+                    let (content, embed, components) = game.render();
+                    let builder = EditInteractionResponse::new()
+                        .content(content)
+                        .embed(embed)
+                        .components(components);
+                    if let Ok(msg) = component.edit_response(&ctx.http, builder).await {
+                        gm.start_game(msg.id, Box::new(game));
+                    }
+                }
+                _ => {
+                    edit_component(
+                        ctx,
+                        component,
+                        "tavern.games.ante.bad_id",
+                        EditInteractionResponse::new().content("Invalid ante selection."),
+                    )
+                    .await;
+                }
+            }
+        }
+        Some(&"tavern")
+            if raw_id == crate::interactions::ids::SAGA_TAVERN_GAMES_ARM
+                || raw_id == crate::interactions::ids::SAGA_TAVERN_GAMES_DARTS =>
         {
             // Party selection prompt for stat-based game
             let units = database::units::get_user_party(db, component.user.id)
@@ -1342,8 +1603,9 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             for u in units.iter().take(5) {
                 btns.push(crate::ui::buttons::Btn::secondary(
                     &format!(
-                        "saga_tavern_games_play_{}_{}",
-                        if raw_id.ends_with("arm") {
+                        "{}{}_{}",
+                        crate::interactions::ids::SAGA_TAVERN_GAMES_PLAY_PREFIX,
+                        if raw_id == crate::interactions::ids::SAGA_TAVERN_GAMES_ARM {
                             "arm"
                         } else {
                             "darts"
@@ -1365,7 +1627,9 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             )
             .await;
         }
-        Some(&"tavern") if raw_id.starts_with("saga_tavern_games_play_") => {
+        Some(&"tavern")
+            if raw_id.starts_with(crate::interactions::ids::SAGA_TAVERN_GAMES_PLAY_PREFIX) =>
+        {
             // Resolve the mini-game with a simple stat check
             let parts: Vec<&str> = raw_id.split('_').collect();
             let game = parts.get(4).copied().unwrap_or("arm");
@@ -1442,7 +1706,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             )
             .await;
         }
-        Some(&"tavern") if raw_id == "saga_tavern_quests" => {
+        Some(&"tavern") if raw_id == crate::interactions::ids::SAGA_TAVERN_QUESTS => {
             // Wire to real quest board UI
             match crate::database::quests::get_or_refresh_quest_board(db, component.user.id).await {
                 Ok(board) => {
@@ -1453,7 +1717,10 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     rows.insert(
                         0,
                         serenity::builder::CreateActionRow::Buttons(vec![
-                            crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
+                            crate::ui::buttons::Btn::secondary(
+                                crate::interactions::ids::SAGA_TAVERN_HOME,
+                                "🏰 Tavern",
+                            ),
                             crate::ui::buttons::Btn::primary(
                                 crate::interactions::ids::SAGA_RECRUIT,
                                 "🧭 Recruitment",
@@ -1482,13 +1749,16 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 }
             }
         }
-        Some(&"tavern") if raw_id == "saga_tavern_shop" => {
+        Some(&"tavern") if raw_id == crate::interactions::ids::SAGA_TAVERN_SHOP => {
             render_tavern_shop_view(ctx, component, &app_state, None).await;
         }
-        Some(&"tavern") if raw_id.starts_with("saga_tavern_shop_buy_") => {
+        Some(&"tavern")
+            if raw_id.starts_with(crate::interactions::ids::SAGA_TAVERN_SHOP_BUY_PREFIX) =>
+        {
             use crate::commands::economy::core::item::Item;
             use serenity::builder::{CreateActionRow, CreateEmbed};
-            let id_str = raw_id.trim_start_matches("saga_tavern_shop_buy_");
+            let id_str =
+                raw_id.trim_start_matches(crate::interactions::ids::SAGA_TAVERN_SHOP_BUY_PREFIX);
             let Some(item_id) = id_str.parse::<i32>().ok() else {
                 edit_component(
                     ctx,
@@ -1556,15 +1826,25 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             }
             let buttons = vec![
                 crate::ui::buttons::Btn::success(
-                    &format!("saga_tavern_shop_buy_confirm_{}", item_id),
+                    &format!(
+                        "{}{}",
+                        crate::interactions::ids::SAGA_TAVERN_SHOP_BUY_CONFIRM_PREFIX,
+                        item_id
+                    ),
                     "✅ Confirm",
                 )
                 .disabled(balance < cost),
-                crate::ui::buttons::Btn::secondary("saga_tavern_shop_buy_cancel", "❌ Cancel"),
+                crate::ui::buttons::Btn::secondary(
+                    crate::interactions::ids::SAGA_TAVERN_SHOP_BUY_CANCEL,
+                    "❌ Cancel",
+                ),
             ];
             let mut rows = vec![CreateActionRow::Buttons(buttons)];
             rows.push(CreateActionRow::Buttons(vec![
-                crate::ui::buttons::Btn::secondary("saga_tavern_home", "🏰 Home"),
+                crate::ui::buttons::Btn::secondary(
+                    crate::interactions::ids::SAGA_TAVERN_HOME,
+                    "🏰 Tavern",
+                ),
                 crate::ui::buttons::Btn::primary(
                     crate::interactions::ids::SAGA_RECRUIT,
                     "🧭 Recruitment",
@@ -1579,13 +1859,17 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             )
             .await;
         }
-        Some(&"tavern") if raw_id == "saga_tavern_shop_buy_cancel" => {
-            component.data.custom_id = "saga_tavern_shop".into();
+        Some(&"tavern") if raw_id == crate::interactions::ids::SAGA_TAVERN_SHOP_BUY_CANCEL => {
+            component.data.custom_id = crate::interactions::ids::SAGA_TAVERN_SHOP.into();
             render_tavern_shop_view(ctx, component, &app_state, None).await;
         }
-        Some(&"tavern") if raw_id.starts_with("saga_tavern_shop_buy_confirm_") => {
+        Some(&"tavern")
+            if raw_id
+                .starts_with(crate::interactions::ids::SAGA_TAVERN_SHOP_BUY_CONFIRM_PREFIX) =>
+        {
             use crate::commands::economy::core::item::Item;
-            let id_str = raw_id.trim_start_matches("saga_tavern_shop_buy_confirm_");
+            let id_str = raw_id
+                .trim_start_matches(crate::interactions::ids::SAGA_TAVERN_SHOP_BUY_CONFIRM_PREFIX);
             let Some(item_id) = id_str.parse::<i32>().ok() else {
                 edit_component(
                     ctx,
@@ -1675,7 +1959,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                         return;
                     }
                     // Re-render shop with success message via unified renderer
-                    component.data.custom_id = "saga_tavern_shop".into();
+                    component.data.custom_id = crate::interactions::ids::SAGA_TAVERN_SHOP.into();
                     let notice = Some(format!(
                         "You bought {} {} for {} {}.",
                         item.emoji(),
@@ -1699,7 +1983,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             }
         }
         // Removed pagination / filter handling branch
-        Some(&"tavern") if raw_id == "saga_tavern_reroll" => {
+        Some(&"tavern") if raw_id == crate::interactions::ids::SAGA_TAVERN_REROLL => {
             use crate::commands::saga::tavern::{TAVERN_MAX_DAILY_REROLLS, TAVERN_REROLL_COST};
             let profile = crate::database::economy::get_or_create_profile(db, component.user.id)
                 .await
@@ -1747,9 +2031,15 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 embed
             };
             let buttons = vec![
-                crate::ui::buttons::Btn::danger("saga_tavern_reroll_confirm", "Confirm Reroll")
-                    .disabled(!can_reroll_now || balance < meta.reroll_cost || left == 0),
-                crate::ui::buttons::Btn::secondary("saga_tavern_reroll_cancel", "Cancel"),
+                crate::ui::buttons::Btn::danger(
+                    crate::interactions::ids::SAGA_TAVERN_REROLL_CONFIRM,
+                    "Confirm Reroll",
+                )
+                .disabled(!can_reroll_now || balance < meta.reroll_cost || left == 0),
+                crate::ui::buttons::Btn::secondary(
+                    crate::interactions::ids::SAGA_TAVERN_REROLL_CANCEL,
+                    "Cancel",
+                ),
             ];
             edit_component(
                 ctx,
@@ -1762,7 +2052,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             )
             .await;
         }
-        Some(&"tavern") if raw_id == "saga_tavern_reroll_cancel" => {
+        Some(&"tavern") if raw_id == crate::interactions::ids::SAGA_TAVERN_REROLL_CANCEL => {
             // Restore tavern view using session state
             let (recruits, meta) = crate::commands::saga::tavern::build_tavern_state_cached(
                 &app_state,
@@ -1795,7 +2085,7 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             )
             .await;
         }
-        Some(&"tavern") if raw_id == "saga_tavern_reroll_confirm" => {
+        Some(&"tavern") if raw_id == crate::interactions::ids::SAGA_TAVERN_REROLL_CONFIRM => {
             use crate::commands::saga::tavern::TAVERN_MAX_DAILY_REROLLS;
             if let Ok(profile) =
                 crate::database::economy::get_or_create_profile(db, component.user.id).await

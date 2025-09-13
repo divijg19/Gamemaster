@@ -32,7 +32,7 @@ pub async fn handle_global_nav(
 ) -> bool {
     let cid = c.data.custom_id.as_str();
     match cid {
-        "nav_saga" => {
+        crate::interactions::ids::NAV_SAGA => {
             // Use unified SagaView root rendering (no stack push since Root variant ignored in push).
             match crate::saga::view::push_and_render(
                 crate::saga::view::SagaView::Root,
@@ -66,7 +66,7 @@ pub async fn handle_global_nav(
             }
             true
         }
-        "nav_party" => {
+        crate::interactions::ids::NAV_PARTY => {
             let (embed, components) =
                 crate::commands::party::ui::create_party_view_with_bonds(app_state, c.user.id)
                     .await;
@@ -81,7 +81,7 @@ pub async fn handle_global_nav(
             .await;
             true
         }
-        "nav_train" => {
+        crate::interactions::ids::NAV_TRAIN => {
             if let (Ok(units), Some(profile)) = (
                 crate::database::units::get_player_units(&app_state.db, c.user.id).await,
                 crate::services::saga::get_saga_profile(app_state, c.user.id, false).await,
@@ -111,7 +111,7 @@ pub async fn handle_saga_back_refresh(
     app_state: &crate::AppState,
 ) -> bool {
     use serenity::builder::EditInteractionResponse as EIR;
-    if c.data.custom_id == "saga_back" {
+    if c.data.custom_id == crate::interactions::ids::SAGA_BACK {
         {
             let mut stacks = app_state.nav_stacks.write().await;
             if let Some(s) = stacks.get_mut(&c.user.id.get())
@@ -176,7 +176,7 @@ pub async fn handle_saga_back_refresh(
         }
         return true;
     }
-    if c.data.custom_id == "saga_refresh" {
+    if c.data.custom_id == crate::interactions::ids::SAGA_REFRESH {
         let _ = crate::services::saga::get_saga_profile(app_state, c.user.id, true).await;
         if let Some(nav_box) = app_state
             .nav_stacks

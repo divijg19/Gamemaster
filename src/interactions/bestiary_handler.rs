@@ -1,4 +1,5 @@
 //! Handles Bestiary component interactions (refresh button, pagination future-ready).
+use super::util::{defer_component, handle_global_nav};
 use crate::database;
 use crate::{
     AppState,
@@ -8,7 +9,6 @@ use serenity::builder::EditInteractionResponse;
 use serenity::model::application::ComponentInteraction;
 use serenity::prelude::Context;
 use std::sync::Arc;
-use super::util::{defer_component, handle_global_nav};
 // Reduced tracing verbosity; only emit debug when refreshing.
 #[tracing::instrument(level="debug", skip(ctx, component, _app_state), fields(user_id = component.user.id.get()))]
 pub async fn handle(
@@ -18,10 +18,21 @@ pub async fn handle(
 ) {
     // Acknowledge & allow global nav first
     defer_component(ctx, component).await;
-    if handle_global_nav(ctx, component, &AppState::from_ctx(ctx).await.unwrap_or_else(|| _app_state.clone()), "saga").await {
+    if handle_global_nav(
+        ctx,
+        component,
+        &AppState::from_ctx(ctx)
+            .await
+            .unwrap_or_else(|| _app_state.clone()),
+        "saga",
+    )
+    .await
+    {
         return;
     }
-    if component.data.custom_id != "bestiary_refresh" { return; }
+    if component.data.custom_id != "bestiary_refresh" {
+        return;
+    }
     let Some(state) = AppState::from_ctx(ctx).await else {
         return;
     };

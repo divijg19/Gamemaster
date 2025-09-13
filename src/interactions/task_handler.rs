@@ -1,5 +1,6 @@
 //! Handles all component interactions for the `/tasks` command family.
 
+use super::util::{defer_component, edit_component, handle_global_nav};
 use crate::commands::economy::core::item::Item;
 use crate::commands::tasks::ui;
 use crate::{AppState, database};
@@ -7,12 +8,13 @@ use serenity::builder::EditInteractionResponse;
 use serenity::model::application::ComponentInteraction;
 use serenity::prelude::Context;
 use std::sync::Arc;
-use super::util::{defer_component, handle_global_nav, edit_component};
 
 pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_state: Arc<AppState>) {
     let db = &app_state.db;
     defer_component(ctx, component).await;
-    if handle_global_nav(ctx, component, &app_state, "saga").await { return; }
+    if handle_global_nav(ctx, component, &app_state, "saga").await {
+        return;
+    }
 
     // The custom_id is expected to be "task_claim_{player_task_id}"
     let custom_id = &component.data.custom_id;

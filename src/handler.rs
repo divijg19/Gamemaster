@@ -132,9 +132,10 @@ impl EventHandler for Handler {
             let mut command_family = original_id.split('_').next().unwrap_or("");
             // Map navigation bar custom ids (nav_*) to their target families so buttons work.
             if command_family == "nav"
-                && let Some(target) = original_id.strip_prefix("nav_") {
-                    command_family = target; // e.g. saga / party / train
-                }
+                && let Some(target) = original_id.strip_prefix("nav_")
+            {
+                command_family = target; // e.g. saga / party / train
+            }
             match command_family {
                 "rps" | "bj" | "poker" | "shop" | "battle" => {
                     interactions::game_handler::handle(&ctx, component, app_state).await

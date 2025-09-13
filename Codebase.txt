@@ -279,6 +279,7 @@ src/ui/nav.rs
 src/ui/style.rs
 src/util.rs
 tests/help_commands.rs
+tests/ids_tests.rs
 tests/nav_stack.rs
 tests/saga_first_time.rs
 tests/saga_logic.rs
