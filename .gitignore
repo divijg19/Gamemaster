@@ -1,3 +1,32 @@
+# Rust/target
+/target/
+**/*.rs.bk
+
+# IDE/editor
+.vscode/
+.idea/
+.DS_Store
+
+# Local env & secrets
+.env
+.env.*
+Secrets.toml
+**/Secrets.toml
+
+# Shuttle local
+.shuttle/
+
+# SQLx temp
+sqlx-data.json
+**/sqlx-tmp/
+
+# Logs
+logs/
+*.log
+
+# OS
+Thumbs.db
+Desktop.ini
 #############################
 # Core
 #############################
