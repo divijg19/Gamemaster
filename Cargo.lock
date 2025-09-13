@@ -165,9 +165,9 @@ checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
 
 [[package]]
 name = "cc"
-version = "1.2.36"
+version = "1.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5252b3d2648e5eedbc1a6f501e3c795e07025c1e93bbf8bbdd6eef7f447a6d54"
+checksum = "65193589c6404eb80b450d618eaf9a2cafaaafd57ecce47370519ef674a7bd44"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -378,12 +378,12 @@ dependencies = [
 
 [[package]]
 name = "diesel-async"
-version = "0.5.2"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51a307ac00f7c23f526a04a77761a0519b9f0eb2838ebf5b905a58580095bdcb"
+checksum = "7fcc26599f590c7e5b182a05061cfb445f216bb069df72eb31f38cffde8ca598"
 dependencies = [
- "async-trait",
  "diesel",
+ "futures-core",
  "futures-util",
  "scoped-futures",
  "tokio",
@@ -1032,9 +1032,9 @@ dependencies = [
 
 [[package]]
 name = "iana-time-zone"
-version = "0.1.63"
+version = "0.1.64"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0c919e5debc312ad217002b8048a17b7d83f80703865bbfcfebb0458b0b27d8"
+checksum = "33e57f83510bb73707521ebaffa789ec8caf86f9657cad665b092b581d40e9fb"
 dependencies = [
  "android_system_properties",
  "core-foundation-sys",
@@ -1946,7 +1946,7 @@ dependencies = [
  "once_cell",
  "ring",
  "rustls-pki-types",
- "rustls-webpki 0.103.4",
+ "rustls-webpki 0.103.5",
  "subtle",
  "zeroize",
 ]
@@ -1993,9 +1993,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.4"
+version = "0.103.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a17884ae0c1b773f1ccd2bd4a8c72f16da897310a98b0e84bf349ad5ead92fc"
+checksum = "b5a37813727b78798e53c2bec3f5e8fe12a6d6f8389bf9ca7802add4c9905ad8"
 dependencies = [
  "ring",
  "rustls-pki-types",
@@ -2181,9 +2181,9 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "shuttle-api-client"
-version = "0.56.1"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4df5c94715905185497426a3d2228cc4eeff96434e722abe3261674c9a02f8f0"
+checksum = "50014d2c881895e2f18c412d07a945f8dadd2a40171af2773e29aebc306555f5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2197,15 +2197,15 @@ dependencies = [
  "serde_json",
  "shuttle-common",
  "tokio",
- "tokio-tungstenite 0.26.2",
+ "tokio-tungstenite 0.27.0",
  "url",
 ]
 
 [[package]]
 name = "shuttle-codegen"
-version = "0.56.0"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16dd20f3792374d84b826d84bf1d4f965df7b065be228ec6f8a67bdf1905b89c"
+checksum = "c31ffbf347a3d18a548e27b77608c6052ce293b053624e23938916325ac13bb1"
 dependencies = [
  "proc-macro-error2",
  "proc-macro2",
@@ -2216,9 +2216,9 @@ dependencies = [
 
 [[package]]
 name = "shuttle-common"
-version = "0.56.0"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eef6ac4c1a2dd98c4abbb1a378a8dcd784c9956be3b84c3e9d51572025935e03"
+checksum = "9e5f589b53bec1c0b993883d7a5a80111fcc6a1cbe6220f712ea504c748e83e6"
 dependencies = [
  "chrono",
  "http 1.3.1",
@@ -2232,9 +2232,9 @@ dependencies = [
 
 [[package]]
 name = "shuttle-ifc"
-version = "0.56.0"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "370105d6f8606fd69883e11ce6fcb310b618a53071c7a44a4bfac8ce42ad6f05"
+checksum = "4cec9f79ae871e02182b8dd3fed894a44afee58c4549e5252e9c3a6acbaece3a"
 dependencies = [
  "proc-macro2",
  "shuttle-common",
@@ -2243,9 +2243,9 @@ dependencies = [
 
 [[package]]
 name = "shuttle-runtime"
-version = "0.56.0"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d41b6c2ad501cc0768cd26461e425e4f3060f9d6c966c8804cc1f54e7db72711"
+checksum = "613d6fd24bb70d4c173989d6b7882b5b6bffdafd679223f5a76171369aadcf01"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2267,9 +2267,9 @@ dependencies = [
 
 [[package]]
 name = "shuttle-serenity"
-version = "0.56.0"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f014c9fae433ffb68da3dd91cb91e72e2e068c79b6c6e3920fdcff461ca8248"
+checksum = "1cb9842ea6b900bfc8958ce25e33302e8656c62916f6e14ea2b1c94b4d3913d4"
 dependencies = [
  "serenity",
  "shuttle-runtime",
@@ -2277,9 +2277,9 @@ dependencies = [
 
 [[package]]
 name = "shuttle-service"
-version = "0.56.0"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c345148c28fab1c1d3dcfe829400606bbbca609c32a44696bec770b5e75f0fbb"
+checksum = "e0f8400f4ec61f959d696a3ec73ac9de798185999b3d8bf7c79b7e745ba44a14"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2291,9 +2291,9 @@ dependencies = [
 
 [[package]]
 name = "shuttle-shared-db"
-version = "0.56.0"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9369ecfc7c3beff95cc2548fb3531e9773d6db2fc2a8381cdde5613ec376fa96"
+checksum = "11916c7bae646e82c3441fbbcbc1451686fcbabe6cc38553bd06f32104cd797e"
 dependencies = [
  "async-trait",
  "diesel-async",
@@ -2932,9 +2932,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-tungstenite"
-version = "0.26.2"
+version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a9daff607c6d2bf6c16fd681ccb7eecc83e4e2cdc1ca067ffaadfca5de7f084"
+checksum = "489a59b6730eda1b0171fcfda8b121f4bee2b35cba8645ca35c5f7ba3eb736c1"
 dependencies = [
  "futures-util",
  "log",
@@ -2942,7 +2942,7 @@ dependencies = [
  "rustls-pki-types",
  "tokio",
  "tokio-rustls 0.26.2",
- "tungstenite 0.26.2",
+ "tungstenite 0.27.0",
  "webpki-roots 0.26.11",
 ]
 
@@ -3108,9 +3108,9 @@ dependencies = [
 
 [[package]]
 name = "tungstenite"
-version = "0.26.2"
+version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4793cb5e56680ecbb1d843515b23b6de9a75eb04b66643e256a396d43be33c13"
+checksum = "eadc29d668c91fcc564941132e17b28a7ceb2f3ebf0b9dae3e03fd7a6748eb0d"
 dependencies = [
  "bytes",
  "data-encoding",
@@ -3421,15 +3421,15 @@ dependencies = [
 
 [[package]]
 name = "windows-core"
-version = "0.61.2"
+version = "0.62.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0fdd3ddb90610c7638aa2b3a3ab2904fb9e5cdbecc643ddb3647212781c4ae3"
+checksum = "57fe7168f7de578d2d8a05b07fd61870d2e73b4020e9f49aa00da8471723497c"
 dependencies = [
  "windows-implement",
  "windows-interface",
- "windows-link 0.1.3",
- "windows-result",
- "windows-strings",
+ "windows-link 0.2.0",
+ "windows-result 0.4.0",
+ "windows-strings 0.5.0",
 ]
 
 [[package]]
@@ -3473,8 +3473,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b8a9ed28765efc97bbc954883f4e6796c33a06546ebafacbabee9696967499e"
 dependencies = [
  "windows-link 0.1.3",
- "windows-result",
- "windows-strings",
+ "windows-result 0.3.4",
+ "windows-strings 0.4.2",
 ]
 
 [[package]]
@@ -3487,12 +3487,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "windows-result"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7084dcc306f89883455a206237404d3eaf961e5bd7e0f312f7c91f57eb44167f"
+dependencies = [
+ "windows-link 0.2.0",
+]
+
+[[package]]
 name = "windows-strings"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56e6c93f3a0c3b36176cb1327a4958a0353d5d166c2a35cb268ace15e91d3b57"
 dependencies = [
  "windows-link 0.1.3",
+]
+
+[[package]]
+name = "windows-strings"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7218c655a553b0bed4426cf54b20d7ba363ef543b52d515b3e48d7fd55318dda"
+dependencies = [
+ "windows-link 0.2.0",
 ]
 
 [[package]]

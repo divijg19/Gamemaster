@@ -15,9 +15,9 @@ sqlx = { version = "0.8", features = [ "runtime-tokio-rustls", "postgres", "chro
 rand = "0.9"
 
 # Shuttle Deployment
-shuttle-runtime = "0.56"
-shuttle-serenity = "0.56"
-shuttle-shared-db = { version = "0.56", features = ["postgres", "sqlx"] }
+shuttle-runtime = "0.57"
+shuttle-serenity = "0.57"
+shuttle-shared-db = { version = "0.57", features = ["postgres", "sqlx"] }
 anyhow = "1"
 chrono = "0.4"
 tracing = "0.1"
