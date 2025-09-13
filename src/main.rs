@@ -1,6 +1,8 @@
 use crate::commands::games::GameManager;
 use crate::handler::Handler;
 use crate::model::{AppState, ShardManagerContainer};
+use anyhow::anyhow;
+use serenity::http::Http as SerenityHttp;
 use serenity::model::gateway::GatewayIntents;
 use serenity::model::id::GuildId;
 use serenity::prelude::*;
@@ -88,6 +90,28 @@ async fn serenity(
         tavern_daily_cache: Arc::new(RwLock::new(None)),
     });
     tracing::info!(target: "setup", "Shared application state initialized");
+
+    // 3c. Validate the Discord token before constructing the client to avoid
+    // run-stop loops with opaque errors in production. This makes 4xxs explicit.
+    let http = SerenityHttp::new(&token);
+    match http.get_current_user().await {
+        Ok(user) => {
+            tracing::info!(
+                target: "setup",
+                discord_user_id = %user.id,
+                discord_username = %user.name,
+                "Discord token validated; bot identity confirmed"
+            );
+        }
+        Err(err) => {
+            tracing::error!(target: "setup", error = %err, "Discord token validation failed");
+            // Surface a clear error to Shuttle so deployments fail fast with context.
+            return Err(anyhow!(format!(
+                "Discord token invalid or unauthorized (likely 401). Upstream error: {err}"
+            ))
+            .into());
+        }
+    }
 
     // 4. Set gateway intents required for the bot's functionality.
     let intents =
