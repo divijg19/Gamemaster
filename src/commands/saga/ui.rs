@@ -18,7 +18,7 @@ pub fn create_saga_menu(
 ) -> (CreateEmbed, Vec<CreateActionRow>) {
     let mut desc = String::from("Your daily adventure awaits. Choose your action wisely.");
     if !has_party {
-        desc.push_str("\n\nYou don't have a party yet. Recruit units in the Tavern first.");
+        desc.push_str("\n\nNo party yet. Recruit units in the Tavern to begin your journey.");
     } else if saga_profile.current_ap == 0 {
         // Provide a rough ETA assuming full daily reset at UTC day boundary for AP (since AP model currently resets daily)
         let now = Utc::now();
@@ -31,11 +31,11 @@ pub fn create_saga_menu(
             let hrs = secs / 3600;
             let mins = (secs % 3600) / 60;
             desc.push_str(&format!(
-                "\n\nYou are out of Action Points. Daily reset in ~{}h {}m.",
+                "\n\nOut of Action Points. Daily reset in ~{}h {}m.",
                 hrs, mins
             ));
         } else {
-            desc.push_str("\n\nYou are out of Action Points. They replenish on daily reset.");
+            desc.push_str("\n\nOut of Action Points. They replenish on daily reset.");
         }
     }
     let embed = CreateEmbed::new()
@@ -53,13 +53,11 @@ pub fn create_saga_menu(
         )
         .color(COLOR_SAGA_MAIN)
         .footer(serenity::builder::CreateEmbedFooter::new(
-            "Use Refresh to update AP/TP • Manage your Party via the nav row",
+            "Refresh to update AP/TP • Manage Party via nav row",
         ));
 
     // Primary action row
     let mut components: Vec<CreateActionRow> = Vec::new();
-    // Unified width target for primary saga buttons
-    // Use global BTN_W_PRIMARY width via helper
     let mut primary_buttons = Vec::new();
     if has_party {
         let map_label = if saga_profile.current_ap < 1 {
@@ -74,14 +72,14 @@ pub fn create_saga_menu(
         primary_buttons.push(Btn::secondary(SAGA_MAP_LOCKED, "🗺 Map (Need Party)").disabled(true));
         primary_buttons.push(Btn::success(SAGA_RECRUIT, "➕ Recruit"));
     }
-    // Removed duplicate Party button (accessible via global nav row) to reduce clutter.
     components.push(CreateActionRow::Buttons(primary_buttons));
 
-    // Navigation / utility row: Back (disabled at root) + Refresh. Removed redundant Play Alias button.
-    components.push(CreateActionRow::Buttons(vec![
-        Btn::danger(SAGA_BACK, &format!("{} Back", EMOJI_BACK)).disabled(true),
-        Btn::secondary(SAGA_REFRESH, &format!("{} Refresh", EMOJI_REFRESH)),
-    ]));
+    // Navigation/utility row: Only show Back if not at root, always show Refresh
+    // At root, Back is omitted for clarity
+    components.push(CreateActionRow::Buttons(vec![Btn::secondary(
+        SAGA_REFRESH,
+        &format!("{} Refresh", EMOJI_REFRESH),
+    )]));
 
     // Append global nav row (active = saga) at end.
     components.push(global_nav_row("saga"));
@@ -198,7 +196,7 @@ pub fn create_world_map_view(
     // Build button rows: unlocked nodes are clickable; locked shown disabled (first few only)
     let mut components: Vec<CreateActionRow> = Vec::new();
     let can_start = saga_profile.current_ap > 0;
-    // Leave space for Back+Refresh and global nav rows by limiting unlocked rows to 2 when a locked row is present.
+    // Limit unlocked rows to 2 if locked present, else 3
     let locked_present = !locked.is_empty();
     let max_unlocked_rows = if locked_present { 2 } else { 3 };
     for (unlocked_rows, chunk) in unlocked.chunks(5).enumerate() {
@@ -217,18 +215,23 @@ pub fn create_world_map_view(
     if locked_present {
         let mut locked_buttons = Vec::new();
         for node in locked.iter().take(5) {
-            let mut label = format!("SP{} {}", node.story_progress_required, node.name);
+            let mut label = format!("🔒 SP{} {}", node.story_progress_required, node.name);
             label.truncate(20);
             locked_buttons.push(
                 CreateButton::new("locked_node")
                     .label(label)
                     .style(ButtonStyle::Secondary)
-                    .disabled(true)
-                    .emoji('🔒'),
+                    .disabled(true),
             );
         }
         components.push(CreateActionRow::Buttons(locked_buttons));
     }
+    // Navigation/utility row: Back and Refresh
+    components.push(CreateActionRow::Buttons(vec![
+        Btn::danger(SAGA_BACK, &format!("{} Back", EMOJI_BACK)),
+        Btn::secondary(SAGA_REFRESH, &format!("{} Refresh", EMOJI_REFRESH)),
+    ]));
+    // Global nav row
     components.push(global_nav_row("saga"));
     (embed, components)
 }
@@ -327,11 +330,10 @@ pub fn create_world_map_area_view(
         area_buttons.push(btn);
     }
     let mut components: Vec<CreateActionRow> = Vec::new();
+    // Area nav row (always first)
     components.push(CreateActionRow::Buttons(area_buttons));
     let can_start = saga_profile.current_ap > 0;
-    // In area view we already used 1 row for area nav; also leave space for Back+Refresh and global nav.
     let locked_present = !locked.is_empty();
-    // If we plan to show a locked row, allow up to 1 unlocked row; else up to 2.
     let max_unlocked_rows = if locked_present { 1 } else { 2 };
     for (unlocked_rows, chunk) in unlocked.chunks(5).enumerate() {
         if unlocked_rows >= max_unlocked_rows {
@@ -347,18 +349,23 @@ pub fn create_world_map_area_view(
     if locked_present {
         let mut locked_buttons = Vec::new();
         for node in locked.iter().take(5) {
-            let mut label = format!("SP{} {}", node.story_progress_required, node.name);
+            let mut label = format!("🔒 SP{} {}", node.story_progress_required, node.name);
             label.truncate(20);
             locked_buttons.push(
                 CreateButton::new("locked_node")
                     .label(label)
                     .style(ButtonStyle::Secondary)
-                    .disabled(true)
-                    .emoji('🔒'),
+                    .disabled(true),
             );
         }
         components.push(CreateActionRow::Buttons(locked_buttons));
     }
+    // Utility row: Back and Refresh (always before global nav)
+    components.push(CreateActionRow::Buttons(vec![
+        Btn::danger(SAGA_BACK, &format!("{} Back", EMOJI_BACK)),
+        Btn::secondary(SAGA_REFRESH, &format!("{} Refresh", EMOJI_REFRESH)),
+    ]));
+    // Global nav row (always last)
     components.push(global_nav_row("saga"));
     (embed, components)
 }
@@ -391,7 +398,7 @@ pub fn create_first_time_tutorial() -> (CreateEmbed, Vec<CreateActionRow>) {
         Btn::success(SAGA_TUTORIAL_HIRE, "➕ Starter Unit"),
         Btn::secondary(SAGA_TUTORIAL_SKIP, "⏭ Skip Tutorial"),
     ]);
-    // Remove legacy play/menu button; global nav row already provides Saga entry.
+    // Only show relevant actions, then always append global nav last
     let mut v = vec![row];
     v.push(global_nav_row("saga"));
     (embed, v)

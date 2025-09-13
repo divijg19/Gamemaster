@@ -1,10 +1,10 @@
 //! Handles research refresh component.
+use super::util::{defer_component, handle_global_nav};
 use crate::AppState;
 use serenity::builder::EditInteractionResponse;
 use serenity::model::application::ComponentInteraction;
 use serenity::prelude::Context;
 use std::sync::Arc;
-use super::util::{defer_component, handle_global_nav};
 use tracing::instrument;
 
 #[instrument(level = "info", skip(ctx, component, _app_state))]
@@ -14,8 +14,12 @@ pub async fn handle(
     _app_state: Arc<AppState>,
 ) {
     defer_component(ctx, component).await;
-    if handle_global_nav(ctx, component, &_app_state, "saga").await { return; }
-    if component.data.custom_id != "research_refresh" { return; }
+    if handle_global_nav(ctx, component, &_app_state, "saga").await {
+        return;
+    }
+    if component.data.custom_id != "research_refresh" {
+        return;
+    }
     let Some(state) = AppState::from_ctx(ctx).await else {
         return;
     };

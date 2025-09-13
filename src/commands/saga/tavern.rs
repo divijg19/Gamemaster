@@ -257,7 +257,11 @@ pub fn create_tavern_menu(
         };
         hire_buttons.push(
             Btn::success(
-                &format!("saga_hire_{}", unit.unit_id),
+                &format!(
+                    "{}{}",
+                    crate::interactions::ids::SAGA_HIRE_PREFIX,
+                    unit.unit_id
+                ),
                 &format!("➕ {} {}", label, unit.name),
             )
             .disabled(meta.balance < unit_cost),
@@ -285,13 +289,12 @@ pub fn create_tavern_menu(
         "🔁 Reroll (0 left)".to_string()
     };
     rows.push(CreateActionRow::Buttons(vec![
-        Btn::secondary("saga_tavern_reroll", &reroll_label)
+        Btn::secondary(crate::interactions::ids::SAGA_TAVERN_REROLL, &reroll_label)
             .disabled(!meta.can_reroll || meta.balance < meta.reroll_cost || left == 0),
-        Btn::primary("saga_tavern_home", "🏰 Home"),
+        Btn::primary(crate::interactions::ids::SAGA_TAVERN_HOME, "🏰 Saga"),
     ]));
     // Tavern-specific nav row (↩ Saga + Refresh), Saga is never disabled here
     rows.push(crate::commands::saga::ui::tavern_saga_row());
-    // Rarity filter buttons removed per spec (simplify UX).
     (embed, rows)
 }
 

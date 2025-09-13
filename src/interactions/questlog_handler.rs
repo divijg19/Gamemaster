@@ -1,5 +1,6 @@
 //! Handles all component interactions for the `/questlog` command family.
 
+use super::util::{defer_component, handle_global_nav};
 use crate::AppState;
 use crate::commands::questlog::run::get_questlog_response;
 use crate::database::models::PlayerQuestStatus;
@@ -7,7 +8,6 @@ use serenity::builder::EditInteractionResponse;
 use serenity::model::application::ComponentInteraction;
 use serenity::prelude::Context;
 use std::sync::Arc;
-use super::util::{defer_component, handle_global_nav};
 
 /// The main entry point for questlog-related component interactions.
 pub async fn handle(
@@ -16,7 +16,9 @@ pub async fn handle(
     _app_state: Arc<AppState>, // _app_state is kept for signature consistency with other handlers
 ) {
     defer_component(ctx, component).await;
-    if handle_global_nav(ctx, component, &_app_state, "saga").await { return; }
+    if handle_global_nav(ctx, component, &_app_state, "saga").await {
+        return;
+    }
     // The custom_id is expected to be "questlog_view_{Status}"
     let custom_id = &component.data.custom_id;
     let view_status_str = match custom_id.strip_prefix("questlog_view_") {

@@ -1,9 +1,9 @@
 //! Handles bonding component interactions.
 
 use super::util::{defer_component, edit_component, handle_global_nav};
+use crate::ui::buttons::Btn;
 use crate::{AppState, database};
 use serenity::builder::{CreateActionRow, EditInteractionResponse};
-use crate::ui::buttons::Btn;
 use serenity::model::application::ComponentInteraction;
 use serenity::prelude::Context;
 use std::sync::Arc;
@@ -144,7 +144,8 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     // Invalidate caches for this user so next battle/party view recalculates bonuses.
                     app_state.invalidate_user_caches(user_id).await;
                     // Provide Unequip button (not yet wired to DB toggle) placeholder.
-                    let unequip_button = Btn::danger(&format!("bond_unequip:{}", host_id), "🗑 Unequip");
+                    let unequip_button =
+                        Btn::danger(&format!("bond_unequip:{}", host_id), "🗑 Unequip");
                     edit_component(
                         ctx,
                         component,
