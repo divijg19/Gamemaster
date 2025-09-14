@@ -3,10 +3,10 @@
 use crate::commands::economy::core::item::Item;
 use crate::database::models::PlayerQuestStatus;
 use crate::database::quests::QuestBoardEntry;
-use crate::ui::style::pad_primary;
-use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed};
+use crate::ui::buttons::Btn;
+// Btn helpers handle padding internally; no need to import pad functions here.
+use serenity::builder::{CreateActionRow, CreateEmbed};
 use serenity::model::Colour;
-use serenity::model::prelude::ButtonStyle;
 
 /// Creates the embed and interactive components for the Player Quest Log.
 pub fn create_questlog_embed(
@@ -69,15 +69,11 @@ pub fn create_questlog_embed(
         }
     }
 
-    // Create the view-switcher buttons
-    let active_button = CreateButton::new("questlog_view_Accepted")
-        .label(pad_primary("📖 Active"))
-        .style(ButtonStyle::Primary)
+    // Create the view-switcher buttons (consistent padding via Btn helpers)
+    let active_button = Btn::primary("questlog_view_Accepted", "📖 Active")
         .disabled(current_view == PlayerQuestStatus::Accepted);
 
-    let completed_button = CreateButton::new("questlog_view_Completed")
-        .label(pad_primary("✅ Completed"))
-        .style(ButtonStyle::Secondary)
+    let completed_button = Btn::secondary("questlog_view_Completed", "✅ Completed")
         .disabled(current_view == PlayerQuestStatus::Completed);
 
     let mut rows = vec![crate::commands::saga::ui::global_nav_row("saga")];

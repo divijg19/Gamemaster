@@ -1,4 +1,20 @@
-use gamemaster_bot::interactions::ids::{SAGA_TAVERN_GAMES_ANTE_PREFIX, parse_tavern_ante_id};
+// The ante flow was removed from the production crate.
+// For backward-compatibility of test expectations, we inline the parser
+// and prefix here to validate the original contract without shipping it.
+const SAGA_TAVERN_GAMES_ANTE_PREFIX: &str = "saga_tavern_games_ante_";
+
+fn parse_tavern_ante_id(id: &str) -> Option<(String, i64)> {
+    if !id.starts_with(SAGA_TAVERN_GAMES_ANTE_PREFIX) {
+        return None;
+    }
+    let rest = &id[SAGA_TAVERN_GAMES_ANTE_PREFIX.len()..];
+    let (game_key, amount_str) = rest.rsplit_once('_')?;
+    let amount = amount_str.parse::<i64>().ok()?;
+    if game_key.is_empty() {
+        return None;
+    }
+    Some((game_key.to_string(), amount))
+}
 
 #[test]
 fn parse_ante_ok_blackjack() {

@@ -2,11 +2,10 @@
 
 use super::state::ShopSession;
 use crate::commands::economy::core::item::{Item, ItemCategory};
+use crate::ui::buttons::Btn;
 use serenity::builder::{
-    CreateActionRow, CreateButton, CreateEmbed, CreateSelectMenu, CreateSelectMenuKind,
-    CreateSelectMenuOption,
+    CreateActionRow, CreateEmbed, CreateSelectMenu, CreateSelectMenuKind, CreateSelectMenuOption,
 };
-use serenity::model::application::ButtonStyle;
 // (✓) REMOVED: Unused import of FromStr.
 
 const ITEMS_PER_PAGE: usize = 5;
@@ -61,27 +60,21 @@ impl ShopSession {
         let mut components = Vec::<CreateActionRow>::new();
 
         let category_buttons = CreateActionRow::Buttons(vec![
-            CreateButton::new("shop_cat_resources")
-                .label("Resources")
-                .style(if self.current_category == ItemCategory::Resource {
-                    ButtonStyle::Primary
-                } else {
-                    ButtonStyle::Secondary
-                }),
-            CreateButton::new("shop_cat_special")
-                .label("Special")
-                .style(if self.current_category == ItemCategory::Special {
-                    ButtonStyle::Primary
-                } else {
-                    ButtonStyle::Secondary
-                }),
-            CreateButton::new("shop_cat_consumables")
-                .label("Consumables")
-                .style(if self.current_category == ItemCategory::Consumable {
-                    ButtonStyle::Primary
-                } else {
-                    ButtonStyle::Secondary
-                }),
+            if self.current_category == ItemCategory::Resource {
+                Btn::primary("shop_cat_resources", "Resources")
+            } else {
+                Btn::secondary("shop_cat_resources", "Resources")
+            },
+            if self.current_category == ItemCategory::Special {
+                Btn::primary("shop_cat_special", "Special")
+            } else {
+                Btn::secondary("shop_cat_special", "Special")
+            },
+            if self.current_category == ItemCategory::Consumable {
+                Btn::primary("shop_cat_consumables", "Consumables")
+            } else {
+                Btn::secondary("shop_cat_consumables", "Consumables")
+            },
         ]);
         components.push(category_buttons);
 
@@ -103,14 +96,8 @@ impl ShopSession {
         }
 
         let page_buttons = CreateActionRow::Buttons(vec![
-            CreateButton::new("shop_prev_page")
-                .label("Previous")
-                .style(ButtonStyle::Secondary)
-                .disabled(self.current_page == 0),
-            CreateButton::new("shop_next_page")
-                .label("Next")
-                .style(ButtonStyle::Secondary)
-                .disabled(end >= items_to_display.len()),
+            Btn::secondary("shop_prev_page", "Previous").disabled(self.current_page == 0),
+            Btn::secondary("shop_next_page", "Next").disabled(end >= items_to_display.len()),
         ]);
         components.push(page_buttons);
 

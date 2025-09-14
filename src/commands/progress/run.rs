@@ -1,6 +1,7 @@
 use crate::database::models::UnitRarity;
+use crate::ui::buttons::Btn;
 use crate::{AppState, database};
-use serenity::builder::{CreateActionRow, CreateButton, CreateCommand, CreateEmbed};
+use serenity::builder::{CreateActionRow, CreateCommand, CreateEmbed};
 use serenity::model::application::CommandInteraction;
 use serenity::model::channel::Message;
 use serenity::prelude::Context;
@@ -119,15 +120,9 @@ pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
         }
     }
     let row = CreateActionRow::Buttons(vec![
-        CreateButton::new("contracts_refresh")
-            .label("Contracts")
-            .style(serenity::model::application::ButtonStyle::Secondary),
-        CreateButton::new("research_refresh")
-            .label("Research")
-            .style(serenity::model::application::ButtonStyle::Secondary),
-        CreateButton::new("bestiary_refresh")
-            .label("Bestiary")
-            .style(serenity::model::application::ButtonStyle::Secondary),
+        Btn::secondary("contracts_refresh", "Contracts"),
+        Btn::secondary("research_refresh", "Research"),
+        Btn::secondary("bestiary_refresh", "Bestiary"),
     ]);
     let resp = serenity::builder::CreateInteractionResponseMessage::new()
         .embed(embed)
@@ -246,15 +241,9 @@ pub async fn run_prefix(ctx: &Context, msg: &Message, _args: Vec<&str>) {
         }
     }
     let row = CreateActionRow::Buttons(vec![
-        CreateButton::new("contracts_refresh")
-            .label("Contracts")
-            .style(serenity::model::application::ButtonStyle::Secondary),
-        CreateButton::new("research_refresh")
-            .label("Research")
-            .style(serenity::model::application::ButtonStyle::Secondary),
-        CreateButton::new("bestiary_refresh")
-            .label("Bestiary")
-            .style(serenity::model::application::ButtonStyle::Secondary),
+        Btn::secondary("contracts_refresh", "Contracts"),
+        Btn::secondary("research_refresh", "Research"),
+        Btn::secondary("bestiary_refresh", "Bestiary"),
     ]);
     let _ = msg
         .channel_id

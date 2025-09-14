@@ -217,12 +217,7 @@ pub fn create_world_map_view(
         for node in locked.iter().take(5) {
             let mut label = format!("🔒 SP{} {}", node.story_progress_required, node.name);
             label.truncate(20);
-            locked_buttons.push(
-                CreateButton::new("locked_node")
-                    .label(label)
-                    .style(ButtonStyle::Secondary)
-                    .disabled(true),
-            );
+            locked_buttons.push(Btn::secondary("locked_node", &label).disabled(true));
         }
         components.push(CreateActionRow::Buttons(locked_buttons));
     }
@@ -351,12 +346,7 @@ pub fn create_world_map_area_view(
         for node in locked.iter().take(5) {
             let mut label = format!("🔒 SP{} {}", node.story_progress_required, node.name);
             label.truncate(20);
-            locked_buttons.push(
-                CreateButton::new("locked_node")
-                    .label(label)
-                    .style(ButtonStyle::Secondary)
-                    .disabled(true),
-            );
+            locked_buttons.push(Btn::secondary("locked_node", &label).disabled(true));
         }
         components.push(CreateActionRow::Buttons(locked_buttons));
     }

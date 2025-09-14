@@ -1,8 +1,9 @@
 //! Handles all rendering and UI logic for the Blackjack game.
 
 use super::state::{BlackjackGame, GamePhase, HandStatus};
-use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter};
-use serenity::model::application::ButtonStyle;
+use crate::ui::buttons::Btn;
+use crate::ui::style::{COLOR_SAGA_MAP, COLOR_SAGA_TAVERN};
+use serenity::builder::{CreateActionRow, CreateEmbed, CreateEmbedFooter};
 
 impl BlackjackGame {
     pub(super) fn render_lobby(&self) -> (CreateEmbed, Vec<CreateActionRow>) {
@@ -30,20 +31,14 @@ impl BlackjackGame {
                 "{}\n\n**Players ({}):**\n{}",
                 desc, player_count, players_list
             ))
-            .color(0x71368A)
+            .color(COLOR_SAGA_TAVERN)
             .footer(CreateEmbedFooter::new(
                 "Lobby expires in 2 minutes. Use Start when ready.",
             ));
         let buttons = vec![
-            CreateButton::new("bj_join")
-                .label("Join")
-                .style(ButtonStyle::Success),
-            CreateButton::new("bj_cancel")
-                .label("Cancel (Host)")
-                .style(ButtonStyle::Danger),
-            CreateButton::new("bj_start")
-                .label("Start Game (Host)")
-                .style(ButtonStyle::Primary),
+            Btn::success("bj_join", "Join"),
+            Btn::danger("bj_cancel", "Cancel (Host)"),
+            Btn::primary("bj_start", "Start Game (Host)"),
         ];
         (embed, vec![CreateActionRow::Buttons(buttons)])
     }
@@ -72,31 +67,19 @@ impl BlackjackGame {
                 self.min_bet
             ))
             .field("Betting Status", betting_status, false)
-            .color(0xFFA500)
+            .color(COLOR_SAGA_TAVERN)
             .footer(CreateEmbedFooter::new(
                 "Round starts when all players confirm (60s timeout).",
             ));
         let buttons1 = vec![
-            CreateButton::new("bj_bet_10")
-                .label("+10")
-                .style(ButtonStyle::Secondary),
-            CreateButton::new("bj_bet_100")
-                .label("+100")
-                .style(ButtonStyle::Secondary),
-            CreateButton::new("bj_bet_1000")
-                .label("+1K")
-                .style(ButtonStyle::Secondary),
+            Btn::secondary("bj_bet_10", "+10"),
+            Btn::secondary("bj_bet_100", "+100"),
+            Btn::secondary("bj_bet_1000", "+1K"),
         ];
         let buttons2 = vec![
-            CreateButton::new("bj_bet_all_in")
-                .label("All In")
-                .style(ButtonStyle::Danger),
-            CreateButton::new("bj_bet_clear")
-                .label("Reset Bet")
-                .style(ButtonStyle::Secondary),
-            CreateButton::new("bj_bet_confirm")
-                .label("Confirm Bet")
-                .style(ButtonStyle::Success),
+            Btn::danger("bj_bet_all_in", "All In"),
+            Btn::secondary("bj_bet_clear", "Reset Bet"),
+            Btn::success("bj_bet_confirm", "Confirm Bet"),
         ];
         (
             embed,
@@ -217,12 +200,8 @@ impl BlackjackGame {
             embed =
                 embed.description("The dealer is showing an Ace. **Place your insurance bets!**");
             components.push(CreateActionRow::Buttons(vec![
-                CreateButton::new("bj_insure_yes")
-                    .label("Insure (0.5x bet)")
-                    .style(ButtonStyle::Success),
-                CreateButton::new("bj_insure_no")
-                    .label("No Insurance")
-                    .style(ButtonStyle::Danger),
+                Btn::success("bj_insure_yes", "Insure (0.5x bet)"),
+                Btn::danger("bj_insure_no", "No Insurance"),
             ]));
         } else {
             // PlayerTurns
@@ -233,39 +212,21 @@ impl BlackjackGame {
             embed = embed.footer(CreateEmbedFooter::new(footer_text));
 
             let mut buttons = vec![
-                CreateButton::new("bj_hit")
-                    .label("Hit")
-                    .style(ButtonStyle::Success),
-                CreateButton::new("bj_stand")
-                    .label("Stand")
-                    .style(ButtonStyle::Danger),
-                CreateButton::new("bj_pass")
-                    .label("Pass")
-                    .style(ButtonStyle::Secondary), // (✓) ADDED: Pass button
+                Btn::success("bj_hit", "Hit"),
+                Btn::danger("bj_stand", "Stand"),
+                Btn::secondary("bj_pass", "Pass"), // (✓) ADDED: Pass button
             ];
 
             let current_hand =
                 &self.players[self.current_player_index].hands[self.current_hand_index];
             if current_hand.can_double_down() {
-                buttons.push(
-                    CreateButton::new("bj_double")
-                        .label("Double")
-                        .style(ButtonStyle::Primary),
-                );
+                buttons.push(Btn::primary("bj_double", "Double"));
             }
             if current_hand.can_split() {
-                buttons.push(
-                    CreateButton::new("bj_split")
-                        .label("Split")
-                        .style(ButtonStyle::Secondary),
-                );
+                buttons.push(Btn::secondary("bj_split", "Split"));
             }
             if current_hand.can_surrender() {
-                buttons.push(
-                    CreateButton::new("bj_surrender")
-                        .label("Surrender")
-                        .style(ButtonStyle::Secondary),
-                );
+                buttons.push(Btn::secondary("bj_surrender", "Surrender"));
             }
 
             components.push(CreateActionRow::Buttons(buttons));
@@ -277,20 +238,31 @@ impl BlackjackGame {
     fn render_game_over(&self) -> (CreateEmbed, Vec<CreateActionRow>) {
         let mut embed = CreateEmbed::new()
             .title("♠️ Blackjack - Final Results ♦️")
-            .color(0x00FF00); // Green
-        let mut components = Vec::new();
+            .color(COLOR_SAGA_MAP); // Green for success/completion
         let (results_str, _) = self.calculate_payouts();
         embed = embed.description(format!("**--- Round Over ---**\n\n{}", results_str));
+
+        let mut rows: Vec<CreateActionRow> = Vec::new();
+        // Quick return to Tavern after the game ends
+        rows.push(CreateActionRow::Buttons(vec![
+            crate::ui::buttons::Btn::secondary(
+                crate::interactions::ids::SAGA_TAVERN_HOME,
+                "🏰 Tavern",
+            ),
+        ]));
+        // Global nav row for consistency across mini-games
+        rows.push(crate::commands::saga::ui::global_nav_row("saga"));
+
         if self.min_bet > 0 {
-            components.push(CreateActionRow::Buttons(vec![
-                CreateButton::new("bj_next_round")
-                    .label("Next Round (Host)")
-                    .style(ButtonStyle::Primary),
-            ]));
+            rows.push(CreateActionRow::Buttons(vec![Btn::primary(
+                "bj_next_round",
+                "Next Round (Host)",
+            )]));
             embed = embed.footer(CreateEmbedFooter::new(
                 "The host has 60 seconds to start the next round.",
             ));
         }
-        (embed, components)
+
+        (embed, rows)
     }
 }

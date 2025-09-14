@@ -26,8 +26,6 @@ pub const SAGA_TAVERN_SHOP: &str = "saga_tavern_shop";
 pub const SAGA_TAVERN_GAMES_ARM: &str = "saga_tavern_games_arm";
 pub const SAGA_TAVERN_GAMES_DARTS: &str = "saga_tavern_games_darts";
 pub const SAGA_TAVERN_GAMES_PLAY_PREFIX: &str = "saga_tavern_games_play_"; // followed by game + _ + unit id
-pub const SAGA_TAVERN_GAMES_ANTE_PREFIX: &str = "saga_tavern_games_ante_"; // followed by game + _ + amount
-pub const SAGA_TAVERN_GAMES_ANTE_CANCEL: &str = "saga_tavern_games_ante_cancel";
 pub const SAGA_TAVERN_BUY_PREFIX: &str = "saga_tavern_buy_"; // followed by item id
 pub const SAGA_TAVERN_SHOP_BUY_PREFIX: &str = "saga_tavern_shop_buy_"; // followed by item id
 pub const SAGA_TAVERN_SHOP_BUY_CONFIRM_PREFIX: &str = "saga_tavern_shop_buy_confirm_"; // followed by item id
@@ -62,19 +60,5 @@ pub fn is_saga_preview(id: &str) -> bool {
     id.starts_with(SAGA_PREVIEW_PREFIX)
 }
 
-/// Parse an ante selection custom_id into (game_key, amount).
-/// Expected form: `saga_tavern_games_ante_<game>_<amount>`.
-pub fn parse_tavern_ante_id(id: &str) -> Option<(String, i64)> {
-    if !id.starts_with(SAGA_TAVERN_GAMES_ANTE_PREFIX) {
-        return None;
-    }
-    let rest = &id[SAGA_TAVERN_GAMES_ANTE_PREFIX.len()..];
-    // Support future game keys that might contain underscores by splitting from the right.
-    let (game_key, amount_str) = rest.rsplit_once('_')?;
-
-    let amount = amount_str.parse::<i64>().ok()?;
-    if game_key.is_empty() {
-        return None;
-    }
-    Some((game_key.to_string(), amount))
-}
+// Note: The ante flow was removed from Tavern games. Parser tests are maintained
+// in tests/ids_tests.rs with an inlined implementation to avoid shipping dead code.

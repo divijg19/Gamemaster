@@ -3,6 +3,7 @@
 
 use super::state::{GameState, Move, RoundOutcome};
 use crate::commands::games::{Game, GamePayout, GameUpdate};
+use crate::ui::style::{COLOR_ALERT, COLOR_SAGA_TAVERN};
 use serenity::async_trait;
 use serenity::builder::{
     CreateActionRow, CreateEmbed, CreateEmbedFooter, CreateInteractionResponse,
@@ -254,12 +255,20 @@ impl RpsGame {
         );
         let embed = CreateEmbed::new()
             .title(format!("Rock Paper Scissors | {}", self.state.format))
-            .color(0xFF0000)
+            .color(COLOR_ALERT)
             .description(format!(
                 "**<@{}> declined the challenge.**",
                 self.state.player2.id
             ));
-        (content, embed, vec![])
+        // Add unified final-state navigation: quick Tavern return + global nav
+        let rows: Vec<CreateActionRow> = vec![
+            CreateActionRow::Buttons(vec![crate::ui::buttons::Btn::secondary(
+                crate::interactions::ids::SAGA_TAVERN_HOME,
+                "🏰 Tavern",
+            )]),
+            crate::commands::saga::ui::global_nav_row("saga"),
+        ];
+        (content, embed, rows)
     }
 
     pub fn render_timeout_message(
@@ -271,7 +280,7 @@ impl RpsGame {
         );
         let mut embed = CreateEmbed::new()
             .title(format!("Rock Paper Scissors | {}", state.format))
-            .color(0xFF0000)
+            .color(COLOR_ALERT)
             .field(state.player1.name.clone(), "Status: 👑", true)
             .field(
                 format!("`{}` vs `{}`", state.scores.p1, state.scores.p2),
@@ -287,11 +296,15 @@ impl RpsGame {
             Btn::success("rps_disabled_accept", "✅ Accept").disabled(true),
             Btn::danger("rps_disabled_decline", "❌ Decline").disabled(true),
         ];
-        (
-            content,
-            embed,
-            vec![CreateActionRow::Buttons(disabled_buttons)],
-        )
+        let rows: Vec<CreateActionRow> = vec![
+            CreateActionRow::Buttons(disabled_buttons),
+            CreateActionRow::Buttons(vec![crate::ui::buttons::Btn::secondary(
+                crate::interactions::ids::SAGA_TAVERN_HOME,
+                "🏰 Tavern",
+            )]),
+            crate::commands::saga::ui::global_nav_row("saga"),
+        ];
+        (content, embed, rows)
     }
 
     fn render_challenge(&self) -> (String, CreateEmbed, Vec<CreateActionRow>) {
@@ -301,7 +314,7 @@ impl RpsGame {
         );
         let mut embed = CreateEmbed::new()
             .title(format!("Rock Paper Scissors | {}", self.state.format))
-            .color(0xFFA500)
+            .color(COLOR_SAGA_TAVERN)
             .field(self.state.player1.name.clone(), "Status: 🕰️ Waiting", true)
             .field("`0` vs `0`", "\u{200B}", true)
             .field(self.state.player2.name.clone(), "Status: 🕰️ Waiting", true)
@@ -370,7 +383,14 @@ impl RpsGame {
             .field("\u{200B}", log_content, false)
             .footer(CreateEmbedFooter::new(footer_text));
         let components = if self.state.is_over() {
-            vec![]
+            // Final-state navigation: quick Tavern return + global nav row
+            vec![
+                CreateActionRow::Buttons(vec![crate::ui::buttons::Btn::secondary(
+                    crate::interactions::ids::SAGA_TAVERN_HOME,
+                    "🏰 Tavern",
+                )]),
+                crate::commands::saga::ui::global_nav_row("saga"),
+            ]
         } else {
             vec![CreateActionRow::Buttons(vec![
                 Btn::narrow("rps_move_rock", "✊ Rock").emoji('✊'),
