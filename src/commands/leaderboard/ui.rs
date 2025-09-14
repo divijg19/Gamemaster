@@ -3,9 +3,8 @@
 // (✓) FIXED: Corrected the path to the LeaderboardType enum.
 use crate::database::leaderboard::LeaderboardEntry;
 use crate::saga::leaderboard::LeaderboardType;
-use crate::ui::style::pad_std;
-use serenity::builder::{CreateActionRow, CreateButton, CreateEmbed};
-use serenity::model::application::ButtonStyle;
+use crate::ui::buttons::Btn;
+use serenity::builder::{CreateActionRow, CreateEmbed};
 use serenity::prelude::Context;
 
 /// Creates the main embed for a given leaderboard type and its data.
@@ -54,27 +53,23 @@ pub async fn create_leaderboard_embed(
 
 /// Creates the row of buttons used to switch between leaderboards.
 pub fn create_leaderboard_buttons(current_board: LeaderboardType) -> CreateActionRow {
-    CreateActionRow::Buttons(vec![
-        CreateButton::new("leaderboard_gamemaster")
-            .label(pad_std("Gamemaster"))
-            .style(if current_board == LeaderboardType::Gamemaster {
-                ButtonStyle::Primary
-            } else {
-                ButtonStyle::Secondary
-            }),
-        CreateButton::new("leaderboard_wealth")
-            .label(pad_std("Wealth"))
-            .style(if current_board == LeaderboardType::Wealth {
-                ButtonStyle::Primary
-            } else {
-                ButtonStyle::Secondary
-            }),
-        CreateButton::new("leaderboard_streak")
-            .label(pad_std("Work Streak"))
-            .style(if current_board == LeaderboardType::WorkStreak {
-                ButtonStyle::Primary
-            } else {
-                ButtonStyle::Secondary
-            }),
-    ])
+    let gm = if current_board == LeaderboardType::Gamemaster {
+        Btn::primary("leaderboard_gamemaster", "Gamemaster")
+    } else {
+        Btn::secondary("leaderboard_gamemaster", "Gamemaster")
+    };
+
+    let wealth = if current_board == LeaderboardType::Wealth {
+        Btn::primary("leaderboard_wealth", "Wealth")
+    } else {
+        Btn::secondary("leaderboard_wealth", "Wealth")
+    };
+
+    let streak = if current_board == LeaderboardType::WorkStreak {
+        Btn::primary("leaderboard_streak", "Work Streak")
+    } else {
+        Btn::secondary("leaderboard_streak", "Work Streak")
+    };
+
+    CreateActionRow::Buttons(vec![gm, wealth, streak])
 }

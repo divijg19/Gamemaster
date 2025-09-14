@@ -1,8 +1,8 @@
 use crate::database;
-use crate::ui::style::{pad_narrow, pad_std};
+use crate::ui::buttons::Btn;
 use chrono::{DateTime, Utc};
 use serenity::builder::{
-    CreateActionRow, CreateButton, CreateCommand, CreateEmbed, CreateEmbedFooter, CreateSelectMenu,
+    CreateActionRow, CreateCommand, CreateEmbed, CreateEmbedFooter, CreateSelectMenu,
     CreateSelectMenuKind, CreateSelectMenuOption,
 };
 use serenity::model::application::CommandDataOptionValue;
@@ -194,24 +194,18 @@ pub fn build_contracts_embed(
         ));
     }
     // Refresh + pagination + Play buttons row
-    let mut nav_buttons = vec![
-        CreateButton::new("contracts_refresh")
-            .label(pad_std("🔄 Refresh"))
-            .style(serenity::model::application::ButtonStyle::Secondary),
-    ];
+    let mut nav_buttons = vec![Btn::secondary("contracts_refresh", "🔄 Refresh")];
     if total_pages > 1 && page > 0 {
-        nav_buttons.push(
-            CreateButton::new(format!("contracts_page_{}", page - 1))
-                .label(pad_narrow("◀ Prev"))
-                .style(serenity::model::application::ButtonStyle::Secondary),
-        );
+        nav_buttons.push(Btn::narrow(
+            &format!("contracts_page_{}", page - 1),
+            "◀ Prev",
+        ));
     }
     if total_pages > 1 && page + 1 < total_pages {
-        nav_buttons.push(
-            CreateButton::new(format!("contracts_page_{}", page + 1))
-                .label(pad_narrow("Next ▶"))
-                .style(serenity::model::application::ButtonStyle::Secondary),
-        );
+        nav_buttons.push(Btn::narrow(
+            &format!("contracts_page_{}", page + 1),
+            "Next ▶",
+        ));
     }
     // Replace legacy Play/Menu button with global nav row appended later if absent.
     rows.push(CreateActionRow::Buttons(nav_buttons));
@@ -315,11 +309,10 @@ pub async fn run_slash(ctx: &Context, interaction: &mut CommandInteraction) {
                 embed: CreateEmbed::new()
                     .title("Contracts")
                     .description(format!("Error loading progress: {}", e)),
-                components: vec![CreateActionRow::Buttons(vec![
-                    CreateButton::new("contracts_refresh")
-                        .label(pad_std("🔄 Refresh"))
-                        .style(serenity::model::application::ButtonStyle::Secondary),
-                ])],
+                components: vec![CreateActionRow::Buttons(vec![Btn::secondary(
+                    "contracts_refresh",
+                    "🔄 Refresh",
+                )])],
             },
         };
     let resp = serenity::builder::CreateInteractionResponseMessage::new()

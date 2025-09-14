@@ -18,73 +18,10 @@ use serenity::prelude::Context;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::instrument;
-// Small helper: render a DRY ante selector for card games (Blackjack/Poker) started via Tavern.
-async fn render_ante_selector(
-    ctx: &Context,
-    component: &mut ComponentInteraction,
-    game_key: &str, // "blackjack" | "poker"
-    title: &str,
-    note: &str,
-    balance: i64,
-) {
-    use serenity::builder::{CreateActionRow, CreateEmbed};
-    let embed = CreateEmbed::new()
-        .title(format!("{} — Select Ante", title))
-        .description(note)
-        .field(
-            "Your Balance",
-            format!("{} {}", crate::ui::style::EMOJI_COIN, balance),
-            true,
-        )
-        .color(crate::ui::style::COLOR_SAGA_TAVERN);
-    // Common ante options; always cap by balance for All-in and disable overs
-    let ante_vals = [10, 100, 1000];
-    let mut ante_btns = Vec::new();
-    for v in ante_vals {
-        ante_btns.push(
-            crate::ui::buttons::Btn::primary(
-                &format!(
-                    "{}{}_{}",
-                    crate::interactions::ids::SAGA_TAVERN_GAMES_ANTE_PREFIX,
-                    game_key,
-                    v
-                ),
-                &format!("Bet {} {}", crate::ui::style::EMOJI_COIN, v),
-            )
-            .disabled(balance < v),
-        );
-    }
-    let all_in = balance.max(0);
-    let mut rows = vec![CreateActionRow::Buttons(ante_btns)];
-    rows.push(CreateActionRow::Buttons(vec![
-        crate::ui::buttons::Btn::primary(
-            &format!(
-                "{}{}_{}",
-                crate::interactions::ids::SAGA_TAVERN_GAMES_ANTE_PREFIX,
-                game_key,
-                all_in
-            ),
-            &format!("All-in {} {}", crate::ui::style::EMOJI_COIN, all_in),
-        )
-        .disabled(all_in <= 0),
-        crate::ui::buttons::Btn::secondary(
-            crate::interactions::ids::SAGA_TAVERN_GAMES_ANTE_CANCEL,
-            "Cancel",
-        ),
-    ]));
-    // Tavern nav row (↩ Saga + Refresh)
-    rows.push(crate::commands::saga::ui::tavern_saga_row());
-    edit_component(
-        ctx,
-        component,
-        "tavern.games.ante",
-        EditInteractionResponse::new().embed(embed).components(rows),
-    )
-    .await;
-}
 
 // (Removed local edit helper; using util::edit_component for consistency.)
 // Small helper: render the Tavern Games main menu consistently.
+#[instrument(name = "ui.tavern.games", skip_all)]
 async fn render_tavern_games_view(
     ctx: &Context,
     component: &mut ComponentInteraction,
@@ -93,9 +30,9 @@ async fn render_tavern_games_view(
     use serenity::builder::{CreateActionRow, CreateEmbed};
     let embed = CreateEmbed::new()
         .title("Tavern Games")
-        .description("Challenge the house or friends.")
+        .description("Challenge the house or friends. Card games here are friendly — no ante.")
         .field("Blackjack", "Play vs the dealer.", true)
-        .field("Poker", "WIP.", true)
+        .field("Poker", "Five Card Draw.", true)
         .field(
             "Arm Wrestling",
             "Pick a party member. Tests Strength.",
@@ -103,11 +40,8 @@ async fn render_tavern_games_view(
         )
         .field("Darts", "Pick a party member. Tests Dexterity.", true)
         .color(crate::ui::style::COLOR_SAGA_TAVERN);
-    let buttons = vec![
-        crate::ui::buttons::Btn::secondary(crate::interactions::ids::SAGA_TAVERN_HOME, "🏰 Tavern"),
-        crate::ui::buttons::Btn::primary(crate::interactions::ids::SAGA_RECRUIT, "🧭 Recruitment"),
-    ];
-    let mut rows = vec![CreateActionRow::Buttons(buttons)];
+    let mut rows = Vec::with_capacity(4);
+    // Row 1: Card games
     rows.push(CreateActionRow::Buttons(vec![
         crate::ui::buttons::Btn::primary(
             crate::interactions::ids::SAGA_TAVERN_GAMES_BLACKJACK,
@@ -118,6 +52,7 @@ async fn render_tavern_games_view(
             "🂡 Poker",
         ),
     ]));
+    // Row 2: Stat games
     rows.push(CreateActionRow::Buttons(vec![
         crate::ui::buttons::Btn::secondary(
             crate::interactions::ids::SAGA_TAVERN_GAMES_ARM,
@@ -128,6 +63,13 @@ async fn render_tavern_games_view(
             "🎯 Darts",
         ),
     ]));
+    // Row 3: Home/Recruitment
+    let buttons = vec![
+        crate::ui::buttons::Btn::secondary(crate::interactions::ids::SAGA_TAVERN_HOME, "🏰 Tavern"),
+        crate::ui::buttons::Btn::primary(crate::interactions::ids::SAGA_RECRUIT, "🧭 Recruitment"),
+    ];
+    rows.push(CreateActionRow::Buttons(buttons));
+    // Row 4: Global nav (↩ Saga + Refresh)
     rows.push(crate::commands::saga::ui::tavern_saga_row());
     edit_component(
         ctx,
@@ -1497,84 +1439,31 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
             render_tavern_games_view(ctx, component, &app_state).await;
         }
         Some(&"tavern") if raw_id == crate::interactions::ids::SAGA_TAVERN_GAMES_BLACKJACK => {
-            // Show ante selector (DRY) for Blackjack
-            let balance = crate::database::economy::get_or_create_profile(db, component.user.id)
-                .await
-                .map(|p| p.balance)
-                .unwrap_or(0);
-            render_ante_selector(
-                ctx,
-                component,
-                "blackjack",
-                "Blackjack",
-                "Pick an ante to start a table.",
-                balance,
-            )
-            .await;
+            // Start a friendly (no-ante) Blackjack table immediately
+            use crate::commands::blackjack::state::BlackjackGame;
+            let game = BlackjackGame::new(Arc::new(component.user.clone()), 0);
+            let mut gm = app_state.game_manager.write().await;
+            let (content, embed, components) = game.render();
+            let builder = EditInteractionResponse::new()
+                .content(content)
+                .embed(embed)
+                .components(components);
+            if let Ok(msg) = component.edit_response(&ctx.http, builder).await {
+                gm.start_game(msg.id, Box::new(game));
+            }
         }
         Some(&"tavern") if raw_id == crate::interactions::ids::SAGA_TAVERN_GAMES_POKER => {
-            // Show ante selector (DRY) for Poker
-            let balance = crate::database::economy::get_or_create_profile(db, component.user.id)
-                .await
-                .map(|p| p.balance)
-                .unwrap_or(0);
-            render_ante_selector(
-                ctx,
-                component,
-                "poker",
-                "Poker",
-                "Pick an ante to start a table.",
-                balance,
-            )
-            .await;
-        }
-        Some(&"tavern") if raw_id == crate::interactions::ids::SAGA_TAVERN_GAMES_ANTE_CANCEL => {
-            // Return to the Games menu without async recursion
-            render_tavern_games_view(ctx, component, &app_state).await;
-            return;
-        }
-        Some(&"tavern")
-            if raw_id.starts_with(crate::interactions::ids::SAGA_TAVERN_GAMES_ANTE_PREFIX) =>
-        {
-            // Parse ante selection and start the game
-            match crate::interactions::ids::parse_tavern_ante_id(raw_id)
-                .map(|(g, a)| (g.as_str().to_owned(), a))
-            {
-                Some((game_key, amount)) if game_key == "blackjack" => {
-                    use crate::commands::blackjack::state::BlackjackGame;
-                    let game = BlackjackGame::new(Arc::new(component.user.clone()), amount);
-                    let mut gm = app_state.game_manager.write().await;
-                    let (content, embed, components) = game.render();
-                    let builder = EditInteractionResponse::new()
-                        .content(content)
-                        .embed(embed)
-                        .components(components);
-                    if let Ok(msg) = component.edit_response(&ctx.http, builder).await {
-                        gm.start_game(msg.id, Box::new(game));
-                    }
-                }
-                Some((game_key, amount)) if game_key == "poker" => {
-                    use crate::commands::poker::state::PokerGame;
-                    let game = PokerGame::new(Arc::new(component.user.clone()), amount);
-                    let mut gm = app_state.game_manager.write().await;
-                    let (content, embed, components) = game.render();
-                    let builder = EditInteractionResponse::new()
-                        .content(content)
-                        .embed(embed)
-                        .components(components);
-                    if let Ok(msg) = component.edit_response(&ctx.http, builder).await {
-                        gm.start_game(msg.id, Box::new(game));
-                    }
-                }
-                _ => {
-                    edit_component(
-                        ctx,
-                        component,
-                        "tavern.games.ante.bad_id",
-                        EditInteractionResponse::new().content("Invalid ante selection."),
-                    )
-                    .await;
-                }
+            // Start a friendly (no-ante) Poker table immediately
+            use crate::commands::poker::state::PokerGame;
+            let game = PokerGame::new(Arc::new(component.user.clone()), 0);
+            let mut gm = app_state.game_manager.write().await;
+            let (content, embed, components) = game.render();
+            let builder = EditInteractionResponse::new()
+                .content(content)
+                .embed(embed)
+                .components(components);
+            if let Ok(msg) = component.edit_response(&ctx.http, builder).await {
+                gm.start_game(msg.id, Box::new(game));
             }
         }
         Some(&"tavern")
@@ -1657,31 +1546,29 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                 .await;
                 return;
             };
-            // Simple check: base stat from unit + small jitter vs. house fixed DC
-            let (stat, dc, label) = if game == "arm" {
-                (unit.current_attack, 12, "Arm Wrestling")
+            // Stat check: stat bonus + d20 vs. DC (seeded for fairness)
+            let (stat, dc, label, stat_name) = if game == "arm" {
+                (unit.current_attack, 13, "Arm Wrestling", "Strength")
             } else {
-                (unit.current_defense, 12, "Darts")
+                (unit.current_defense, 13, "Darts", "Dexterity")
             };
             let today = chrono::Utc::now().date_naive();
             let seed = (component.user.id.get())
                 ^ (((today.year() as u64) << 32) ^ (today.ordinal() as u64))
                 ^ (unit_id as u64);
-            let roll = (crate::commands::saga::tavern::splitmix64(seed) % 6 + 1) as i32; // 1..=6
-            let score = stat / 5 + roll; // coarse normalization
+            let roll = (crate::commands::saga::tavern::splitmix64(seed) % 20 + 1) as i32; // d20
+            let score = stat / 10 + roll; // stat bonus scaled
             let success = score >= dc;
             let mut embed = serenity::builder::CreateEmbed::new()
                 .title(format!("{} — Result", label))
                 .description(format!(
-                    "{} used {} (stat {}) and rolled {} → {}",
+                    "{} used {} ({}), rolled d20 = {} ➜ total {} vs DC {} → {}",
                     unit.name,
-                    if game == "arm" {
-                        "Strength"
-                    } else {
-                        "Dexterity"
-                    },
+                    stat_name,
                     stat,
                     roll,
+                    score,
+                    dc,
                     if success { "Win" } else { "Loss" }
                 ))
                 .color(crate::ui::style::COLOR_SAGA_TAVERN);
@@ -1697,7 +1584,16 @@ pub async fn handle(ctx: &Context, component: &mut ComponentInteraction, app_sta
                     let _ = tx.commit().await;
                 }
             }
-            let rows = vec![crate::commands::saga::ui::tavern_saga_row()];
+            // Provide quick return to Tavern
+            let rows = vec![
+                serenity::builder::CreateActionRow::Buttons(vec![
+                    crate::ui::buttons::Btn::secondary(
+                        crate::interactions::ids::SAGA_TAVERN_HOME,
+                        "🏰 Tavern",
+                    ),
+                ]),
+                crate::commands::saga::ui::tavern_saga_row(),
+            ];
             edit_component(
                 ctx,
                 component,
