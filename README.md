@@ -1,6 +1,6 @@
 # Gamemaster Bot
 
-Memorialized and dedicated to Yargit, original author.
+Memorialized and dedicated to Yargit, project author.
 
 A feature-rich Discord game bot written in Rust (Serenity + SQLx + Tokio) featuring an evolving RPG mode (The Gamemaster Saga), a deterministic daily Tavern recruitment system, economy, research & bonding systems, and several mini‑games.
 
